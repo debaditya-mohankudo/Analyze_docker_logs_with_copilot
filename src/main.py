@@ -3,6 +3,7 @@ Main entry point for Docker Log Analyzer.
 Orchestrates log streaming, error detection, and LLM analysis.
 """
 
+import argparse
 import signal
 import sys
 import threading
@@ -13,6 +14,7 @@ from buffer_manager import BufferManager
 from log_producer import DockerLogProducer
 from error_consumer import ErrorDetectorConsumer, ErrorEvent
 from llm_analyzer import LLMAnalyzer
+from log_pattern_analyzer import LogPatternAnalyzer
 from logger import logger
 
 
@@ -25,6 +27,7 @@ class DockerLogAnalyzer:
             analytics_interval=config.ANALYTICS_INTERVAL
         )
         self.llm_analyzer = LLMAnalyzer(self.buffer_manager)
+        self.pattern_analyzer = LogPatternAnalyzer(self.buffer_manager)
         self.log_producer = None
         self.error_consumer = None
         self.cleanup_thread = None
@@ -129,6 +132,32 @@ class DockerLogAnalyzer:
             self.stop()
             sys.exit(1)
     
+    def analyze_patterns(self):
+        """Analyze and save container log patterns to JSON."""
+        try:
+            logger.info("=" * 80)
+            logger.info("Analyzing container log patterns...")
+            logger.info("=" * 80)
+            
+            # Analyze all containers
+            patterns = self.pattern_analyzer.analyze_all_containers()
+            
+            if not patterns:
+                logger.warning("No patterns found - may need more logs in buffer")
+                return False
+            
+            # Export to JSON
+            success = self.pattern_analyzer.export_to_json("container_patterns.json")
+            
+            if success:
+                logger.info("✅ Pattern analysis complete! Results saved to container_patterns.json")
+            
+            return success
+            
+        except Exception as e:
+            logger.error(f"Pattern analysis failed: {e}", exc_info=True)
+            return False
+    
     def stop(self):
         """Stop all components."""
         logger.info("Stopping Docker Log Analyzer...")
@@ -156,6 +185,23 @@ class DockerLogAnalyzer:
 
 def main():
     """Main entry point."""
+    parser = argparse.ArgumentParser(
+        description="Docker Log Analyzer with LLM-powered correlation analysis"
+    )
+    parser.add_argument(
+        "--analyze",
+        action="store_true",
+        help="Analyze log patterns from buffer and save to container_patterns.json"
+    )
+    parser.add_argument(
+        "--collection-time",
+        type=int,
+        default=30,
+        help="Seconds to collect logs before analyzing patterns (default: 30)"
+    )
+    
+    args = parser.parse_args()
+    
     print(r"""
     ____             __              __                 ___                __                     
    / __ \____  _____/ /_____  ____  / /   ____  ____ _/ _ |  ____  ____ _/ /_  ______  ___  _____
@@ -172,7 +218,46 @@ def main():
     
     try:
         analyzer = DockerLogAnalyzer()
-        analyzer.start()
+        
+        if args.analyze:
+            # Pattern analysis mode
+            logger.info(f"Starting log collection for {args.collection_time} seconds...")
+            
+            # Initialize producers only
+            analyzer.log_producer = DockerLogProducer()
+            analyzer.log_producer.start_streaming()
+            
+            # Give producer time to start
+            time.sleep(2)
+            
+            # Initialize consumer only
+            analyzer.error_consumer = ErrorDetectorConsumer(
+                buffer_manager=analyzer.buffer_manager,
+                error_callback=lambda e: None  # No-op callback
+            )
+            
+            # Start a consumer thread to collect logs
+            consumer_thread = threading.Thread(
+                target=analyzer.error_consumer.consume_and_detect,
+                daemon=True
+            )
+            consumer_thread.start()
+            
+            # Collect logs for specified time
+            logger.info(f"Collecting logs for {args.collection_time} seconds...")
+            time.sleep(args.collection_time)
+            
+            # Stop collection
+            analyzer.error_consumer.stop()
+            analyzer.log_producer.stop()
+            
+            # Analyze patterns
+            analyzer.analyze_patterns()
+            
+        else:
+            # Normal monitoring mode
+            analyzer.start()
+            
     except Exception as e:
         logger.error(f"Failed to start analyzer: {e}", exc_info=True)
         sys.exit(1)

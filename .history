@@ -39,3 +39,11 @@ docs | .env.example | Document new analytics configuration: LLM_ERROR_THRESHOLD,
 test | analytics | Add comprehensive test_analytics.py with 8 validation tests for Polars DataFrame operations, error rate calculations, and smart LLM filtering
 refactor | buffer_manager | Fix Polars binary operations: use pl.col().bin.contains() instead of str.contains() for raw bytes pattern matching
 performance | analytics | Validate 50-80% OpenAI API cost reduction via smart LLM filtering (dual-criteria: error_threshold OR affected_containers_min)
+feature | log_pattern_analyzer | Create new module for intelligent log pattern discovery and analysis
+feature | log_pattern_analyzer | Detect timestamp formats: ISO-8601, syslog, epoch, Apache with confidence scoring
+feature | log_pattern_analyzer | Identify programming language: Python, Java, PHP, Go, Node.js using regex heuristics
+feature | log_pattern_analyzer | Discover repeating health check patterns and estimate frequency per minute
+feature | log_pattern_analyzer | Extract log level distributions and common error patterns per container
+feature | log_pattern_analyzer | Export discovered patterns to container_patterns.json for buffer optimization
+feature | main | Add --analyze flag for on-demand pattern analysis with --collection-time parameter
+test | log_pattern_analyzer | Add test_pattern_analyzer.py with 4 language types (Python, Java, Node.js, PHP)
