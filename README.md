@@ -121,7 +121,71 @@ The run ID is displayed in:
 - Configuration output
 
 This is based on the logging pattern from the [ACME Cert Lifecycle Agent](https://github.com/debaditya-mohankudo/ACME_Cert_Life_Cycle_Agent_By_Claude_Cowork) project.
+## 🔬 Intelligent Log Pattern Discovery
 
+Before running full analysis, **analyze container log patterns** to understand their characteristics:
+
+```bash
+# Collect logs for 30 seconds and analyze patterns
+uv run python src/main.py --analyze --collection-time 30
+```
+
+This generates `container_patterns.json` with insights:
+
+```json
+{
+  "Flask-API": {
+    "language": {
+      "name": "python",
+      "confidence": 0.95
+    },
+    "timestamp_format": {
+      "type": "iso8601",
+      "sample": "2024-03-02T21:19:41.123Z"
+    },
+    "health_check": {
+      "detected": true,
+      "pattern": "GET /health 200 OK",
+      "frequency_per_minute": 15.0
+    },
+    "log_levels": {
+      "INFO": 1250,
+      "DEBUG": 340,
+      "ERROR": 23,
+      "WARNING": 18
+    },
+    "common_errors": [
+      {
+        "pattern": "Error: Connection refused",
+        "count": 5
+      }
+    ]
+  }
+}
+```
+
+**Benefits:**
+
+| Feature | Use Case |
+|---------|----------|
+| **Timestamp Detection** | Normalize timestamps across different log formats |
+| **Language Identification** | Adjust error patterns for Python vs Java vs PHP |
+| **Health Check Discovery** | Filter out repeating health checks to reduce noise |
+| **Error Pattern Learning** | Pre-compile error regexes for faster detection |
+| **Buffer Optimization** | Size buffers based on actual log volume per container |
+
+**Supported Timestamp Formats:**
+- ISO-8601: `2024-03-02T21:19:41.123Z`
+- Syslog: `Mar 2 21:19:41`
+- Unix Epoch: `1709432381`
+- Apache: `02/Mar/2024:21:19:41`
+
+**Supported Languages:**
+- Python (Flask, Django, FastAPI)
+- Java (Spring Boot, Tomcat)
+- PHP (Laravel, WordPress)
+- Go (net/http, Gin)
+- Node.js (Express, Fastify)
 ## �🔧 Integration with Existing Projects
 
 ### Option 1: Add to Existing docker-compose.yml
