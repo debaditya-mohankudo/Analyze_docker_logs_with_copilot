@@ -96,7 +96,29 @@ Edit `.env` file to customize behavior:
 | `CONTAINER_LABEL_FILTER` | `""` | Filter containers by label (e.g., `app=myservice`) |
 | `LOG_LEVEL` | `INFO` | Logging verbosity |
 
-## 🔧 Integration with Existing Projects
+## � Logging with Run ID Tracking
+
+Every analyzer run generates a unique `run_id` (UUID) that appears in all log messages, enabling:
+
+- **Distributed Tracing**: Correlate logs across components in complex deployments
+- **Multi-Instance Support**: Distinguish between multiple analyzer instances
+- **Debugging**: Easily filter logs for a specific execution
+
+**Example Log Output:**
+```
+2026-03-02 20:38:09 [e0021d2b-377b-41f4-9f1e-a5c967455051] INFO docker-log-analyzer — Configuration validated successfully
+2026-03-02 20:38:09 [e0021d2b-377b-41f4-9f1e-a5c967455051] INFO docker-log-analyzer — Model: gpt-4o-mini
+2026-03-02 20:38:09 [e0021d2b-377b-41f4-9f1e-a5c967455051] INFO docker-log-analyzer — Monitoring 5 containers
+```
+
+The run ID is displayed in:
+- Startup banner
+- All log messages
+- Configuration output
+
+This is based on the logging pattern from the [ACME Cert Lifecycle Agent](https://github.com/debaditya-mohankudo/ACME_Cert_Life_Cycle_Agent_By_Claude_Cowork) project.
+
+## �🔧 Integration with Existing Projects
 
 ### Option 1: Add to Existing docker-compose.yml
 

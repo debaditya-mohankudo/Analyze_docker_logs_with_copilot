@@ -3,7 +3,6 @@ Main entry point for Docker Log Analyzer.
 Orchestrates log streaming, error detection, and LLM analysis.
 """
 
-import logging
 import signal
 import sys
 import threading
@@ -14,8 +13,7 @@ from buffer_manager import BufferManager
 from log_producer import DockerLogProducer
 from error_consumer import ErrorDetectorConsumer, ErrorEvent
 from llm_analyzer import LLMAnalyzer
-
-logger = logging.getLogger(__name__)
+from logger import logger
 
 
 class DockerLogAnalyzer:
@@ -156,6 +154,7 @@ def main():
     """)
     
     print("Docker Log Analyzer with LLM-powered correlation analysis")
+    print(f"Run ID: {logger.get_run_id()}")
     print("https://github.com/yourusername/docker-log-analyzer")
     print()
     

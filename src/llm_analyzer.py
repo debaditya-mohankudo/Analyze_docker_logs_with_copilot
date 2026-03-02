@@ -3,7 +3,6 @@ LLM Analyzer - Aggregates log context and performs AI analysis.
 Uses OpenAI to identify correlations and root causes.
 """
 
-import logging
 from datetime import datetime
 from typing import Dict, List, Tuple
 
@@ -12,8 +11,7 @@ from openai import OpenAI
 import config
 from buffer_manager import BufferManager
 from error_consumer import ErrorEvent
-
-logger = logging.getLogger(__name__)
+from logger import logger
 
 
 class ContextAggregator:

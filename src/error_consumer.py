@@ -4,7 +4,6 @@ Triggers analysis when errors are detected.
 """
 
 import json
-import logging
 import re
 import threading
 import time
@@ -15,8 +14,7 @@ from kafka.errors import KafkaError
 
 import config
 from buffer_manager import BufferManager
-
-logger = logging.getLogger(__name__)
+from logger import logger
 
 
 class ErrorDetector:

@@ -10,13 +10,13 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
+# Import logger after load_dotenv
+from logger import logger
+
 # Logging Configuration
 LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')
-logging.basicConfig(
-    level=getattr(logging, LOG_LEVEL),
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+# Set log level on the singleton logger
+logger.set_level(getattr(logging, LOG_LEVEL))
 
 # OpenAI Configuration
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
@@ -75,6 +75,7 @@ def validate_config():
 def log_config():
     """Log current configuration (without sensitive data)."""
     logger.info("=== Configuration ===")
+    logger.info(f"Run ID: {logger.get_run_id()}")
     logger.info(f"Model: {MODEL_NAME}")
     logger.info(f"Kafka: {KAFKA_BOOTSTRAP_SERVERS}")
     logger.info(f"Topic: {LOGS_TOPIC_NAME}")

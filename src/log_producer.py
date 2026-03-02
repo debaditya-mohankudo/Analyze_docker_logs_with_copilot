@@ -4,7 +4,6 @@ Monitors containers and publishes their logs in real-time.
 """
 
 import json
-import logging
 import threading
 import time
 from datetime import datetime
@@ -16,8 +15,7 @@ from kafka import KafkaProducer
 from kafka.errors import KafkaError
 
 import config
-
-logger = logging.getLogger(__name__)
+from logger import logger
 
 
 class DockerLogProducer:

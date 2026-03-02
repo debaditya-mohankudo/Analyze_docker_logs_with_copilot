@@ -3,7 +3,6 @@ Buffer Manager - Time-windowed in-memory log storage.
 Maintains circular buffers per container for fast context retrieval.
 """
 
-import logging
 import threading
 import time
 from bisect import bisect_left, bisect_right
@@ -11,8 +10,7 @@ from collections import deque
 from typing import List, Tuple, Dict, Optional
 
 import config
-
-logger = logging.getLogger(__name__)
+from logger import logger
 
 
 class TimeWindowBuffer:
