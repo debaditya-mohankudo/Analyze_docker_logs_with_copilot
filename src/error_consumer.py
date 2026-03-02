@@ -103,7 +103,7 @@ class ErrorDetectorConsumer:
                     raise
     
     def _trigger_analysis(self):
-        """Trigger analysis after debounce period."""
+        """Trigger analysis after debounce period (with smart filtering)."""
         with self.pending_errors_lock:
             if not self.pending_errors:
                 return
@@ -112,11 +112,18 @@ class ErrorDetectorConsumer:
             primary_error = self.pending_errors[0]
             error_count = len(self.pending_errors)
             
-            logger.info(f"Debounce period ended. Triggering analysis for {error_count} error(s)")
-            logger.info(f"Primary error: {primary_error}")
+            logger.info(f"Debounce period ended. Evaluating {error_count} error(s)")
             
-            # Call the error callback
-            self.error_callback(primary_error)
+            # Smart LLM triggering based on analytics
+            if self.buffer_manager.should_trigger_llm_analysis(
+                error_threshold=config.LLM_ERROR_THRESHOLD,
+                window_seconds=60,
+                affected_containers_min=2
+            ):
+                logger.info(f"LLM analysis triggered for primary error: {primary_error}")
+                self.error_callback(primary_error)
+            else:
+                logger.info(f"Skipping LLM analysis (below threshold). Errors: {error_count}")
             
             # Clear pending errors
             self.pending_errors.clear()
@@ -161,8 +168,11 @@ class ErrorDetectorConsumer:
                     timestamp = data['timestamp']
                     log_line = data['log_line']
                     
-                    # Add to buffer
-                    self.buffer_manager.add_log(container_name, timestamp, log_line)
+                    # Store raw bytes for Polars analytics
+                    raw_bytes = log_line.encode('utf-8', errors='replace')
+                    
+                    # Add to buffer (both string and bytes for dual use cases)
+                    self.buffer_manager.add_log(container_name, timestamp, log_line, raw_bytes)
                     
                     # Check for errors
                     if self.error_detector.is_error(log_line):

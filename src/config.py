@@ -34,6 +34,11 @@ CONTAINER_LABEL_FILTER = os.getenv('CONTAINER_LABEL_FILTER', '')
 # Analysis Configuration
 CONTEXT_WINDOW_SECONDS = int(os.getenv('CONTEXT_WINDOW_SECONDS', '60'))
 DEBOUNCE_SECONDS = int(os.getenv('DEBOUNCE_SECONDS', '10'))
+LLM_ERROR_THRESHOLD = int(os.getenv('LLM_ERROR_THRESHOLD', '10'))  # Min errors to trigger LLM
+
+# Analytics Configuration
+ANALYTICS_ENABLED = os.getenv('ANALYTICS_ENABLED', 'true').lower() == 'true'
+ANALYTICS_INTERVAL = float(os.getenv('ANALYTICS_INTERVAL', '10.0'))
 
 # Buffer Configuration
 BUFFER_SIZE_PER_CONTAINER = int(os.getenv('BUFFER_SIZE_PER_CONTAINER', '1000'))

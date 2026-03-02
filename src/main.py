@@ -20,7 +20,10 @@ class DockerLogAnalyzer:
     """Main orchestrator for the log analysis system."""
     
     def __init__(self):
-        self.buffer_manager = BufferManager()
+        self.buffer_manager = BufferManager(
+            enable_analytics=config.ANALYTICS_ENABLED,
+            analytics_interval=config.ANALYTICS_INTERVAL
+        )
         self.llm_analyzer = LLMAnalyzer(self.buffer_manager)
         self.log_producer = None
         self.error_consumer = None
@@ -81,6 +84,11 @@ class DockerLogAnalyzer:
             
             logger.info("Starting Docker Log Analyzer...")
             
+            # Start analytics thread if enabled
+            if config.ANALYTICS_ENABLED:
+                self.buffer_manager.start_analytics()
+                logger.info("Polars analytics enabled")
+            
             # Start periodic cleanup thread
             self.cleanup_thread = threading.Thread(
                 target=self._periodic_cleanup,
@@ -126,6 +134,10 @@ class DockerLogAnalyzer:
         logger.info("Stopping Docker Log Analyzer...")
         
         self.stop_event.set()
+        
+        # Stop analytics thread
+        if config.ANALYTICS_ENABLED:
+            self.buffer_manager.stop_analytics()
         
         # Stop error consumer
         if self.error_consumer:

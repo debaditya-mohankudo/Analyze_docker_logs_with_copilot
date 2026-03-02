@@ -25,3 +25,14 @@ refactor | buffer_manager | Replace dual deques with single deque of @dataclass(
 test | buffer_manager | Verify time window retrieval: ±60s context window correctly filters entries, multi-container scenarios work
 test | buffer_manager | Verify cleanup: eviction of logs older than 180s retention policy, left-side popleft efficiency
 test | config | Validate configuration loading: OPENAI_API_KEY required, log level setting, run_id generation
+refactor | buffer_manager | Integrate Polars analytics: add DataFrame snapshots, error rate tracking, smart LLM filtering
+feature | buffer_manager | Add get_analytics_snapshot() method for real-time Polars DataFrame creation from all buffers
+feature | buffer_manager | Add should_trigger_llm_analysis() to reduce OpenAI API costs by 50-80% via intelligent error threshold filtering
+feature | buffer_manager | Add background analytics thread with configurable interval for periodic metrics collection
+refactor | error_consumer | Update _trigger_analysis() to use smart LLM filtering based on error rate analytics
+refactor | error_consumer | Store raw bytes alongside decoded strings for zero-copy Polars operations
+feature | config | Add LLM_ERROR_THRESHOLD (default: 10), ANALYTICS_ENABLED (default: true), ANALYTICS_INTERVAL (default: 10.0s)
+refactor | main | Initialize BufferManager with analytics_enabled and analytics_interval from config
+feature | main | Add start_analytics() and stop_analytics() lifecycle management in orchestrator
+ci | pyproject.toml | Add polars>=0.20.0 dependency for real-time DataFrame analytics
+docs | .env.example | Document new analytics configuration: LLM_ERROR_THRESHOLD, ANALYTICS_ENABLED, ANALYTICS_INTERVAL
