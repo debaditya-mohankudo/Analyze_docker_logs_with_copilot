@@ -93,8 +93,12 @@ Edit `.env` file to customize behavior:
 | `MODEL_NAME` | `gpt-4o-mini` | OpenAI model to use |
 | `CONTEXT_WINDOW_SECONDS` | `60` | Seconds of context before/after error |
 | `DEBOUNCE_SECONDS` | `10` | Wait time to group multiple errors |
+| `LLM_ERROR_THRESHOLD` | `10` | Minimum error count in 60s window to trigger LLM (cost optimization) |
+| `ANALYTICS_ENABLED` | `true` | Enable Polars-based real-time analytics and smart LLM filtering |
+| `ANALYTICS_INTERVAL` | `10.0` | Seconds between background analytics snapshots |
 | `CONTAINER_LABEL_FILTER` | `""` | Filter containers by label (e.g., `app=myservice`) |
-| `LOG_LEVEL` | `INFO` | Logging verbosity |
+| `BUFFER_SIZE_PER_CONTAINER` | `1000` | Max log entries kept in memory per container |
+| `LOG_LEVEL` | `INFO` | Logging verbosity (`DEBUG` for buffer statistics) |
 
 ## � Logging with Run ID Tracking
 
@@ -194,14 +198,20 @@ CONTAINER_LABEL_FILTER=monitor=true
    ERROR: Database connection timeout after 30s
    ```
 
-2. **Log analyzer detects** the error pattern
+2. **Log analyzer detects** the error pattern and starts the debounce timer (`DEBOUNCE_SECONDS`)
 
-3. **Captures context** from all containers (±60 seconds):
+3. **Smart LLM filtering** evaluates whether analysis is worth triggering. LLM analysis runs only if, within the last 60 seconds, **either**:
+   - total error count across all containers ≥ `LLM_ERROR_THRESHOLD` (default: 10), **or**
+   - errors appear in ≥ 2 containers simultaneously (potential cascade)
+
+   A single isolated error below the threshold is logged but skipped to reduce API cost.
+
+4. **Captures context** from all containers (±60 seconds):
    - **web-server**: HTTP requests timing out
    - **database**: Connection pool exhausted warning
    - **cache-service**: Memory pressure alerts
 
-4. **LLM analyzes** the correlated logs and outputs:
+5. **LLM analyzes** the correlated logs and outputs:
    ```
    ROOT CAUSE: Database connection pool exhaustion
    
@@ -229,13 +239,14 @@ docker logs -f log-analyzer
 ```
 
 ### Check Buffer Statistics
-Look for log lines like:
+Buffer statistics are logged at DEBUG level. Set `LOG_LEVEL=DEBUG` in `.env` to see them:
 ```
 Buffer statistics:
   web-server: 243 logs
   database: 156 logs
   cache-service: 89 logs
 ```
+At the default `INFO` level, the periodic analytics summary (error counts per container) is logged instead, every `ANALYTICS_INTERVAL` seconds.
 
 ### Test Error Detection
 Inject a test error into any container:
