@@ -1,0 +1,27 @@
+memory | .history | Add append-only architectural intent log to project root
+architecture | project | Initialize Docker log analyzer with Kafka-based event-driven architecture for multi-container log correlation
+architecture | streaming | Design producer-consumer pattern: log producers (Docker→Kafka) + error consumer (Kafka→buffer) + LLM analyzer
+feature | docker-compose | Add Kafka 7.5.0 + Zookeeper stack with 3-minute log retention policy for time-windowed analysis
+feature | Dockerfile | Implement uv-based dependency installation; mount Docker socket read-only for sibling container monitoring
+feature | pyproject.toml | Define project with uv packaging: docker>=7.0, kafka-python>=2.0.2, openai>=1.12.0; dev tools (pytest, black, ruff)
+feature | config | Environment-based 12-factor configuration: Kafka bootstrap, OpenAI API key, context window (60s), debounce (10s)
+feature | buffer_manager | Implement @dataclass(slots=True) LogEntry pattern; deque-based circular buffers per container with time-windowed retrieval
+feature | buffer_manager | Add thread-safe TimeWindowBuffer: linear scan for time windows, efficient left-side eviction for old logs (~30% memory reduction vs dual-deque pattern)
+feature | log_producer | Docker SDK integration: discover containers, stream logs with timestamps, parse Docker timestamp format, publish to Kafka with container name as partition key
+feature | log_producer | Self-exclusion logic: detect own container hostname, filter from monitoring to prevent recursive logging
+feature | error_consumer | Regex-based error detection: ERROR|CRITICAL|FATAL|Exception|Traceback|5\d{2} patterns with case-insensitive matching
+feature | error_consumer | Debouncing mechanism: collect errors within 10-second window, trigger single analysis batch to reduce LLM API costs
+feature | llm_analyzer | Context aggregation: retrieve ±60 second time windows from all container buffers when error detected
+feature | llm_analyzer | OpenAI GPT-4o-mini integration: structured prompt with error source + multi-container context, root cause analysis output
+feature | main | Orchestration: BufferManager + DockerLogProducer threads + ErrorDetectorConsumer + periodic cleanup (30s) + SIGTERM handling
+feature | logger | Implement LoggerWithRunID singleton: decorator pattern with RunIDFilter, unique run_id per execution for distributed tracing
+refactor | logger | Extract RunIDFilter and LoggerDecorator: composition over inheritance, backward compatible with standard logging.Logger
+feature | logger | Add run_id to all log messages: format="%(asctime)s [%(run_id)s] %(levelname)s %(name)s — %(message)s" for correlation
+feature | config | Display run_id in startup banner and configuration output; enable filtering logs by execution instance
+ci | uv | Add uv.lock (167KB, 895 lines) for reproducible builds across Python 3.11+; lock 23 packages with cryptographic hashes
+docs | README | Document run_id tracking feature: benefits (tracing, multi-instance, debugging), example output, reference to ACME project pattern
+docs | README | Update development workflow: recommend 'uv run python' instead of venv activation for cleaner developer experience
+refactor | buffer_manager | Replace dual deques with single deque of @dataclass(slots=True) LogEntry; eliminate bisect dependency, faster linear scan
+test | buffer_manager | Verify time window retrieval: ±60s context window correctly filters entries, multi-container scenarios work
+test | buffer_manager | Verify cleanup: eviction of logs older than 180s retention policy, left-side popleft efficiency
+test | config | Validate configuration loading: OPENAI_API_KEY required, log level setting, run_id generation
