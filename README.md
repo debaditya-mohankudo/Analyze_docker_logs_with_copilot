@@ -328,6 +328,39 @@ docker exec kafka kafka-console-consumer \
 
 ## 🛠️ Development
 
+### VS Code Copilot Extension (Local Development)
+
+For local development and testing **without API costs**, use the built-in VS Code Copilot extension:
+
+```bash
+# Navigate to extension directory
+cd vscode-extension
+
+# Install dependencies
+npm install
+
+# Compile TypeScript
+npm run compile
+
+# Open in VS Code and press F5 to start debug session
+# Or open this directory in VS Code: code .
+```
+
+The extension provides three commands (accessible via `Ctrl+Shift+P`):
+
+1. **Docker Logs: Analyze Container Logs** - Paste your logs to get AI-powered analysis
+2. **Docker Logs: Discover Patterns** - Auto-detect timestamp formats, languages, health checks
+3. **Docker Logs: Test with Sample Data** - Test with realistic multi-container failure scenario
+
+**Benefits over cloud LLM:**
+- ✅ Free (uses VS Code Copilot subscription)
+- ✅ Local execution (no API latency)
+- ✅ Perfect for development and testing
+- ✅ No authentication key management
+- ✅ Real-time iteration and refinement
+
+For detailed setup instructions, see [vscode-extension/QUICKSTART.md](vscode-extension/QUICKSTART.md).
+
 ### Local Testing (Without Docker)
 
 1. **Install uv** (if not already installed)
@@ -449,4 +482,13 @@ For issues and questions, please open a GitHub issue.
 
 ---
 
-**Built with ❤️ using Python, Docker, Kafka, and OpenAI**
+**Built with ❤️ using Python, Docker, Kafka, OpenAI, and VS Code Copilot**
+
+### Architecture Options
+
+| Scenario | Solution | Cost | Latency | Effort |
+|----------|----------|------|---------|--------|
+| **Local Development** | VS Code Copilot Extension | Free | Low (~1s) | ⭐ Low |
+| **Development Testing** | Pattern Analyzer Module | Free | Medium (~100ms) | ⭐⭐ Medium |
+| **Production Deployment** | Cloud LLM (OpenAI/Azure) | $$ | Low | ⭐⭐⭐ High |
+| **Hybrid** | Extension + Cloud LLM | $ | Mixed | ⭐⭐⭐ High |
