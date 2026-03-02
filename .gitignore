@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+
+# Environment variables
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Kafka data (if running locally)
+kafka-data/
+zookeeper-data/
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
