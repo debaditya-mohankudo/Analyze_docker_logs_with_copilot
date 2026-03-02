@@ -262,45 +262,42 @@ docker exec kafka kafka-console-consumer \
 
 2. **Install dependencies**
    ```bash
-   # Using uv (recommended)
-   uv venv
-   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-   uv pip install -e .
-   
-   # Or using traditional pip
-   python3 -m venv venv
-   source venv/bin/activate
-   pip install -e .
+   uv sync
    ```
 
-2. **Start Kafka locally** (or use Docker)
+3. **Start Kafka locally** (or use Docker)
    ```bash
    docker-compose up -d kafka zookeeper
    ```
 
-3. **Run the analyzer**
+4. **Run the analyzer**
    ```bash
+   # Using uv run (recommended - no venv activation needed)
    export OPENAI_API_KEY="your-key"
    export KAFKA_BOOTSTRAP_SERVERS="localhost:9092"
    export DOCKER_HOST="unix:///var/run/docker.sock"
+   uv run python src/main.py
+   
+   # Or activate venv manually
+   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
    python src/main.py
    ```
 
 ### Running Tests
 
-Test individual modules:
+Test individual modules using `uv run`:
 ```bash
 # Test error detection
-python src/error_consumer.py
+uv run python src/error_consumer.py
 
 # Test buffer management
-python src/buffer_manager.py
+uv run python src/buffer_manager.py
 
 # Test LLM formatting
-python src/llm_analyzer.py
+uv run python src/llm_analyzer.py
 
 # Test config validation
-python src/config.py
+uv run python src/config.py
 ```
 
 ## ⚙️ System Requirements
