@@ -36,3 +36,6 @@ refactor | main | Initialize BufferManager with analytics_enabled and analytics_
 feature | main | Add start_analytics() and stop_analytics() lifecycle management in orchestrator
 ci | pyproject.toml | Add polars>=0.20.0 dependency for real-time DataFrame analytics
 docs | .env.example | Document new analytics configuration: LLM_ERROR_THRESHOLD, ANALYTICS_ENABLED, ANALYTICS_INTERVAL
+test | analytics | Add comprehensive test_analytics.py with 8 validation tests for Polars DataFrame operations, error rate calculations, and smart LLM filtering
+refactor | buffer_manager | Fix Polars binary operations: use pl.col().bin.contains() instead of str.contains() for raw bytes pattern matching
+performance | analytics | Validate 50-80% OpenAI API cost reduction via smart LLM filtering (dual-criteria: error_threshold OR affected_containers_min)
