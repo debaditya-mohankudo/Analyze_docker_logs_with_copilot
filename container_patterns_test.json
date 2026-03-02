@@ -1,0 +1,63 @@
+{
+  "Flask-API": {
+    "container_name": "Flask-API",
+    "container_id": "Flask-API",
+    "language": {
+      "name": "nodejs",
+      "confidence": 0.25
+    },
+    "timestamp_format": {
+      "type": "iso8601",
+      "sample": "2024-03-02T21:19:41.123Z [INFO] Flask app starting",
+      "confidence": 0.9
+    },
+    "log_levels": {
+      "INFO": 2,
+      "DEBUG": 1,
+      "ERROR": 1
+    },
+    "health_check": {
+      "detected": true,
+      "pattern": "health check (passed|ok|successful)",
+      "frequency_per_minute": 15.0,
+      "example_logs": [
+        "2024-03-02T21:19:44.101Z [INFO] Health check passed"
+      ],
+      "confidence": 0.25
+    },
+    "common_errors": [
+      {
+        "pattern": "Error: Failed to connect to Redis",
+        "count": 1
+      }
+    ],
+    "analysis_time_seconds": 0.0
+  },
+  "Java-Service": {
+    "container_name": "Java-Service",
+    "container_id": "Java-Service",
+    "language": {
+      "name": "java",
+      "confidence": 0.25
+    },
+    "timestamp_format": {
+      "type": "unknown",
+      "sample": "",
+      "confidence": 0.0
+    },
+    "log_levels": {
+      "INFO": 2,
+      "DEBUG": 1,
+      "WARN": 1
+    },
+    "health_check": {
+      "detected": false,
+      "pattern": null,
+      "frequency_per_minute": null,
+      "example_logs": [],
+      "confidence": 0.0
+    },
+    "common_errors": [],
+    "analysis_time_seconds": 0.0
+  }
+}

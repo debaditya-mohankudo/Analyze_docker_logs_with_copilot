@@ -47,3 +47,10 @@ feature | log_pattern_analyzer | Extract log level distributions and common erro
 feature | log_pattern_analyzer | Export discovered patterns to container_patterns.json for buffer optimization
 feature | main | Add --analyze flag for on-demand pattern analysis with --collection-time parameter
 test | log_pattern_analyzer | Add test_pattern_analyzer.py with 4 language types (Python, Java, Node.js, PHP)
+feature | vscode-extension | Create Copilot-powered VS Code extension for Docker log analysis
+feature | vscode-extension | Implement three main commands: Analyze, Discover Patterns, Test Sample Data
+feature | vscode-extension | Copilot Language Model API integration for real-time analysis in VS Code
+feature | vscode-extension | Pattern analysis prompt: timestamp format, language, health checks detection
+feature | vscode-extension | Error correlation prompt: find cascading failures and root causes
+docs | vscode-extension | Add comprehensive README with features, testing, troubleshooting
+docs | vscode-extension | Add QUICKSTART.md for 5-minute local setup and testing guide

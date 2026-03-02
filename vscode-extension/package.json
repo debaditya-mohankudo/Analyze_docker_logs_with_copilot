@@ -1,0 +1,78 @@
+{
+  "name": "docker-log-analyzer-copilot",
+  "displayName": "Docker Log Analyzer - Copilot Agent",
+  "description": "Analyze Docker container logs using Copilot AI to find correlated failures",
+  "version": "0.1.0",
+  "publisher": "local-dev",
+  "engines": {
+    "vscode": "^1.92.0"
+  },
+  "categories": [
+    "AI",
+    "Debuggers",
+    "Other"
+  ],
+  "keywords": [
+    "copilot",
+    "docker",
+    "logs",
+    "analysis",
+    "ai"
+  ],
+  "activationEvents": [
+    "onCommand:docker-log-analyzer.analyzeContainerLogs",
+    "onCommand:docker-log-analyzer.discoverPatterns",
+    "onCommand:docker-log-analyzer.testWithSampleLogs"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "docker-log-analyzer.analyzeContainerLogs",
+        "title": "Docker Logs: Analyze with Copilot",
+        "description": "Analyze Docker container logs using Copilot to find error correlations"
+      },
+      {
+        "command": "docker-log-analyzer.discoverPatterns",
+        "title": "Docker Logs: Discover Patterns",
+        "description": "Analyze container log patterns (timestamp, language, health checks)"
+      },
+      {
+        "command": "docker-log-analyzer.testWithSampleLogs",
+        "title": "Docker Logs: Test with Sample Data",
+        "description": "Test log analyzer with realistic container logs"
+      }
+    ],
+    "views": {
+      "explorer": [
+        {
+          "id": "docker-log-analyzer-view",
+          "name": "Docker Log Analyzer",
+          "when": "true"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src",
+    "test": "node ./out/test/runTest.js"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.92.0",
+    "@types/node": "^20.0.0",
+    "@types/mocha": "^10.0.0",
+    "typescript": "^5.0.0",
+    "mocha": "^10.0.0",
+    "@vscode/test-electron": "^2.3.0",
+    "eslint": "^8.0.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0"
+  },
+  "dependencies": {
+    "axios": "^1.6.0"
+  }
+}
