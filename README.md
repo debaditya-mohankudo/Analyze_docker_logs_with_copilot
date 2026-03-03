@@ -10,6 +10,25 @@ A stateless, **LLM-free** Docker log analysis tool exposed as an [MCP](https://m
 - **Sensitive Data Detection** – scans logs for secrets (API keys, tokens, credentials, credit cards) with severity filtering and redaction
 - **Copilot Agent Mode** – registered as an MCP stdio server; Copilot orchestrates via chat, every tool runs locally
 
+## Quality & Testing
+
+| Metric | Value |
+| --- | --- |
+| **Unit tests** | 95 tests across 4 modules |
+| **Coverage** | `spike_detector` · `correlator` · `log_pattern_detector` · `secret_detector` |
+| **CI execution** | ~4.25s parallel via xdist (no Docker) |
+| **Integration tests** | 32 tests (Docker-dependent, local only) |
+| **Total test suite** | 127 tests (95 CI + 32 integration) |
+
+**Test breakdown:**
+- `test_spike_detector.py` – 16 tests (rolling-window spike detection, Docker timestamp parsing)
+- `test_correlator.py` – 17 tests (cross-container correlation, event extraction, scoring)
+- `test_pattern_detector.py` – 24 tests (timestamp formats, language detection, log levels, health checks, error patterns)
+- `test_secret_detector.py` – 29 tests (13 secret patterns, redaction, severity filtering, recommendations, edge cases)
+- `test_mcp_integration.py` – 32 integration tests (MCP tool calls with live Docker containers)
+
+**CI runs:** `pytest tests/ -m "not integration"` (excludes Docker-dependent tests)
+
 ## Architecture
 
 ```text
@@ -218,25 +237,6 @@ tests/
   test_secret_detector.py # 29 unit tests
   test_mcp_integration.py # 32 integration tests
 ```
-
-## Quality & Testing
-
-| Metric | Value |
-| --- | --- |
-| **Unit tests** | 95 tests across 4 modules |
-| **Coverage** | `spike_detector` · `correlator` · `log_pattern_detector` · `secret_detector` |
-| **CI execution** | ~4.25s parallel via xdist (no Docker) |
-| **Integration tests** | 32 tests (Docker-dependent, local only) |
-| **Total test suite** | 127 tests (95 CI + 32 integration) |
-
-**Test breakdown:**
-- `test_spike_detector.py` – 16 tests (rolling-window spike detection, Docker timestamp parsing)
-- `test_correlator.py` – 17 tests (cross-container correlation, event extraction, scoring)
-- `test_pattern_detector.py` – 24 tests (timestamp formats, language detection, log levels, health checks, error patterns)
-- `test_secret_detector.py` – 29 tests (13 secret patterns, redaction, severity filtering, recommendations, edge cases)
-- `test_mcp_integration.py` – 32 integration tests (MCP tool calls with live Docker containers)
-
-**CI runs:** `pytest tests/ -m "not integration"` (excludes Docker-dependent tests)
 
 ## Error Patterns Detected
 
