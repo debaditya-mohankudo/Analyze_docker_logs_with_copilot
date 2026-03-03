@@ -1,0 +1,81 @@
+version: '3.8'
+
+# Test containers for Docker Log Analyzer MCP tools.
+#
+# Usage:
+#   docker compose -f docker-compose.test.yml up --build
+#   docker compose -f docker-compose.test.yml down
+#
+# Each container emits a different log format and language pattern so you can
+# exercise all 4 MCP tools (list_containers, analyze_patterns,
+# detect_error_spikes, correlate_containers) from VSCode Copilot Agent Mode.
+#
+# Spike schedule: web-app and database share SPIKE_INTERVAL=90s so their
+# errors spike at the same time → high correlation score.
+# cache has SPIKE_INTERVAL=120s → lower correlation with the other two.
+
+services:
+
+  # Python / ISO-8601 logs — simulates a Flask/FastAPI web service
+  web-app:
+    build:
+      context: ./log_generator
+    container_name: test-web-app
+    environment:
+      SERVICE_NAME: web-app
+      LOG_FORMAT: iso8601
+      LOG_LANGUAGE: python
+      LOG_INTERVAL: "0.4"       # ~2.5 lines/s
+      ERROR_RATE: "0.04"        # 4% base error rate
+      SPIKE_INTERVAL: "90"      # spike every 90 s
+      SPIKE_DURATION: "10"
+      SPIKE_ERROR_RATE: "0.85"
+    restart: unless-stopped
+
+  # Java / syslog logs — simulates a Spring Boot database service
+  database:
+    build:
+      context: ./log_generator
+    container_name: test-database
+    environment:
+      SERVICE_NAME: database
+      LOG_FORMAT: syslog
+      LOG_LANGUAGE: java
+      LOG_INTERVAL: "0.6"       # ~1.7 lines/s
+      ERROR_RATE: "0.03"
+      SPIKE_INTERVAL: "90"      # same as web-app → correlated spikes
+      SPIKE_DURATION: "10"
+      SPIKE_ERROR_RATE: "0.90"
+    restart: unless-stopped
+
+  # Go / epoch logs — simulates a Redis-style cache service
+  cache:
+    build:
+      context: ./log_generator
+    container_name: test-cache
+    environment:
+      SERVICE_NAME: cache
+      LOG_FORMAT: epoch
+      LOG_LANGUAGE: go
+      LOG_INTERVAL: "0.2"       # ~5 lines/s (chattier)
+      ERROR_RATE: "0.02"
+      SPIKE_INTERVAL: "120"     # different cadence → lower correlation
+      SPIKE_DURATION: "8"
+      SPIKE_ERROR_RATE: "0.75"
+    restart: unless-stopped
+
+  # Node.js / Apache logs — simulates a BFF / gateway
+  gateway:
+    build:
+      context: ./log_generator
+    container_name: test-gateway
+    environment:
+      SERVICE_NAME: gateway
+      LOG_FORMAT: apache
+      LOG_LANGUAGE: nodejs
+      LOG_INTERVAL: "0.3"
+      ERROR_RATE: "0.05"
+      SPIKE_INTERVAL: "90"      # same cadence as web-app/database → correlated
+      SPIKE_DURATION: "12"
+      SPIKE_ERROR_RATE: "0.80"
+    restart: unless-stopped

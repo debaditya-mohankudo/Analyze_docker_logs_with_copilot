@@ -1,0 +1,13 @@
+{
+	"servers": {
+		"docker-log-analyzer": {
+			"type": "stdio",
+			"command": "uv",
+			"args": [
+				"run",
+				"docker-log-analyzer-mcp"
+			]
+		}
+	},
+	"inputs": []
+}

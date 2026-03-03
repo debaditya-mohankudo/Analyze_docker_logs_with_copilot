@@ -54,3 +54,20 @@ feature | vscode-extension | Pattern analysis prompt: timestamp format, language
 feature | vscode-extension | Error correlation prompt: find cascading failures and root causes
 docs | vscode-extension | Add comprehensive README with features, testing, troubleshooting
 docs | vscode-extension | Add QUICKSTART.md for 5-minute local setup and testing guide
+refactor | architecture | Remove Kafka + OpenAI dependencies; pivot to stateless MCP server with direct Docker SDK log fetching (no background threads)
+refactor | pyproject.toml | Drop kafka-python and openai deps; keep docker, polars, mcp, python-dotenv; bump version to 0.2.0
+refactor | config | Strip to Docker connection + MCP tool parameter defaults; remove all Kafka/LLM/analytics vars
+remove | src | Delete src/main.py, error_consumer.py, log_producer.py, buffer_manager.py, llm_analyzer.py (Kafka+LLM pipeline)
+remove | vscode-extension | Remove TypeScript Copilot extension in favour of MCP server integration via .vscode/mcp.json
+feature | mcp_server | Rewrite mcp_server.py: 4 non-LLM tools (list_containers, analyze_patterns, detect_error_spikes, correlate_containers); stateless Docker SDK fetch per call
+feature | spike_detector | New module: Polars rolling-window error spike detection; 1-minute buckets, 3-bucket rolling baseline, configurable spike_threshold
+feature | correlator | New module: pairwise cross-container temporal error correlation; score = matched_a / total_a (0-1), MAX_CO_OCCURRENCES=500 cap
+feature | mcp_server | Add start_test_containers and stop_test_containers tools wrapping docker compose on docker-compose.test.yml
+feature | log_generator | New log_generator/generate_logs.py: configurable LOG_FORMAT (iso8601/syslog/epoch/apache/mixed), LOG_LANGUAGE (python/java/go/nodejs/generic/mixed), ERROR_RATE, SPIKE_INTERVAL
+feature | log_generator | Add log_generator/Dockerfile using python:3.11-slim
+feature | docker-compose.test.yml | Four-service test stack: test-web-app (python/iso8601), test-database (java/syslog), test-cache (go/epoch), test-gateway (nodejs/apache); web-app + database + gateway share SPIKE_INTERVAL=90s for correlated spikes
+refactor | docker-compose.yml | Remove Zookeeper + Kafka services; single log-analyzer-mcp service with Docker socket mount
+refactor | Dockerfile | Remove gcc and Kafka health check; fix COPY path to docker_log_analyzer/; change entrypoint to docker-log-analyzer-mcp
+fix | spike_detector | baseline.fill_null(1.0) applied to column directly (not just ratio expr) to prevent TypeError on first bucket
+fix | correlator | Replace Jaccard co_occurrence/max(A,B) formula (could exceed 1.0) with matched_a/total_a: fraction of A errors with at least one co-occurring B error within window
+vscode | mcp.json | Rename server key from my-mcp-server-c78ee437 to docker-log-analyzer

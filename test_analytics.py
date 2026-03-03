@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
 """Test script for Polars analytics integration."""
 
-import sys
-sys.path.insert(0, 'src')
-
 import time
-from buffer_manager import BufferManager
+from docker_log_analyzer.buffer_manager import BufferManager
 
 def test_analytics():
     """Test Polars analytics functionality."""

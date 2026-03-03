@@ -1,10 +1,7 @@
 #!/usr/bin/env python3
 """Test the log pattern analyzer with realistic container logs."""
 
-import sys
-sys.path.insert(0, 'src')
-
-from log_pattern_analyzer import LogPatternAnalyzer, PatternDetector
+from docker_log_analyzer.log_pattern_analyzer import LogPatternAnalyzer, PatternDetector
 
 
 def test_pattern_detector():
