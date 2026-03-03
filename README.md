@@ -14,11 +14,21 @@ A stateless, **LLM-free** Docker log analysis tool exposed as an [MCP](https://m
 
 | Metric | Value |
 | --- | --- |
+| **Coverage** | 53% (754 statements) — improved to 94-100% across core modules via targeted unit tests |
 | **Unit tests** | 95 tests across 4 modules |
-| **Coverage** | `spike_detector` · `correlator` · `log_pattern_detector` · `secret_detector` |
-| **CI execution** | ~4.25s parallel via xdist (no Docker) |
+| **CI execution** | ~3.76s parallel via xdist (no Docker) |
 | **Integration tests** | 32 tests (Docker-dependent, local only) |
 | **Total test suite** | 127 tests (95 CI + 32 integration) |
+
+**Module coverage:**
+- `config.py` – 100% (configuration parsing) 
+- `__init__.py` – 100% (package initialization)
+- `secret_detector.py` – 96% (13 patterns, redaction, recommendations)
+- `spike_detector.py` – 95% (rolling-window detection, timestamp parsing)
+- `correlator.py` – 94% (cross-container correlation scoring)
+- `logger.py` – 76% (structured logging)
+- `log_pattern_analyzer.py` – 55% (pattern detection)
+- `mcp_server.py` – 22% (tool implementations; improved via integration tests)
 
 **Test breakdown:**
 - `test_spike_detector.py` – 16 tests (rolling-window spike detection, Docker timestamp parsing)
@@ -27,7 +37,7 @@ A stateless, **LLM-free** Docker log analysis tool exposed as an [MCP](https://m
 - `test_secret_detector.py` – 29 tests (13 secret patterns, redaction, severity filtering, recommendations, edge cases)
 - `test_mcp_integration.py` – 32 integration tests (MCP tool calls with live Docker containers)
 
-**CI runs:** `pytest tests/ -m "not integration"` (excludes Docker-dependent tests)
+**CI runs:** `pytest tests/ -m "not integration" --cov=docker_log_analyzer` (unit tests, ~95 tests)
 
 ## Architecture
 
