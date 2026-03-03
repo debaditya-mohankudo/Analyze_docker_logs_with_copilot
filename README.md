@@ -95,6 +95,48 @@ docker compose -f docker-compose.test.yml up --build -d
 docker compose -f docker-compose.test.yml down
 ```
 
+## Example Copilot Prompts
+
+Use these natural language prompts in VSCode Copilot Chat (Agent mode) to invoke the tools:
+
+### Discovery
+
+> "What Docker containers are currently running?"
+> "List all my running containers and their status."
+
+### Pattern analysis
+
+> "Analyze the log patterns for the test-database container."
+> "What log format and programming language is test-web-app using?"
+> "Show me the log level distribution and top errors for test-gateway."
+> "Are there any health check endpoints being hit frequently in test-cache?"
+
+### Error spike detection
+
+> "Check for error spikes across all containers in the last 1000 lines."
+> "Detect error spikes in test-database with a threshold of 1.5."
+> "Are there any error rate anomalies in my containers right now?"
+> "Which containers had the worst error spikes in the last few minutes?"
+
+### Cross-container correlation
+
+> "Are there any correlated errors between my containers?"
+> "Correlate container errors using a 60-second time window."
+> "Which containers are failing together? Use a 30-second co-occurrence window."
+> "Is test-gateway causing failures in test-web-app and test-database?"
+
+### Test containers
+
+> "Start the test log generator containers."
+> "Start the test containers and rebuild the images."
+> "Stop the test containers."
+
+### Combined investigation
+
+> "List my containers, then check for error spikes and tell me which ones are most correlated."
+> "My app seems unhealthy — analyze patterns and detect spikes across all containers."
+> "Check if test-web-app and test-database are failing at the same time."
+
 ## Development
 
 ### Run tests
