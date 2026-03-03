@@ -79,3 +79,4 @@ ci | pyproject.toml | Add pytest markers (unit, integration), testpaths=tests, a
 ci | conftest | Session-scoped docker_client fixture with graceful skip; synthetic log fixtures for spike/correlator/pattern tests
 refactor | cache | Change pattern cache key from (name + short_id) to (name only); persists across container restarts for better performance
 docs | README | Update cache documentation: explain manual cleanup via `rm .cache/patterns/<name>.json` when log pattern changes (rare scenario)
+ci | .github/workflows/tests.yml | Add GitHub Actions workflow: run unit tests on push/PR to main, skip markdown-only changes; separate integration test job with Docker support
