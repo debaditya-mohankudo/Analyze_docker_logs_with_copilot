@@ -28,12 +28,13 @@ jobs:
         uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
+          cache-dependency-path: uv.lock
 
       - name: Install dependencies
         run: uv sync
 
-      - name: Run unit tests
-        run: uv run pytest tests/ -v -m unit
+      - name: Run unit tests in parallel
+        run: uv run pytest tests/ -v -m unit -n auto
 
       - name: Upload test results
         if: always()
@@ -58,6 +59,7 @@ jobs:
         uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
+          cache-dependency-path: uv.lock
 
       - name: Install dependencies
         run: uv sync

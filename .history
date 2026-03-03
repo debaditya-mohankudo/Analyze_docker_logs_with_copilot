@@ -81,3 +81,4 @@ refactor | cache | Change pattern cache key from (name + short_id) to (name only
 docs | README | Update cache documentation: explain manual cleanup via `rm .cache/patterns/<name>.json` when log pattern changes (rare scenario)
 ci | .github/workflows/tests.yml | Add GitHub Actions workflow: run unit tests on push/PR to main, skip markdown-only changes; separate integration test job with Docker support
 ci | .github/workflows/tests.yml | Update: run integration tests only on push (after PR merge), unit tests on both push and pull_request
+ci | .github/workflows/tests.yml, pyproject.toml | Add pytest-xdist for parallel unit testing; enable uv.lock caching via cache-dependency-path
