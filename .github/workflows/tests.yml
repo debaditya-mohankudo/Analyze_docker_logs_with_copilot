@@ -32,8 +32,8 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-extras
 
-      - name: Run unit tests in parallel
-        run: uv run pytest tests/ -v -m unit -n auto --durations=10
+      - name: Run tests (excluding integration tests)
+        run: uv run pytest tests/ -v -m "not integration" -n auto --durations=10
 
       - name: Upload test results
         if: always()
