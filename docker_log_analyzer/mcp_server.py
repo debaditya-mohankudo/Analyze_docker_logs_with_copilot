@@ -18,6 +18,7 @@ import asyncio
 import json
 import logging
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -68,6 +69,17 @@ def _fetch_logs(container, tail: int) -> list[str]:
     """Fetch last `tail` lines from a container with Docker-prepended timestamps."""
     try:
         logs = container.logs(tail=tail, timestamps=True)
+        if isinstance(logs, bytes):
+            logs = logs.decode("utf-8", errors="replace")
+        return logs.splitlines() if logs else []
+    except DockerException:
+        return []
+
+
+def _fetch_logs_window(container, since: datetime, until: datetime) -> list[str]:
+    """Fetch logs produced between `since` and `until` (exact time range)."""
+    try:
+        logs = container.logs(since=since, until=until, timestamps=True)
         if isinstance(logs, bytes):
             logs = logs.decode("utf-8", errors="replace")
         return logs.splitlines() if logs else []
@@ -285,6 +297,105 @@ def tool_stop_test_containers() -> dict:
         return {"status": "error", "error": str(exc)}
 
 
+async def tool_capture_and_analyze(
+    container_names: Optional[list[str]] = None,
+    duration_seconds: int = 120,
+    spike_threshold: float = 2.0,
+    time_window_seconds: int = 30,
+) -> dict:
+    """
+    Capture live logs for `duration_seconds`, then return a combined analysis.
+
+    Designed for bug reproduction: call this, reproduce the issue, and get a
+    unified report of error spikes, cross-container correlation, and per-container
+    log level breakdown for exactly the window you care about.
+    """
+    try:
+        client = _docker_client()
+    except RuntimeError as exc:
+        return {"status": "error", "error": str(exc)}
+
+    if container_names:
+        targets = []
+        for name in container_names:
+            try:
+                targets.append(client.container.inspect(name))
+            except NoSuchContainer:
+                return {"status": "error", "error": f"Container '{name}' not found."}
+    else:
+        targets = client.container.list()
+
+    if not targets:
+        return {"status": "success", "message": "No running containers to monitor."}
+
+    start_time = datetime.now(timezone.utc)
+    logger.info(
+        "capture_and_analyze: watching %d containers for %ds",
+        len(targets), duration_seconds,
+    )
+
+    await asyncio.sleep(duration_seconds)
+
+    end_time = datetime.now(timezone.utc)
+
+    # Fetch only the logs produced during the capture window
+    container_logs: dict[str, list[str]] = {}
+    for c in targets:
+        name = _container_name(c)
+        container_logs[name] = _fetch_logs_window(c, start_time, end_time)
+
+    # Run all analysers on the captured lines
+    detector = PatternDetector()
+    all_spikes: list[dict] = []
+    per_container: dict[str, dict] = {}
+    total_lines = 0
+    total_errors = 0
+    containers_with_errors = 0
+
+    for name, lines in container_logs.items():
+        spikes = detect_spikes(lines, name, window_minutes=1, spike_threshold=spike_threshold)
+        all_spikes.extend(spikes)
+
+        log_levels = detector.extract_log_levels(lines)
+        top_errors = detector.extract_error_patterns(lines)
+        error_count = sum(
+            v for k, v in log_levels.items()
+            if k in ("ERROR", "CRITICAL", "FATAL", "SEVERE")
+        )
+
+        total_lines += len(lines)
+        total_errors += error_count
+        if error_count > 0:
+            containers_with_errors += 1
+
+        per_container[name] = {
+            "lines_captured": len(lines),
+            "log_levels": log_levels,
+            "top_errors": [{"pattern": p, "count": n} for p, n in top_errors],
+        }
+
+    correlations = correlate(container_logs, time_window_seconds)
+
+    return {
+        "status": "success",
+        "capture_window": {
+            "start": start_time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "end":   end_time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "duration_seconds": duration_seconds,
+        },
+        "containers_monitored": list(container_logs.keys()),
+        "summary": {
+            "total_log_lines": total_lines,
+            "total_errors": total_errors,
+            "containers_with_errors": containers_with_errors,
+            "spike_count": len(all_spikes),
+        },
+        "error_spikes": all_spikes,
+        "correlations": correlations,
+        "per_container": per_container,
+    }
+
+
 # ── MCP tool registry ───────────────────────────────────────────────────────
 
 TOOLS = [
@@ -401,6 +512,41 @@ TOOLS = [
         description="Stop and remove the test log-generator containers started by start_test_containers.",
         inputSchema={"type": "object", "properties": {}, "required": []},
     ),
+    Tool(
+        name="capture_and_analyze",
+        description=(
+            "Capture live logs for a specified duration (default 2 minutes) then return a combined "
+            "analysis: error spikes, cross-container correlation, and per-container log level "
+            "breakdown. Designed for bug reproduction — call this, reproduce the issue, and get a "
+            "unified report of exactly what happened across your services during the window."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "container_names": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Containers to monitor. Omit to watch all running containers.",
+                },
+                "duration_seconds": {
+                    "type": "integer",
+                    "description": "Capture window in seconds (default 120 = 2 minutes).",
+                    "default": 120,
+                },
+                "spike_threshold": {
+                    "type": "number",
+                    "description": "Error rate multiplier to flag as a spike (default 2.0).",
+                    "default": 2.0,
+                },
+                "time_window_seconds": {
+                    "type": "integer",
+                    "description": "Co-occurrence window for cross-container correlation (default 30).",
+                    "default": 30,
+                },
+            },
+            "required": [],
+        },
+    ),
 ]
 
 
@@ -444,6 +590,13 @@ def create_mcp_server() -> Server:
                 )
             elif name == "stop_test_containers":
                 result = tool_stop_test_containers()
+            elif name == "capture_and_analyze":
+                result = await tool_capture_and_analyze(
+                    container_names=arguments.get("container_names"),
+                    duration_seconds=int(arguments.get("duration_seconds", 120)),
+                    spike_threshold=float(arguments.get("spike_threshold", 2.0)),
+                    time_window_seconds=int(arguments.get("time_window_seconds", 30)),
+                )
             else:
                 result = {"status": "error", "error": f"Unknown tool: {name}"}
         except Exception as exc:
