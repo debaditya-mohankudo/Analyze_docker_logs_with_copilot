@@ -49,7 +49,10 @@ _containers_started = False
 
 @pytest.fixture(scope="session", autouse=True)
 def setup_integration_containers(request):
-    """Start test containers at session start for integration tests, stop at end."""
+    """Start test containers at session start for integration tests, stop at end.
+    
+    Integration tests are run locally before commits. This fixture is for local development.
+    """
     global _containers_started
     
     # Check if integration tests are being run
