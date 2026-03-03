@@ -86,3 +86,4 @@ refactor | mcp_server | Replace 5 inline lambda expressions with explicit wrappe
 refactor | mcp_server | Improves code readability, debuggability, and follows Pythonic idioms; meaningful function names in stack traces
 refactor | mcp_server | Maintains 100% backward compatibility; all 66 unit tests pass without modification
 quality | code | ✨ Excellent code quality update: lambda → explicit wrappers completes comprehensive refactoring initiative (CI optimization + test perf + registry pattern + idiom improvements)
+feature | secret_detector | New security scanning module for detecting sensitive data in logs
