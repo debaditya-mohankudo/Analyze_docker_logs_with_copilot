@@ -35,9 +35,9 @@ jobs:
       - name: Run unit tests in parallel
         run: uv run pytest tests/ -v -m unit -n auto --durations=10
 
-      - name: Run integration tests in parallel
+      - name: Run integration tests (serial)
         if: github.event_name == 'push'
-        run: uv run pytest tests/ -v -m integration -n auto --durations=10
+        run: uv run pytest tests/ -v -m integration --durations=10
 
       - name: Upload test results
         if: always()

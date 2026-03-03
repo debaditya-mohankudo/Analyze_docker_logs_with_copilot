@@ -44,12 +44,17 @@ def docker_client():
         pytest.skip(f"Docker unavailable: {exc}")
 
 
+_containers_started = False
+
+
 @pytest.fixture(scope="session", autouse=True)
-def setup_test_containers(request):
-    """Start test containers before integration tests, stop after they complete."""
-    # Check if integration tests are in the collected items
+def setup_integration_containers(request):
+    """Start test containers at session start for integration tests, stop at end."""
+    global _containers_started
+    
+    # Check if integration tests are being run
     has_integration = any(
-        item.get_closest_marker("integration") 
+        item.get_closest_marker("integration")
         for item in request.session.items
     )
     
@@ -59,12 +64,13 @@ def setup_test_containers(request):
     
     from docker_log_analyzer.mcp_server import tool_start_test_containers, tool_stop_test_containers
     
-    # Start containers before any tests
+    # Start containers
     result = tool_start_test_containers(rebuild=False)
     if result["status"] == "error":
         pytest.skip(f"Failed to start test containers: {result.get('error')}")
     
-    yield  # Run all tests
+    _containers_started = True
+    yield
     
     # Stop containers after all tests
     tool_stop_test_containers()
