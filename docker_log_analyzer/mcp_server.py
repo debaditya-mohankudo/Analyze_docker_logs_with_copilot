@@ -297,11 +297,14 @@ def tool_correlate_containers(
         return {"status": "error", "error": str(exc)}
 
     running = client.container.list()
+    parameters = {"time_window_seconds": time_window_seconds, "tail": tail}
+    
     if len(running) < 2:
         return {
             "status": "success",
             "correlations": [],
             "message": "Need at least 2 running containers to correlate.",
+            "parameters": parameters,
         }
 
     container_logs = {_container_name(c): _fetch_logs(c, tail) for c in running}
@@ -310,7 +313,7 @@ def tool_correlate_containers(
     return {
         "status": "success",
         "correlations": correlations,
-        "parameters": {"time_window_seconds": time_window_seconds, "tail": tail},
+        "parameters": parameters,
     }
 
 
