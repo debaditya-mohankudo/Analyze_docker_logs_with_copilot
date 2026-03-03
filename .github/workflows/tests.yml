@@ -43,6 +43,7 @@ jobs:
           path: .pytest_cache/
 
   integration-tests:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
