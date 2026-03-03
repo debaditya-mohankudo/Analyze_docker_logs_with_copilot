@@ -30,7 +30,7 @@ jobs:
           enable-cache: true
 
       - name: Install dependencies
-        run: uv sync
+        run: uv sync --all-extras
 
       - name: Run unit tests in parallel
         run: uv run pytest tests/ -v -m unit -n auto
@@ -60,7 +60,7 @@ jobs:
           enable-cache: true
 
       - name: Install dependencies
-        run: uv sync
+        run: uv sync --all-extras
 
       - name: Run integration tests
         run: uv run pytest tests/ -v -m integration
