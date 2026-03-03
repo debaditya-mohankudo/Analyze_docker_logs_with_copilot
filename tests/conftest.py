@@ -21,6 +21,14 @@ from python_on_whales.exceptions import DockerException
 def pytest_configure(config):
     config.addinivalue_line("markers", "unit: fast tests, no Docker required")
     config.addinivalue_line("markers", "integration: requires Docker daemon and running test containers")
+    config.addinivalue_line("markers", "serial: tests that must run sequentially")
+
+
+def pytest_collection_modifyitems(config, items):
+    """Use xdist_group to prevent parallel execution of serial-marked tests."""
+    for item in items:
+        if item.get_closest_marker("serial"):
+            item.add_marker(pytest.mark.xdist_group(name="serial"))
 
 
 # ── Docker availability ───────────────────────────────────────────────────────
@@ -34,6 +42,22 @@ def docker_client():
         return client
     except DockerException as exc:
         pytest.skip(f"Docker unavailable: {exc}")
+
+
+@pytest.fixture(scope="session", autouse=True)
+def setup_test_containers(docker_client):
+    """Start test containers at session start, stop at session end."""
+    from docker_log_analyzer.mcp_server import tool_start_test_containers, tool_stop_test_containers
+    
+    # Start containers before any tests
+    result = tool_start_test_containers(rebuild=False)
+    if result["status"] == "error":
+        pytest.skip(f"Failed to start test containers: {result.get('error')}")
+    
+    yield  # Run all tests
+    
+    # Stop containers after all tests
+    tool_stop_test_containers()
 
 
 # ── Synthetic log helpers ─────────────────────────────────────────────────────

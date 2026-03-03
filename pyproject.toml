@@ -62,4 +62,8 @@ addopts = "-v --tb=short"
 markers = [
     "unit: fast tests, no Docker required",
     "integration: requires Docker daemon running",
+    "serial: tests that must run sequentially (not in parallel)",
 ]
+
+[tool.pytest-xdist]
+looptestpath = "tests"
