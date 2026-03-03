@@ -14,8 +14,8 @@ Run all (unit + integration, Docker must be running):
 
 import pytest
 
-import docker
-import docker.errors
+from python_on_whales import DockerClient
+from python_on_whales.exceptions import DockerException
 
 
 def pytest_configure(config):
@@ -27,12 +27,12 @@ def pytest_configure(config):
 
 @pytest.fixture(scope="session")
 def docker_client():
-    """Return a Docker client, or skip the test if Docker is unavailable."""
+    """Return a DockerClient, or skip the test if Docker is unavailable."""
     try:
-        client = docker.from_env()
-        client.ping()
+        client = DockerClient()
+        client.system.info()
         return client
-    except docker.errors.DockerException as exc:
+    except DockerException as exc:
         pytest.skip(f"Docker unavailable: {exc}")
 
 

@@ -1,7 +1,7 @@
 """
 MCP Server for Docker Log Pattern Analysis (non-LLM).
 
-Exposes 4 tools to VSCode Copilot Agent Mode via .vscode/mcp.json:
+Exposes 6 tools to VSCode Copilot Agent Mode via .vscode/mcp.json:
 
   list_containers        – discover running Docker containers
   analyze_patterns       – PatternDetector per container (timestamps, language, log levels)
@@ -11,18 +11,18 @@ Exposes 4 tools to VSCode Copilot Agent Mode via .vscode/mcp.json:
   stop_test_containers   – stop and remove test log-generator containers
 
 All tools are stateless (fetch → analyse → return JSON). No external API calls.
+Uses python-on-whales (CLI wrapper) instead of docker-py; compose is native, no subprocess.
 """
 
 import asyncio
 import json
 import logging
-import subprocess
 import sys
 from pathlib import Path
 from typing import Optional
 
-import docker
-import docker.errors
+from python_on_whales import DockerClient
+from python_on_whales.exceptions import DockerException, NoSuchContainer
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
@@ -47,25 +47,37 @@ logger = logging.getLogger(__name__)
 
 # ── Docker helpers ──────────────────────────────────────────────────────────
 
-def _docker_client() -> docker.DockerClient:
+def _docker_client() -> DockerClient:
     """Connect to Docker daemon; raise RuntimeError with readable message on failure."""
     try:
-        client = docker.from_env()
-        client.ping()
+        client = DockerClient()
+        client.system.info()   # connectivity check – raises DockerException if daemon is down
         return client
-    except docker.errors.DockerException as exc:
+    except DockerException as exc:
         raise RuntimeError(
             f"Cannot connect to Docker daemon – is Docker running? ({exc})"
         ) from exc
 
 
+def _compose_client() -> DockerClient:
+    """Return a DockerClient pre-configured with the test compose file."""
+    return DockerClient(compose_files=[str(COMPOSE_FILE)])
+
+
 def _fetch_logs(container, tail: int) -> list[str]:
     """Fetch last `tail` lines from a container with Docker-prepended timestamps."""
     try:
-        raw = container.logs(tail=tail, timestamps=True)
-        return raw.decode("utf-8", errors="replace").splitlines()
-    except docker.errors.APIError:
+        logs = container.logs(tail=tail, timestamps=True)
+        if isinstance(logs, bytes):
+            logs = logs.decode("utf-8", errors="replace")
+        return logs.splitlines() if logs else []
+    except DockerException:
         return []
+
+
+def _container_name(c) -> str:
+    """Return clean container name (strip leading slash if present)."""
+    return c.name.lstrip("/")
 
 
 # ── Tool implementations ────────────────────────────────────────────────────
@@ -79,13 +91,13 @@ def tool_list_containers() -> dict:
 
     containers = [
         {
-            "name": c.name,
-            "short_id": c.short_id,
-            "image": c.image.tags[0] if c.image.tags else c.image.short_id,
-            "status": c.status,
-            "labels": c.labels,
+            "name": _container_name(c),
+            "short_id": c.id[:12],
+            "image": c.config.image,
+            "status": c.state.status,
+            "labels": c.config.labels,
         }
-        for c in client.containers.list()
+        for c in client.container.list()
     ]
     return {"status": "success", "containers": containers, "count": len(containers)}
 
@@ -102,11 +114,11 @@ def tool_analyze_patterns(
 
     if container_name:
         try:
-            targets = [client.containers.get(container_name)]
-        except docker.errors.NotFound:
+            targets = [client.container.inspect(container_name)]
+        except NoSuchContainer:
             return {"status": "error", "error": f"Container '{container_name}' not found."}
     else:
-        targets = client.containers.list()
+        targets = client.container.list()
 
     if not targets:
         return {"status": "success", "results": {}, "message": "No running containers."}
@@ -115,9 +127,10 @@ def tool_analyze_patterns(
     results = {}
 
     for c in targets:
+        name = _container_name(c)
         lines = _fetch_logs(c, tail)
         if not lines:
-            results[c.name] = {"status": "no_logs"}
+            results[name] = {"status": "no_logs"}
             continue
 
         ts_format = "unknown"
@@ -133,8 +146,8 @@ def tool_analyze_patterns(
         health_check = detector.detect_health_checks(lines)
         common_errors = detector.extract_error_patterns(lines)
 
-        results[c.name] = {
-            "container_id": c.short_id,
+        results[name] = {
+            "container_id": c.id[:12],
             "total_lines": len(lines),
             "timestamp_format": ts_format,
             "timestamp_sample": ts_sample[:60],
@@ -168,26 +181,27 @@ def tool_detect_error_spikes(
 
     if container_name:
         try:
-            targets = [client.containers.get(container_name)]
-        except docker.errors.NotFound:
+            targets = [client.container.inspect(container_name)]
+        except NoSuchContainer:
             return {"status": "error", "error": f"Container '{container_name}' not found."}
     else:
-        targets = client.containers.list()
+        targets = client.container.list()
 
     all_spikes = []
     no_timestamp_containers = []
 
     for c in targets:
+        name = _container_name(c)
         lines = _fetch_logs(c, tail)
         if not lines:
             continue
-        spikes = detect_spikes(lines, c.name, window_minutes, spike_threshold)
+        spikes = detect_spikes(lines, name, window_minutes, spike_threshold)
         if spikes:
             all_spikes.extend(spikes)
         else:
             has_timestamps = any(DOCKER_TS_RE.match(l.strip()) for l in lines[:20])
             if not has_timestamps:
-                no_timestamp_containers.append(c.name)
+                no_timestamp_containers.append(name)
 
     all_spikes.sort(key=lambda x: (x["bucket_minute"], x["container"]))
 
@@ -217,7 +231,7 @@ def tool_correlate_containers(
     except RuntimeError as exc:
         return {"status": "error", "error": str(exc)}
 
-    running = client.containers.list()
+    running = client.container.list()
     if len(running) < 2:
         return {
             "status": "success",
@@ -225,7 +239,7 @@ def tool_correlate_containers(
             "message": "Need at least 2 running containers to correlate.",
         }
 
-    container_logs = {c.name: _fetch_logs(c, tail) for c in running}
+    container_logs = {_container_name(c): _fetch_logs(c, tail) for c in running}
     correlations = correlate(container_logs, time_window_seconds)
 
     return {
@@ -235,47 +249,40 @@ def tool_correlate_containers(
     }
 
 
-def _run_compose(args: list[str], timeout: int = 120) -> dict:
-    """Run a docker compose command against COMPOSE_FILE; return result dict."""
-    if not COMPOSE_FILE.exists():
-        return {"status": "error", "error": f"Compose file not found: {COMPOSE_FILE}"}
-
-    cmd = ["docker", "compose", "-f", str(COMPOSE_FILE)] + args
-    logger.debug("Running: %s", " ".join(cmd))
-    try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
-        output = (result.stdout + result.stderr).strip()
-        if result.returncode != 0:
-            return {"status": "error", "error": output, "returncode": result.returncode}
-        return {"status": "success", "output": output}
-    except subprocess.TimeoutExpired:
-        return {"status": "error", "error": f"docker compose timed out after {timeout}s"}
-    except FileNotFoundError:
-        return {"status": "error", "error": "docker compose not found in PATH"}
-
-
 def tool_start_test_containers(rebuild: bool = False) -> dict:
     """Build (if needed) and start the test log-generator containers in detached mode."""
-    args = ["up", "-d"]
-    if rebuild:
-        args.append("--build")
-    result = _run_compose(args, timeout=180)
-    if result["status"] == "success":
-        result["message"] = (
-            "Test containers started. Use list_containers to see them, "
-            "or analyze_patterns / detect_error_spikes once logs accumulate."
-        )
-        result["compose_file"] = str(COMPOSE_FILE)
-    return result
+    if not COMPOSE_FILE.exists():
+        return {"status": "error", "error": f"Compose file not found: {COMPOSE_FILE}"}
+    try:
+        client = _compose_client()
+        client.compose.up(detach=True, build=rebuild)
+        return {
+            "status": "success",
+            "output": "Containers started successfully.",
+            "message": (
+                "Test containers started. Use list_containers to see them, "
+                "or analyze_patterns / detect_error_spikes once logs accumulate."
+            ),
+            "compose_file": str(COMPOSE_FILE),
+        }
+    except DockerException as exc:
+        return {"status": "error", "error": str(exc)}
 
 
 def tool_stop_test_containers() -> dict:
     """Stop and remove the test log-generator containers."""
-    result = _run_compose(["down"], timeout=60)
-    if result["status"] == "success":
-        result["message"] = "Test containers stopped and removed."
-        result["compose_file"] = str(COMPOSE_FILE)
-    return result
+    if not COMPOSE_FILE.exists():
+        return {"status": "error", "error": f"Compose file not found: {COMPOSE_FILE}"}
+    try:
+        client = _compose_client()
+        client.compose.down()
+        return {
+            "status": "success",
+            "message": "Test containers stopped and removed.",
+            "compose_file": str(COMPOSE_FILE),
+        }
+    except DockerException as exc:
+        return {"status": "error", "error": str(exc)}
 
 
 # ── MCP tool registry ───────────────────────────────────────────────────────
