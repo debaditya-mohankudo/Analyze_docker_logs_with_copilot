@@ -37,6 +37,9 @@ from .spike_detector import DOCKER_TS_RE, detect_spikes
 _REPO_ROOT = Path(__file__).parent.parent
 COMPOSE_FILE = _REPO_ROOT / "docker-compose.test.yml"
 
+# Pattern analysis cache (keyed by container name + short_id)
+_CACHE_DIR = _REPO_ROOT / ".cache" / "patterns"
+
 # ── Logging (stderr only; stdout is the MCP JSON stream) ───────────────────
 logging.basicConfig(
     level=logging.DEBUG,
@@ -44,6 +47,25 @@ logging.basicConfig(
     stream=sys.stderr,
 )
 logger = logging.getLogger(__name__)
+
+
+# ── Pattern cache helpers ────────────────────────────────────────────────────
+
+def _cache_path(container_name: str, short_id: str) -> Path:
+    safe = container_name.replace("/", "_")
+    return _CACHE_DIR / f"{safe}_{short_id}.json"
+
+
+def _read_cache(container_name: str, short_id: str) -> Optional[dict]:
+    path = _cache_path(container_name, short_id)
+    if path.exists():
+        return json.loads(path.read_text())
+    return None
+
+
+def _write_cache(container_name: str, short_id: str, data: dict) -> None:
+    _CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    _cache_path(container_name, short_id).write_text(json.dumps(data, indent=2))
 
 
 # ── Docker helpers ──────────────────────────────────────────────────────────
@@ -117,8 +139,13 @@ def tool_list_containers() -> dict:
 def tool_analyze_patterns(
     container_name: Optional[str] = None,
     tail: int = 500,
+    force_refresh: bool = False,
 ) -> dict:
-    """Fetch logs and run PatternDetector against one or all containers."""
+    """Fetch logs and run PatternDetector against one or all containers.
+
+    Results are cached per container (keyed by name + short_id). Pass
+    force_refresh=True to bypass the cache and re-analyse.
+    """
     try:
         client = _docker_client()
     except RuntimeError as exc:
@@ -140,6 +167,16 @@ def tool_analyze_patterns(
 
     for c in targets:
         name = _container_name(c)
+        short_id = c.id[:12]
+
+        # Return cached result if available and not forcing a refresh
+        if not force_refresh:
+            cached = _read_cache(name, short_id)
+            if cached is not None:
+                results[name] = cached
+                logger.debug("Cache hit for container '%s' (%s)", name, short_id)
+                continue
+
         lines = _fetch_logs(c, tail)
         if not lines:
             results[name] = {"status": "no_logs"}
@@ -158,8 +195,8 @@ def tool_analyze_patterns(
         health_check = detector.detect_health_checks(lines)
         common_errors = detector.extract_error_patterns(lines)
 
-        results[name] = {
-            "container_id": c.id[:12],
+        entry = {
+            "container_id": short_id,
             "total_lines": len(lines),
             "timestamp_format": ts_format,
             "timestamp_sample": ts_sample[:60],
@@ -174,7 +211,17 @@ def tool_analyze_patterns(
                 ),
             },
             "common_errors": [{"pattern": p, "count": n} for p, n in common_errors],
+            "cache_hit": False,
+            "cached_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         }
+
+        _write_cache(name, short_id, entry)
+        results[name] = entry
+
+    # Tag cache hits in the response
+    for name, entry in results.items():
+        if "cache_hit" not in entry:
+            entry["cache_hit"] = True
 
     return {"status": "success", "results": results}
 
@@ -423,6 +470,14 @@ TOOLS = [
                     "description": "Number of recent log lines to fetch (default 500).",
                     "default": 500,
                 },
+                "force_refresh": {
+                    "type": "boolean",
+                    "description": (
+                        "Bypass the on-disk cache and re-analyse live logs. "
+                        "Use when the service has changed significantly since the last analysis."
+                    ),
+                    "default": False,
+                },
             },
             "required": [],
         },
@@ -569,6 +624,7 @@ def create_mcp_server() -> Server:
                 result = tool_analyze_patterns(
                     container_name=arguments.get("container_name"),
                     tail=int(arguments.get("tail", config.DEFAULT_TAIL_LINES)),
+                    force_refresh=bool(arguments.get("force_refresh", False)),
                 )
             elif name == "detect_error_spikes":
                 result = tool_detect_error_spikes(

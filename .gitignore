@@ -18,9 +18,8 @@ ENV/
 *.swp
 *.swo
 
-# Kafka data (if running locally)
-kafka-data/
-zookeeper-data/
+# Pattern analysis cache
+.cache/
 
 # Logs
 *.log
