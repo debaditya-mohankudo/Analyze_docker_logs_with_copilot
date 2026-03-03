@@ -45,8 +45,18 @@ def docker_client():
 
 
 @pytest.fixture(scope="session", autouse=True)
-def setup_test_containers(docker_client):
-    """Start test containers at session start, stop at session end."""
+def setup_test_containers(request):
+    """Start test containers before integration tests, stop after they complete."""
+    # Check if integration tests are in the collected items
+    has_integration = any(
+        item.get_closest_marker("integration") 
+        for item in request.session.items
+    )
+    
+    if not has_integration:
+        yield
+        return
+    
     from docker_log_analyzer.mcp_server import tool_start_test_containers, tool_stop_test_containers
     
     # Start containers before any tests

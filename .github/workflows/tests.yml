@@ -33,11 +33,11 @@ jobs:
         run: uv sync --all-extras
 
       - name: Run unit tests in parallel
-        run: uv run pytest tests/ -v -m unit -n auto
+        run: uv run pytest tests/ -v -m unit -n auto --durations=10
 
       - name: Run integration tests in parallel
         if: github.event_name == 'push'
-        run: uv run pytest tests/ -v -m integration -n auto
+        run: uv run pytest tests/ -v -m integration -n auto --durations=10
 
       - name: Upload test results
         if: always()
