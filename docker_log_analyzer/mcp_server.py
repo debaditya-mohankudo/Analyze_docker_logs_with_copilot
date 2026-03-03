@@ -452,22 +452,120 @@ async def tool_capture_and_analyze(
     }
 
 
-# ── MCP tool registry ───────────────────────────────────────────────────────
+# ── Tool wrapper functions (for registry) ──────────────────────────────────
 
-TOOLS = [
-    Tool(
-        name="list_containers",
-        description="List all running Docker containers with name, image, status, and labels.",
-        inputSchema={"type": "object", "properties": {}, "required": []},
-    ),
-    Tool(
-        name="analyze_patterns",
-        description=(
+def _wrap_analyze_patterns(**kwargs) -> dict:
+    """Wrapper for analyze_patterns with argument unpacking."""
+    return tool_analyze_patterns(
+        container_name=kwargs.get("container_name"),
+        tail=int(kwargs.get("tail", config.DEFAULT_TAIL_LINES)),
+        force_refresh=bool(kwargs.get("force_refresh", False)),
+    )
+
+
+def _wrap_detect_error_spikes(**kwargs) -> dict:
+    """Wrapper for detect_error_spikes with argument unpacking."""
+    return tool_detect_error_spikes(
+        container_name=kwargs.get("container_name"),
+        tail=int(kwargs.get("tail", config.DEFAULT_SPIKE_TAIL_LINES)),
+        window_minutes=int(kwargs.get("window_minutes", config.DEFAULT_WINDOW_MINUTES)),
+        spike_threshold=float(kwargs.get("spike_threshold", config.DEFAULT_SPIKE_THRESHOLD)),
+    )
+
+
+def _wrap_correlate_containers(**kwargs) -> dict:
+    """Wrapper for correlate_containers with argument unpacking."""
+    return tool_correlate_containers(
+        time_window_seconds=int(
+            kwargs.get("time_window_seconds", config.DEFAULT_CORRELATION_WINDOW_SECONDS)
+        ),
+        tail=int(kwargs.get("tail", config.DEFAULT_TAIL_LINES)),
+    )
+
+
+def _wrap_start_test_containers(**kwargs) -> dict:
+    """Wrapper for start_test_containers with argument unpacking."""
+    return tool_start_test_containers(
+        rebuild=bool(kwargs.get("rebuild", False)),
+    )
+
+
+def _wrap_capture_and_analyze(**kwargs) -> dict:
+    """Wrapper for capture_and_analyze with argument unpacking."""
+    return asyncio.run(tool_capture_and_analyze(
+        container_names=kwargs.get("container_names"),
+        duration_seconds=int(kwargs.get("duration_seconds", 120)),
+        spike_threshold=float(kwargs.get("spike_threshold", 2.0)),
+        time_window_seconds=int(kwargs.get("time_window_seconds", 30)),
+    ))
+
+
+# ── Tool registry (replaces if/elif dispatch) ──────────────────────────────
+
+class ToolRegistry:
+    """Registry pattern for MCP tools."""
+    
+    def __init__(self):
+        self._tools: dict[str, dict] = {}
+    
+    def register(self, name: str, handler, schema: dict):
+        """Register a tool with its handler and JSON schema."""
+        self._tools[name] = {
+            "handler": handler,
+            "schema": schema,
+        }
+    
+    def get_handler(self, name: str):
+        """Get the handler function for a tool."""
+        if name not in self._tools:
+            return None
+        return self._tools[name]["handler"]
+    
+    def get_schema(self, name: str) -> dict:
+        """Get the JSON schema for a tool."""
+        if name not in self._tools:
+            return {}
+        return self._tools[name]["schema"]
+    
+    def list_tools(self) -> list[Tool]:
+        """Generate Tool objects for all registered tools."""
+        tools = []
+        for name, tool_def in self._tools.items():
+            schema = tool_def["schema"]
+            tools.append(
+                Tool(
+                    name=name,
+                    description=schema.get("description", ""),
+                    inputSchema=schema.get("inputSchema", {"type": "object", "properties": {}, "required": []}),
+                )
+            )
+        return tools
+
+
+# Create the global registry
+_registry = ToolRegistry()
+
+
+# Register all tools
+_registry.register(
+    "list_containers",
+    tool_list_containers,
+    {
+        "description": "List all running Docker containers with name, image, status, and labels.",
+        "inputSchema": {"type": "object", "properties": {}, "required": []},
+    }
+)
+
+_registry.register(
+    "analyze_patterns",
+    _wrap_analyze_patterns,
+    {
+        "description": (
             "Fetch Docker container logs and detect patterns: timestamp format, "
             "programming language, log level distribution, health check frequency, "
             "and common error patterns. No LLM required."
         ),
-        inputSchema={
+        "inputSchema": {
             "type": "object",
             "properties": {
                 "container_name": {
@@ -490,15 +588,19 @@ TOOLS = [
             },
             "required": [],
         },
-    ),
-    Tool(
-        name="detect_error_spikes",
-        description=(
+    }
+)
+
+_registry.register(
+    "detect_error_spikes",
+    _wrap_detect_error_spikes,
+    {
+        "description": (
             "Detect error spikes in Docker container logs using Polars rolling-window analysis. "
             "Flags 1-minute buckets where error count exceeds spike_threshold × rolling baseline. "
             "No LLM required."
         ),
-        inputSchema={
+        "inputSchema": {
             "type": "object",
             "properties": {
                 "container_name": {
@@ -526,15 +628,19 @@ TOOLS = [
             },
             "required": [],
         },
-    ),
-    Tool(
-        name="correlate_containers",
-        description=(
+    }
+)
+
+_registry.register(
+    "correlate_containers",
+    _wrap_correlate_containers,
+    {
+        "description": (
             "Compute pairwise temporal correlation of errors across all running containers. "
             "Returns container pairs sorted by correlation score (0–1) with example "
             "co-occurring error lines. No LLM required."
         ),
-        inputSchema={
+        "inputSchema": {
             "type": "object",
             "properties": {
                 "time_window_seconds": {
@@ -550,16 +656,20 @@ TOOLS = [
             },
             "required": [],
         },
-    ),
-    Tool(
-        name="start_test_containers",
-        description=(
+    }
+)
+
+_registry.register(
+    "start_test_containers",
+    _wrap_start_test_containers,
+    {
+        "description": (
             "Build and start the test log-generator containers defined in docker-compose.test.yml. "
             "Spins up 4 containers (web-app, database, cache, gateway) that emit random logs "
             "in different formats (ISO-8601, syslog, epoch, Apache) and languages "
             "(Python, Java, Go, Node.js) with periodic error spikes for testing."
         ),
-        inputSchema={
+        "inputSchema": {
             "type": "object",
             "properties": {
                 "rebuild": {
@@ -570,21 +680,29 @@ TOOLS = [
             },
             "required": [],
         },
-    ),
-    Tool(
-        name="stop_test_containers",
-        description="Stop and remove the test log-generator containers started by start_test_containers.",
-        inputSchema={"type": "object", "properties": {}, "required": []},
-    ),
-    Tool(
-        name="capture_and_analyze",
-        description=(
+    }
+)
+
+_registry.register(
+    "stop_test_containers",
+    tool_stop_test_containers,
+    {
+        "description": "Stop and remove the test log-generator containers started by start_test_containers.",
+        "inputSchema": {"type": "object", "properties": {}, "required": []},
+    }
+)
+
+_registry.register(
+    "capture_and_analyze",
+    _wrap_capture_and_analyze,
+    {
+        "description": (
             "Capture live logs for a specified duration (default 2 minutes) then return a combined "
             "analysis: error spikes, cross-container correlation, and per-container log level "
             "breakdown. Designed for bug reproduction — call this, reproduce the issue, and get a "
             "unified report of exactly what happened across your services during the window."
         ),
-        inputSchema={
+        "inputSchema": {
             "type": "object",
             "properties": {
                 "container_names": {
@@ -610,8 +728,12 @@ TOOLS = [
             },
             "required": [],
         },
-    ),
-]
+    }
+)
+
+
+# Backward compatibility: export TOOLS list from registry
+TOOLS = _registry.list_tools()
 
 
 # ── MCP server wiring ───────────────────────────────────────────────────────
@@ -621,49 +743,17 @@ def create_mcp_server() -> Server:
 
     @server.list_tools()
     async def list_tools():
-        return TOOLS
+        return _registry.list_tools()
 
     @server.call_tool()
     async def call_tool(name: str, arguments: dict):
         logger.debug("Tool called: %s, args: %s", name, arguments)
         try:
-            if name == "list_containers":
-                result = tool_list_containers()
-            elif name == "analyze_patterns":
-                result = tool_analyze_patterns(
-                    container_name=arguments.get("container_name"),
-                    tail=int(arguments.get("tail", config.DEFAULT_TAIL_LINES)),
-                    force_refresh=bool(arguments.get("force_refresh", False)),
-                )
-            elif name == "detect_error_spikes":
-                result = tool_detect_error_spikes(
-                    container_name=arguments.get("container_name"),
-                    tail=int(arguments.get("tail", config.DEFAULT_SPIKE_TAIL_LINES)),
-                    window_minutes=int(arguments.get("window_minutes", config.DEFAULT_WINDOW_MINUTES)),
-                    spike_threshold=float(arguments.get("spike_threshold", config.DEFAULT_SPIKE_THRESHOLD)),
-                )
-            elif name == "correlate_containers":
-                result = tool_correlate_containers(
-                    time_window_seconds=int(
-                        arguments.get("time_window_seconds", config.DEFAULT_CORRELATION_WINDOW_SECONDS)
-                    ),
-                    tail=int(arguments.get("tail", config.DEFAULT_TAIL_LINES)),
-                )
-            elif name == "start_test_containers":
-                result = tool_start_test_containers(
-                    rebuild=bool(arguments.get("rebuild", False)),
-                )
-            elif name == "stop_test_containers":
-                result = tool_stop_test_containers()
-            elif name == "capture_and_analyze":
-                result = await tool_capture_and_analyze(
-                    container_names=arguments.get("container_names"),
-                    duration_seconds=int(arguments.get("duration_seconds", 120)),
-                    spike_threshold=float(arguments.get("spike_threshold", 2.0)),
-                    time_window_seconds=int(arguments.get("time_window_seconds", 30)),
-                )
-            else:
+            handler = _registry.get_handler(name)
+            if handler is None:
                 result = {"status": "error", "error": f"Unknown tool: {name}"}
+            else:
+                result = handler(**arguments)
         except Exception as exc:
             logger.exception("Unhandled error in tool '%s'", name)
             result = {"status": "error", "error": str(exc)}
