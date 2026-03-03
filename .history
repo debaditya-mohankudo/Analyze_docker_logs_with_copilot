@@ -82,3 +82,7 @@ docs | README | Update cache documentation: explain manual cleanup via `rm .cach
 ci | .github/workflows/tests.yml | Add GitHub Actions workflow: run unit tests on push/PR to main, skip markdown-only changes; separate integration test job with Docker support
 ci | .github/workflows/tests.yml | Update: run integration tests only on push (after PR merge), unit tests on both push and pull_request
 ci | .github/workflows/tests.yml, pyproject.toml | Add pytest-xdist for parallel unit testing; enable uv.lock caching via cache-dependency-path
+refactor | mcp_server | Replace 5 inline lambda expressions with explicit wrapper functions (_wrap_*)
+refactor | mcp_server | Improves code readability, debuggability, and follows Pythonic idioms; meaningful function names in stack traces
+refactor | mcp_server | Maintains 100% backward compatibility; all 66 unit tests pass without modification
+quality | code | ✨ Excellent code quality update: lambda → explicit wrappers completes comprehensive refactoring initiative (CI optimization + test perf + registry pattern + idiom improvements)
