@@ -7,6 +7,7 @@ A stateless, **LLM-free** Docker log analysis tool exposed as an [MCP](https://m
 - **Pattern Detection** – identifies timestamp format (ISO-8601, syslog, epoch, Apache) and programming language (Python, Java, Go, Node.js) from log lines
 - **Error Spike Detection** – Polars rolling-window analysis flags minute-buckets where error rate exceeds a configurable baseline multiplier
 - **Cross-Container Correlation** – pairwise temporal scoring of error co-occurrence across containers (score 0–1)
+- **Sensitive Data Detection** – scans logs for secrets (API keys, tokens, credentials, credit cards) with severity filtering and redaction
 - **Copilot Agent Mode** – registered as an MCP stdio server; Copilot orchestrates via chat, every tool runs locally
 
 ## Architecture
@@ -21,6 +22,7 @@ docker-log-analyzer-mcp  (Python MCP server)
         ├── analyze_patterns      → Docker SDK + PatternDetector (regex)
         ├── detect_error_spikes   → Docker SDK + Polars rolling-window
         ├── correlate_containers  → Docker SDK + pairwise temporal scan
+        ├── detect_data_leaks     → Docker SDK + SecretDetector (regex + redaction)
         ├── start_test_containers → docker compose (docker-compose.test.yml)
         └── stop_test_containers  → docker compose down
 ```
@@ -59,6 +61,7 @@ uv run python -c "from docker_log_analyzer.mcp_server import run; print('OK')"
 | `analyze_patterns` | `container_name?`, `tail=500`, `force_refresh=false` | Timestamp format, language, log levels, health checks, top errors. Results cached to disk per container; `force_refresh=true` bypasses the cache. |
 | `detect_error_spikes` | `container_name?`, `tail=1000`, `spike_threshold=2.0` | Rolling-window error spike detection |
 | `correlate_containers` | `time_window_seconds=30`, `tail=500` | Pairwise cross-container error correlation |
+| `detect_data_leaks` | `duration_seconds=60`, `container_names[]?`, `severity_filter='all'` | Scans for secrets: AWS keys, API tokens, credentials, credit cards, PII. Returns findings with redaction and remediation recommendations. Severity levels: `critical`, `high`, `medium`, `all` |
 | `start_test_containers` | `rebuild=false` | Start 4-service test stack (`docker-compose.test.yml`) |
 | `stop_test_containers` | — | Stop and remove test containers |
 | `capture_and_analyze` | `container_names[]?`, `duration_seconds=120`, `spike_threshold=2.0`, `time_window_seconds=30` | Live capture for N seconds then combined report: spikes + correlation + per-container breakdown |
@@ -161,6 +164,13 @@ Use these natural language prompts in VSCode Copilot Chat (Agent mode) to invoke
 > "Start the test containers and rebuild the images."
 > "Stop the test containers."
 
+### Sensitive data detection
+
+> "Scan all containers for sensitive data like API keys and credentials."
+> "Check test-database logs for data leaks in the last 60 seconds."
+> "Detect critical-level secrets (API keys, tokens) in test-web-app."
+> "Are there any passwords or credit card numbers in my container logs?"
+
 ### Bug reproduction capture
 
 > "Watch test-web-app and test-database for the next 2 minutes — I'm about to reproduce the bug."
@@ -190,10 +200,11 @@ uv run pytest tests/
 
 ```text
 docker_log_analyzer/
-  mcp_server.py           # MCP server – 6 tools
+  mcp_server.py           # MCP server – 7 tools
   spike_detector.py       # Polars rolling-window spike detection
   correlator.py           # Cross-container temporal correlation
   log_pattern_analyzer.py # PatternDetector (regex-based)
+  secret_detector.py      # SecretDetector (13 patterns, redaction)
   config.py               # Environment configuration
   logger.py               # Logging utility
 log_generator/
@@ -204,6 +215,7 @@ tests/
   test_spike_detector.py  # 16 unit tests
   test_correlator.py      # 17 unit tests
   test_pattern_detector.py # 24 unit tests
+  test_secret_detector.py # 29 unit tests
   test_mcp_integration.py # 32 integration tests
 ```
 
