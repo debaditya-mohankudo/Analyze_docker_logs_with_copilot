@@ -78,21 +78,32 @@ Optional environment variables (`.env` file):
 
 ### Pattern Analysis Cache
 
-`analyze_patterns` results are cached to `.cache/patterns/<name>_<short_id>.json` after the first call. Subsequent calls return instantly from cache.
+`analyze_patterns` results are cached to `.cache/patterns/<name>.json` after the first call. Subsequent calls return instantly from cache.
 
-The cache is **automatically invalidated** when a container is recreated (the short ID changes). To force a fresh analysis on a still-running container:
+The cache persists **across container restarts** (keyed by container name only). This improves performance when containers are recreated with the same configuration.
+
+**Important**: If you change the log pattern of a container (e.g., different format, language, or log source), you must manually clear the cache for that container:
 
 ```bash
-# Via Copilot: "Re-analyze test-database, force a refresh"
-# Or directly:
+# Remove cache for a specific container
+rm .cache/patterns/test-database.json
+
+# Or clear all pattern cache
+rm -rf .cache/patterns/
+
+# Then re-run the analysis
 uv run python -c "
 import json
 from docker_log_analyzer.mcp_server import tool_analyze_patterns
-print(json.dumps(tool_analyze_patterns('test-database', force_refresh=True), indent=2))
+print(json.dumps(tool_analyze_patterns('test-database'), indent=2))
 "
 ```
 
-Each cached result includes `cache_hit` (`true`/`false`) and `cached_at` (ISO-8601 UTC) so you can always tell how fresh the data is.
+Each cached result includes `cache_hit` (`true`/`false`) and `cached_at` (ISO-8601 UTC) so you can always tell how fresh the data is. Via Copilot, you can also use `force_refresh=True` to skip the cache on demand:
+
+```bash
+# Via Copilot message: "Re-analyze test-database with a fresh check"
+```
 
 ## Test Log Generators
 

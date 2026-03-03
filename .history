@@ -77,3 +77,5 @@ test | pattern_detector | 24 unit tests: all 4 timestamp formats (iso8601/syslog
 test | mcp_integration | 32 integration tests (require Docker): all 6 MCP tool functions, field presence, value ranges, error cases (invalid container), start/stop lifecycle; auto-skip if Docker unavailable
 ci | pyproject.toml | Add pytest markers (unit, integration), testpaths=tests, addopts=-v --tb=short
 ci | conftest | Session-scoped docker_client fixture with graceful skip; synthetic log fixtures for spike/correlator/pattern tests
+refactor | cache | Change pattern cache key from (name + short_id) to (name only); persists across container restarts for better performance
+docs | README | Update cache documentation: explain manual cleanup via `rm .cache/patterns/<name>.json` when log pattern changes (rare scenario)

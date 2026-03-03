@@ -51,21 +51,26 @@ logger = logging.getLogger(__name__)
 
 # ── Pattern cache helpers ────────────────────────────────────────────────────
 
-def _cache_path(container_name: str, short_id: str) -> Path:
+def _cache_path(container_name: str) -> Path:
+    """Cache file path for a container (keyed by name only, not short_id).
+    
+    This persists across container restarts. Users should manually clean .cache/patterns
+    if they change the log pattern of a container.
+    """
     safe = container_name.replace("/", "_")
-    return _CACHE_DIR / f"{safe}_{short_id}.json"
+    return _CACHE_DIR / f"{safe}.json"
 
 
-def _read_cache(container_name: str, short_id: str) -> Optional[dict]:
-    path = _cache_path(container_name, short_id)
+def _read_cache(container_name: str) -> Optional[dict]:
+    path = _cache_path(container_name)
     if path.exists():
         return json.loads(path.read_text())
     return None
 
 
-def _write_cache(container_name: str, short_id: str, data: dict) -> None:
+def _write_cache(container_name: str, data: dict) -> None:
     _CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    _cache_path(container_name, short_id).write_text(json.dumps(data, indent=2))
+    _cache_path(container_name).write_text(json.dumps(data, indent=2))
 
 
 # ── Docker helpers ──────────────────────────────────────────────────────────
@@ -143,8 +148,9 @@ def tool_analyze_patterns(
 ) -> dict:
     """Fetch logs and run PatternDetector against one or all containers.
 
-    Results are cached per container (keyed by name + short_id). Pass
-    force_refresh=True to bypass the cache and re-analyse.
+    Results are cached per container by name and persisted across restarts.
+    Pass force_refresh=True to bypass the cache and re-analyse. If you change
+    the log pattern of a container, see README for cache cleanup instructions.
     """
     try:
         client = _docker_client()
@@ -171,10 +177,10 @@ def tool_analyze_patterns(
 
         # Return cached result if available and not forcing a refresh
         if not force_refresh:
-            cached = _read_cache(name, short_id)
+            cached = _read_cache(name)
             if cached is not None:
                 results[name] = cached
-                logger.debug("Cache hit for container '%s' (%s)", name, short_id)
+                logger.debug("Cache hit for container '%s'", name)
                 continue
 
         lines = _fetch_logs(c, tail)
@@ -215,7 +221,7 @@ def tool_analyze_patterns(
             "cached_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         }
 
-        _write_cache(name, short_id, entry)
+        _write_cache(name, entry)
         results[name] = entry
 
     # Tag cache hits in the response
