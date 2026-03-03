@@ -1,12 +1,13 @@
 """
 MCP Server for Docker Log Pattern Analysis (non-LLM).
 
-Exposes 6 tools to VSCode Copilot Agent Mode via .vscode/mcp.json:
+Exposes 7 tools to VSCode Copilot Agent Mode via .vscode/mcp.json:
 
   list_containers        – discover running Docker containers
   analyze_patterns       – PatternDetector per container (timestamps, language, log levels)
   detect_error_spikes    – Polars rolling-window spike detection
   correlate_containers   – pairwise cross-container temporal error correlation
+  detect_data_leaks      – SecretDetector for API keys, credentials, PII, sensitive data
   start_test_containers  – build & start test log-generator containers (docker-compose.test.yml)
   stop_test_containers   – stop and remove test log-generator containers
 
@@ -31,6 +32,7 @@ from mcp.types import TextContent, Tool
 from . import config
 from .correlator import correlate
 from .log_pattern_analyzer import PatternDetector
+from .secret_detector import SecretDetector
 from .spike_detector import DOCKER_TS_RE, detect_spikes
 
 # Path to the test compose file (repo root / docker-compose.test.yml)
@@ -452,6 +454,114 @@ async def tool_capture_and_analyze(
     }
 
 
+async def tool_detect_data_leaks(
+    duration_seconds: int = 60,
+    container_names: Optional[list[str]] = None,
+    severity_filter: str = "all",
+) -> dict:
+    """
+    Detect sensitive data (API keys, credentials, PII) in container logs.
+
+    Designed for security audits: call this to scan logs for accidental secret leaks,
+    then review findings and apply remediation (key rotation, etc.).
+    """
+    try:
+        client = _docker_client()
+    except RuntimeError as exc:
+        return {"status": "error", "error": str(exc)}
+
+    if container_names:
+        targets = []
+        for name in container_names:
+            try:
+                targets.append(client.container.inspect(name))
+            except NoSuchContainer:
+                return {"status": "error", "error": f"Container '{name}' not found."}
+    else:
+        targets = client.container.list()
+
+    if not targets:
+        return {"status": "success", "message": "No running containers to scan."}
+
+    start_time = datetime.now(timezone.utc)
+    logger.info("detect_data_leaks: scanning %d containers for %ds", len(targets), duration_seconds)
+
+    await asyncio.sleep(duration_seconds)
+
+    end_time = datetime.now(timezone.utc)
+
+    # Fetch logs during the scan window
+    detector = SecretDetector()
+    all_findings = []
+    per_container_summary = {}
+
+    for c in targets:
+        name = _container_name(c)
+        lines = _fetch_logs_window(c, start_time, end_time)
+
+        if not lines:
+            per_container_summary[name] = {"lines_scanned": 0, "findings": 0}
+            continue
+
+        findings = detector.scan_logs(lines, severity_filter=severity_filter)
+        per_container_summary[name] = {
+            "lines_scanned": len(lines),
+            "findings": len(findings),
+        }
+
+        # Attach container name to each finding
+        for f in findings:
+            all_findings.append(
+                {
+                    "container": name,
+                    "severity": f.severity,
+                    "pattern_name": f.pattern_name,
+                    "matched_text": f.matched_text_redacted,
+                    "line_number": f.line_number,
+                    "timestamp": f.timestamp,
+                    "context_before": f.context_before,
+                    "context_after": f.context_after,
+                }
+            )
+
+    # Generate summary statistics
+    summary = detector.get_findings_summary(
+        [f for f in detector.scan_logs([], severity_filter=severity_filter)]
+    )
+    # Re-calculate summary from actual findings
+    finding_objs = []
+    for finding in all_findings:
+        from .secret_detector import Finding
+
+        finding_objs.append(
+            Finding(
+                severity=finding["severity"],
+                pattern_name=finding["pattern_name"],
+                line_number=finding["line_number"],
+                timestamp=finding["timestamp"],
+                context_before=finding["context_before"],
+                context_after=finding["context_after"],
+                matched_text_redacted=finding["matched_text"],
+            )
+        )
+
+    summary = detector.get_findings_summary(finding_objs)
+    recommendations = detector.get_recommendations(finding_objs)
+
+    return {
+        "status": "success",
+        "scan_window": {
+            "start": start_time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "end": end_time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "duration_seconds": duration_seconds,
+        },
+        "containers_scanned": list(per_container_summary.keys()),
+        "findings": all_findings,
+        "summary": summary,
+        "per_container": per_container_summary,
+        "recommendations": recommendations,
+    }
+
 # ── Tool wrapper functions (for registry) ──────────────────────────────────
 
 def _wrap_analyze_patterns(**kwargs) -> dict:
@@ -497,6 +607,15 @@ def _wrap_capture_and_analyze(**kwargs) -> dict:
         duration_seconds=int(kwargs.get("duration_seconds", 120)),
         spike_threshold=float(kwargs.get("spike_threshold", 2.0)),
         time_window_seconds=int(kwargs.get("time_window_seconds", 30)),
+    ))
+
+
+def _wrap_detect_data_leaks(**kwargs) -> dict:
+    """Wrapper for detect_data_leaks with argument unpacking."""
+    return asyncio.run(tool_detect_data_leaks(
+        duration_seconds=int(kwargs.get("duration_seconds", 60)),
+        container_names=kwargs.get("container_names"),
+        severity_filter=str(kwargs.get("severity_filter", "all")),
     ))
 
 
@@ -724,6 +843,40 @@ _registry.register(
                     "type": "integer",
                     "description": "Co-occurrence window for cross-container correlation (default 30).",
                     "default": 30,
+                },
+            },
+            "required": [],
+        },
+    }
+)
+
+_registry.register(
+    "detect_data_leaks",
+    _wrap_detect_data_leaks,
+    {
+        "description": (
+            "Detect sensitive data (API keys, credentials, tokens, PII) in container logs over a "
+            "specified time window (default 60s). Returns findings sorted by severity with "
+            "remediation recommendations. Designed for security audits and compliance checks."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "duration_seconds": {
+                    "type": "integer",
+                    "description": "Scan window in seconds (default 60).",
+                    "default": 60,
+                },
+                "container_names": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Containers to scan. Omit to scan all running containers.",
+                },
+                "severity_filter": {
+                    "type": "string",
+                    "enum": ["all", "high", "critical"],
+                    "description": "Filter by minimum severity: 'critical' (API keys), 'high' (tokens, DB URLs), 'all' (includes PII). Default 'all'.",
+                    "default": "all",
                 },
             },
             "required": [],
