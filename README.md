@@ -61,6 +61,7 @@ uv run python -c "from docker_log_analyzer.mcp_server import run; print('OK')"
 | `correlate_containers` | `time_window_seconds=30`, `tail=500` | Pairwise cross-container error correlation |
 | `start_test_containers` | `rebuild=false` | Start 4-service test stack (`docker-compose.test.yml`) |
 | `stop_test_containers` | — | Stop and remove test containers |
+| `capture_and_analyze` | `container_names[]?`, `duration_seconds=120`, `spike_threshold=2.0`, `time_window_seconds=30` | Live capture for N seconds then combined report: spikes + correlation + per-container breakdown |
 
 ## Configuration
 
@@ -130,6 +131,13 @@ Use these natural language prompts in VSCode Copilot Chat (Agent mode) to invoke
 > "Start the test log generator containers."
 > "Start the test containers and rebuild the images."
 > "Stop the test containers."
+
+### Bug reproduction capture
+
+> "Watch test-web-app and test-database for the next 2 minutes — I'm about to reproduce the bug."
+> "Capture all container logs for 90 seconds, then tell me what happened."
+> "Monitor only test-gateway and test-cache for 1 minute with a spike threshold of 1.5."
+> "Start capturing now across all containers — I'll trigger the failure in a moment."
 
 ### Combined investigation
 
