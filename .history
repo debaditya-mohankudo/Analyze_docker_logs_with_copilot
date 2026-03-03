@@ -71,3 +71,9 @@ refactor | Dockerfile | Remove gcc and Kafka health check; fix COPY path to dock
 fix | spike_detector | baseline.fill_null(1.0) applied to column directly (not just ratio expr) to prevent TypeError on first bucket
 fix | correlator | Replace Jaccard co_occurrence/max(A,B) formula (could exceed 1.0) with matched_a/total_a: fraction of A errors with at least one co-occurring B error within window
 vscode | mcp.json | Rename server key from my-mcp-server-c78ee437 to docker-log-analyzer
+test | spike_detector | 16 unit tests: single spike detection, uniform no-spike, empty/no-timestamp inputs, threshold sensitivity, baseline never null, correct ratio, regex matching
+test | correlator | 17 unit tests: high/zero correlation, single container, empty input, score 0-1 range, sorted descending, example pairs ≤3, narrow vs wide window, no errors → empty
+test | pattern_detector | 24 unit tests: all 4 timestamp formats (iso8601/syslog/epoch/apache), all 4 languages (python/java/go/nodejs), unknown cases, health check patterns, log level extraction, error pattern extraction
+test | mcp_integration | 32 integration tests (require Docker): all 6 MCP tool functions, field presence, value ranges, error cases (invalid container), start/stop lifecycle; auto-skip if Docker unavailable
+ci | pyproject.toml | Add pytest markers (unit, integration), testpaths=tests, addopts=-v --tb=short
+ci | conftest | Session-scoped docker_client fixture with graceful skip; synthetic log fixtures for spike/correlator/pattern tests
