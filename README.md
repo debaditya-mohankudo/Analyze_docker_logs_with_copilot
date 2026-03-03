@@ -180,7 +180,11 @@ tests/
 
 ## Error Patterns Detected
 
-`ERROR`, `CRITICAL`, `FATAL`, `Exception`, `Traceback`, `panic:`, `SEVERE`, HTTP 5xx
+General: `ERROR`, `CRITICAL`, `FATAL`, `Exception`, `Traceback`, `panic:`, `SEVERE`, HTTP 5xx / 4xx
+
+SQL — Java: `SQLException`, `HibernateException`, `JDBCException`, `could not execute statement`, `ORA-*` (Oracle), `PSQLException` (PostgreSQL JDBC), `SQLSyntaxErrorException`
+
+SQL — PHP: `PDOException`, `mysqli_error`, `mysql_error`, `SQLSTATE[*]`, `Query failed`, `Deadlock found`, `Table * doesn't exist`
 
 ## Security
 

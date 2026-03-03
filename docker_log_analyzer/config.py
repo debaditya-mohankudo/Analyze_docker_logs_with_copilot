@@ -37,4 +37,20 @@ ERROR_PATTERNS = [
     r"4\d{2}",   # HTTP 4xx (optional, can be noisy)
     r"panic:",   # Go
     r"SEVERE",   # Java
+    # SQL failure patterns – Java
+    r"SQLException",
+    r"HibernateException",
+    r"JDBCException",
+    r"could not execute statement",
+    r"ORA-\d+",             # Oracle error codes
+    r"PSQLException",        # PostgreSQL via JDBC
+    r"SQLSyntaxErrorException",
+    # SQL failure patterns – PHP
+    r"PDOException",
+    r"mysqli_error",
+    r"mysql_error",
+    r"SQLSTATE\[",           # PDO SQLSTATE prefix
+    r"Query failed",
+    r"Deadlock found",
+    r"Table .+ doesn't exist",
 ]
