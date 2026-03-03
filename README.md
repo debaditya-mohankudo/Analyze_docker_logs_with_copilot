@@ -56,7 +56,7 @@ uv run python -c "from docker_log_analyzer.mcp_server import run; print('OK')"
 | Tool | Parameters | Description |
 | ---- | ---------- | ----------- |
 | `list_containers` | — | List running Docker containers |
-| `analyze_patterns` | `container_name?`, `tail=500` | Timestamp format, language, log levels, health checks, top errors |
+| `analyze_patterns` | `container_name?`, `tail=500`, `force_refresh=false` | Timestamp format, language, log levels, health checks, top errors. Results cached to disk per container; `force_refresh=true` bypasses the cache. |
 | `detect_error_spikes` | `container_name?`, `tail=1000`, `spike_threshold=2.0` | Rolling-window error spike detection |
 | `correlate_containers` | `time_window_seconds=30`, `tail=500` | Pairwise cross-container error correlation |
 | `start_test_containers` | `rebuild=false` | Start 4-service test stack (`docker-compose.test.yml`) |
@@ -75,6 +75,24 @@ Optional environment variables (`.env` file):
 | `DEFAULT_SPIKE_TAIL_LINES` | `1000` | Log lines for spike detection |
 | `DEFAULT_SPIKE_THRESHOLD` | `2.0` | Spike ratio threshold (current / baseline) |
 | `DEFAULT_CORRELATION_WINDOW_SECONDS` | `30` | Co-occurrence window for correlation |
+
+### Pattern Analysis Cache
+
+`analyze_patterns` results are cached to `.cache/patterns/<name>_<short_id>.json` after the first call. Subsequent calls return instantly from cache.
+
+The cache is **automatically invalidated** when a container is recreated (the short ID changes). To force a fresh analysis on a still-running container:
+
+```bash
+# Via Copilot: "Re-analyze test-database, force a refresh"
+# Or directly:
+uv run python -c "
+import json
+from docker_log_analyzer.mcp_server import tool_analyze_patterns
+print(json.dumps(tool_analyze_patterns('test-database', force_refresh=True), indent=2))
+"
+```
+
+Each cached result includes `cache_hit` (`true`/`false`) and `cached_at` (ISO-8601 UTC) so you can always tell how fresh the data is.
 
 ## Test Log Generators
 
