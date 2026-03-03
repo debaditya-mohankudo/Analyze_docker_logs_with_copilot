@@ -28,7 +28,6 @@ jobs:
         uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-          cache-dependency-path: uv.lock
 
       - name: Install dependencies
         run: uv sync
@@ -59,7 +58,6 @@ jobs:
         uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-          cache-dependency-path: uv.lock
 
       - name: Install dependencies
         run: uv sync
