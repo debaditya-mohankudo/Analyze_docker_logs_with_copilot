@@ -29,7 +29,7 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
-from . import config
+from .config import settings
 from .correlator import correlate
 from .log_pattern_analyzer import PatternDetector
 from .secret_detector import SecretDetector
@@ -568,7 +568,7 @@ def _wrap_analyze_patterns(**kwargs) -> dict:
     """Wrapper for analyze_patterns with argument unpacking."""
     return tool_analyze_patterns(
         container_name=kwargs.get("container_name"),
-        tail=int(kwargs.get("tail", config.DEFAULT_TAIL_LINES)),
+        tail=int(kwargs.get("tail", settings.default_tail_lines)),
         force_refresh=bool(kwargs.get("force_refresh", False)),
     )
 
@@ -577,9 +577,9 @@ def _wrap_detect_error_spikes(**kwargs) -> dict:
     """Wrapper for detect_error_spikes with argument unpacking."""
     return tool_detect_error_spikes(
         container_name=kwargs.get("container_name"),
-        tail=int(kwargs.get("tail", config.DEFAULT_SPIKE_TAIL_LINES)),
-        window_minutes=int(kwargs.get("window_minutes", config.DEFAULT_WINDOW_MINUTES)),
-        spike_threshold=float(kwargs.get("spike_threshold", config.DEFAULT_SPIKE_THRESHOLD)),
+        tail=int(kwargs.get("tail", settings.default_spike_tail_lines)),
+        window_minutes=int(kwargs.get("window_minutes", settings.default_window_minutes)),
+        spike_threshold=float(kwargs.get("spike_threshold", settings.default_spike_threshold)),
     )
 
 
@@ -587,9 +587,9 @@ def _wrap_correlate_containers(**kwargs) -> dict:
     """Wrapper for correlate_containers with argument unpacking."""
     return tool_correlate_containers(
         time_window_seconds=int(
-            kwargs.get("time_window_seconds", config.DEFAULT_CORRELATION_WINDOW_SECONDS)
+            kwargs.get("time_window_seconds", settings.default_correlation_window_seconds)
         ),
-        tail=int(kwargs.get("tail", config.DEFAULT_TAIL_LINES)),
+        tail=int(kwargs.get("tail", settings.default_tail_lines)),
     )
 
 

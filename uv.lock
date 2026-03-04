@@ -340,6 +340,7 @@ source = { editable = "." }
 dependencies = [
     { name = "mcp" },
     { name = "polars" },
+    { name = "pydantic-settings" },
     { name = "python-dotenv" },
     { name = "python-on-whales" },
 ]
@@ -358,6 +359,7 @@ requires-dist = [
     { name = "black", marker = "extra == 'dev'", specifier = ">=23.0.0" },
     { name = "mcp", specifier = ">=0.7.0" },
     { name = "polars", specifier = ">=0.20.0" },
+    { name = "pydantic-settings", specifier = ">=2.0.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.4.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.1.0" },
     { name = "pytest-xdist", marker = "extra == 'dev'", specifier = ">=3.0.0" },

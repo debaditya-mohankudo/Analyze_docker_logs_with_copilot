@@ -18,7 +18,6 @@ from dataclasses import dataclass, asdict
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime
 
-from . import config
 from .logger import logger
 
 
