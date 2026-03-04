@@ -104,3 +104,7 @@ docs | CLAUDE.md | Specify performance rules: log fetching limits, Polars vector
 docs | CLAUDE.md | Define testing strategy: unit/integration markers, CI configuration, coverage targets
 docs | CLAUDE.md | List forbidden patterns: no LLMs, Kafka, schedulers, persistent state
 docs | CLAUDE.md | Provide development workflow and future extension directions
+refactor | mcp_server | Use logger singleton from logger.py instead of manual logging.basicConfig()
+refactor | mcp_server | Remove unused logging and sys imports; all logs now include run_id
+refactor | project | Unified logging across project: logger.py singleton used in config.py and mcp_server.py
+quality | logging | Consistent run_id tracking enables distributed tracing across all modules
