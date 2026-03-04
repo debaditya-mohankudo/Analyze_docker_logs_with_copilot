@@ -7,7 +7,7 @@ A stateless, **LLM-free** Docker log analysis tool exposed as an [MCP](https://m
 - **Pattern Detection** – identifies timestamp format (ISO-8601, syslog, epoch, Apache) and programming language (Python, Java, Go, Node.js) from log lines
 - **Error Spike Detection** – Polars rolling-window analysis flags minute-buckets where error rate exceeds a configurable baseline multiplier
 - **Cross-Container Correlation** – pairwise temporal scoring of error co-occurrence across containers (score 0–1)
-- **Sensitive Data Detection** – scans logs for secrets (API keys, tokens, credentials, credit cards) with severity filtering and redaction
+- **Sensitive Data Detection** – scans logs for 20 secret patterns (AWS, GitHub, Stripe, Google, Azure, OAuth, JWT, database URLs, PII) with severity filtering and redaction
 - **Copilot Agent Mode** – registered as an MCP stdio server; Copilot orchestrates via chat, every tool runs locally
 
 ## Quality & Testing
@@ -15,15 +15,15 @@ A stateless, **LLM-free** Docker log analysis tool exposed as an [MCP](https://m
 | Metric | Value |
 | --- | --- |
 | **Coverage** | 53% (754 statements) — improved to 94-100% across core modules via targeted unit tests |
-| **Unit tests** | 95 tests across 4 modules |
+| **Unit tests** | 111 tests across 4 modules |
 | **CI execution** | ~3.76s parallel via xdist (no Docker) |
 | **Integration tests** | 32 tests (Docker-dependent, local only) |
-| **Total test suite** | 127 tests (95 CI + 32 integration) |
+| **Total test suite** | 143 tests (111 CI + 32 integration) |
 
 **Module coverage:**
 - `config.py` – 100% (configuration parsing) 
 - `__init__.py` – 100% (package initialization)
-- `secret_detector.py` – 96% (13 patterns, redaction, recommendations)
+- `secret_detector.py` – 96% (20 patterns, redaction, recommendations)
 - `spike_detector.py` – 95% (rolling-window detection, timestamp parsing)
 - `correlator.py` – 94% (cross-container correlation scoring)
 - `logger.py` – 76% (structured logging)
@@ -34,10 +34,10 @@ A stateless, **LLM-free** Docker log analysis tool exposed as an [MCP](https://m
 - `test_spike_detector.py` – 16 tests (rolling-window spike detection, Docker timestamp parsing)
 - `test_correlator.py` – 17 tests (cross-container correlation, event extraction, scoring)
 - `test_pattern_detector.py` – 24 tests (timestamp formats, language detection, log levels, health checks, error patterns)
-- `test_secret_detector.py` – 29 tests (13 secret patterns, redaction, severity filtering, recommendations, edge cases)
+- `test_secret_detector.py` – 45 tests (20 secret patterns, redaction, severity filtering, recommendations, Docker timestamp regex, edge cases)
 - `test_mcp_integration.py` – 32 integration tests (MCP tool calls with live Docker containers)
 
-**CI runs:** `pytest tests/ -m "not integration" --cov=docker_log_analyzer` (unit tests, ~95 tests)
+**CI runs:** `pytest tests/ -m "not integration" --cov=docker_log_analyzer` (unit tests, ~111 tests)
 
 ## Architecture
 
@@ -146,7 +146,7 @@ Use these natural language prompts in VSCode Copilot Chat (Agent mode) to invoke
 | `analyze_patterns` | `container_name?`, `tail=500`, `force_refresh=false`, `use_cache=true` | Timestamp format, language, log levels, health checks, top errors. Uses log cache-first (24h window), falls back to Docker API. Pattern results cached to disk per container; `force_refresh=true` re-analyses. |
 | `detect_error_spikes` | `container_name?`, `tail=1000`, `spike_threshold=2.0`, `use_cache=true` | Rolling-window error spike detection. Uses log cache-first (24h window). |
 | `correlate_containers` | `time_window_seconds=30`, `tail=500`, `use_cache=true` | Pairwise cross-container error correlation. Uses log cache-first (24h window). |
-| `detect_data_leaks` | `duration_seconds=60`, `container_names[]?`, `severity_filter='all'`, `use_cache=true` | Scans for secrets: AWS keys, API tokens, credentials, credit cards, PII. Uses log cache-first (24h window). Findings with redaction and recommendations. Severity: `critical`, `high`, `medium`, `all` |
+| `detect_data_leaks` | `duration_seconds=60`, `container_names[]?`, `severity_filter='all'`, `use_cache=true` | Scans for 20 secret patterns: AWS/GitHub/Google/Stripe keys, Azure storage keys, OAuth secrets, Bearer/JWT tokens, database URLs, base64 secrets, session cookies, PII. Uses log cache-first (24h window). Findings with redaction and recommendations. Severity: `critical`, `high`, `medium`, `all` |
 | `sync_docker_logs` | `container_names[]?`, `since="24 hours ago"`, `until="now"`, `force_refresh=false` | **Sync Docker logs to `.cache/logs/` for time window.** Enables fast offline analysis and instant bug reproduction. Time args: `"2 hours ago"`, `"7 days ago"`, ISO-8601 timestamps. All tools use cache-first after sync. |
 | `start_test_containers` | `rebuild=false` | Start 4-service test stack (`docker-compose.test.yml`) |
 | `stop_test_containers` | — | Stop and remove test containers |
@@ -277,7 +277,7 @@ docker compose -f docker-compose.test.yml down
 ### Run tests
 
 ```bash
-# Run all non-integration tests (unit + secret detector) – 95 tests
+# Run all non-integration tests (unit + secret detector) – 111 tests
 uv run pytest tests/ -m "not integration"
 
 # Full suite including integration tests (requires Docker)
@@ -292,7 +292,7 @@ docker_log_analyzer/
   spike_detector.py       # Polars rolling-window spike detection
   correlator.py           # Cross-container temporal correlation
   log_pattern_analyzer.py # PatternDetector (regex-based)
-  secret_detector.py      # SecretDetector (13 patterns, redaction)
+  secret_detector.py      # SecretDetector (20 patterns, redaction)
   config.py               # Environment configuration
   logger.py               # Logging utility
 log_generator/
@@ -303,7 +303,7 @@ tests/
   test_spike_detector.py  # 16 unit tests
   test_correlator.py      # 17 unit tests
   test_pattern_detector.py # 24 unit tests
-  test_secret_detector.py # 29 unit tests
+  test_secret_detector.py # 45 unit tests
   test_mcp_integration.py # 32 integration tests
 ```
 
