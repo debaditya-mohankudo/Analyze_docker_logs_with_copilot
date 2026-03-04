@@ -5,7 +5,7 @@ Algorithm:
   1. Extract (unix_ts, line) tuples for error lines per container.
   2. For each ordered pair (A, B), count errors in B within ±time_window_seconds
      of each error in A (co-occurrence).
-  3. correlation_score = co_occurrences / max(errors_A, errors_B)  (0–1, Jaccard-style).
+  3. correlation_score = matched_a / errors_A  (fraction of A errors that co-occurred with B).
   4. Return pairs sorted by score descending with ≤3 example pairs each.
 
 All analysis is local – no external API calls.
@@ -25,10 +25,6 @@ ERROR_PATTERN_RE = re.compile(
     r"|HTTP [5]\d{2}",
     re.IGNORECASE,
 )
-
-# Cap inner-loop iterations per container pair to avoid O(n²) blow-up
-MAX_CO_OCCURRENCES = 500
-
 
 def _parse_ts(line: str) -> Optional[float]:
     """Return Unix timestamp (float) from Docker-prepended timestamp, or None."""
@@ -52,6 +48,51 @@ def _extract_error_events(lines: List[str]) -> List[Tuple[float, str]]:
         if ERROR_PATTERN_RE.search(line):
             events.append((ts, line.strip()))
     return events
+
+
+def _correlate_events(
+    events_a: List[Tuple[float, str]],
+    events_b: List[Tuple[float, str]],
+    window: int,
+) -> Tuple[int, int, List[dict]]:
+    """
+    Sliding two-pointer correlation between two sorted event lists.
+
+    O(n + m + k) where k = total co-occurrences.
+    j_start only advances forward, so the boundary scan is O(m) total.
+
+    Returns (matched_a, co_occurrences, example_pairs)
+      - matched_a:     number of A events that matched ≥1 B event
+      - co_occurrences: total (A, B) pairs within ±window
+    """
+    matched_a = 0
+    co_occurrences = 0
+    example_pairs: List[dict] = []
+    j_start = 0
+    len_b = len(events_b)
+
+    for ts_a, line_a in events_a:
+        # Drop B events that are now too far in the past.
+        while j_start < len_b and events_b[j_start][0] < ts_a - window:
+            j_start += 1
+
+        # Count every B event inside [ts_a - window, ts_a + window].
+        j = j_start
+        found = False
+        while j < len_b and events_b[j][0] <= ts_a + window:
+            co_occurrences += 1
+            if not found:
+                matched_a += 1
+                found = True
+            if len(example_pairs) < 3:
+                example_pairs.append({
+                    "a": line_a[:120],
+                    "b": events_b[j][1][:120],
+                    "delta_seconds": round(abs(ts_a - events_b[j][0]), 2),
+                })
+            j += 1
+
+    return matched_a, co_occurrences, example_pairs
 
 
 def correlate(
@@ -95,33 +136,9 @@ def correlate(
         events_a = error_events[name_a]
         events_b = error_events[name_b]
 
-        # Count A errors that have at least one B error within the time window.
-        # score = matched_a / total_a  →  proper 0-1 range.
-        matched_a = 0
-        co_occurrences = 0
-        example_pairs: List[dict] = []
-        checked = 0
-
-        for ts_a, line_a in events_a:
-            found = False
-            for ts_b, line_b in events_b:
-                checked += 1
-                if checked > MAX_CO_OCCURRENCES:
-                    break
-                delta = abs(ts_a - ts_b)
-                if delta <= time_window_seconds:
-                    co_occurrences += 1
-                    if not found:
-                        matched_a += 1   # count this A error only once
-                        found = True
-                    if len(example_pairs) < 3:
-                        example_pairs.append({
-                            "a": line_a[:120],
-                            "b": line_b[:120],
-                            "delta_seconds": round(delta, 2),
-                        })
-            if checked > MAX_CO_OCCURRENCES:
-                break
+        matched_a, co_occurrences, example_pairs = _correlate_events(
+            events_a, events_b, time_window_seconds
+        )
 
         total_a = len(events_a)
         total_b = len(events_b)
