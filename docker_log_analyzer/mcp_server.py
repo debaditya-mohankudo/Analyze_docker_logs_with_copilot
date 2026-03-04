@@ -1205,9 +1205,27 @@ def create_mcp_server() -> Server:
     return server
 
 
+def _log_startup_config() -> None:
+    """Log active configuration settings for user visibility."""
+    logger.info("─" * 70)
+    logger.info("Docker Log Analyzer – MCP Server Configuration")
+    logger.info("─" * 70)
+    logger.info(f"  Log Level:                {settings.log_level}")
+    logger.info(f"  Docker Host:              {settings.docker_host}")
+    if settings.container_label_filter:
+        logger.info(f"  Container Label Filter:   {settings.container_label_filter}")
+    logger.info(f"  Default Tail Lines:       {settings.default_tail_lines}")
+    logger.info(f"  Spike Window (minutes):   {settings.default_window_minutes}")
+    logger.info(f"  Spike Threshold:          {settings.default_spike_threshold}x")
+    logger.info(f"  Correlation Window (s):   {settings.default_correlation_window_seconds}")
+    logger.info(f"  Cache Directory:          {_CACHE_DIR}")
+    logger.info("─" * 70)
+
+
 async def _main_async() -> None:
     server = create_mcp_server()
     logger.info("Docker Log Analyzer MCP Server starting (non-LLM mode)...")
+    _log_startup_config()
     async with stdio_server() as (read_stream, write_stream):
         logger.info("MCP Server ready – waiting for tool calls via stdio.")
         await server.run(
