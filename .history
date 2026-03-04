@@ -94,3 +94,6 @@ refactor | mcp_server | Update all config refs: config.DEFAULT_* → settings.de
 refactor | log_pattern_analyzer | Remove unused config import (all static methods in PatternDetector)
 ci | pyproject.toml | Add pydantic-settings>=2.0.0 dependency for structured configuration
 quality | config | Configuration now matches ACME agent pattern; improved IDE support, validation, and documentation
+refactor | config | Integrate logger singleton from logger.py for configuration logging with run_id tracking
+refactor | config | Add debug logs to field validators; log configuration load summary at INFO level
+refactor | config | Remove manual logging setup; use logger.set_level() for log level configuration
