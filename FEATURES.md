@@ -66,8 +66,8 @@ Analyzes log patterns to detect timestamp format, programming language, log leve
         "ConnectionError: Failed to connect to database",
         "TimeoutError: Request exceeded 30s"
       ],
-      "cache_hit": true,
-      "cached_at": "2026-03-04T10:30:00Z"
+      "logs_cache_hit": true,
+      "analyzed_at": "2026-03-04T10:30:00Z"
     }
   }
 }
@@ -119,7 +119,7 @@ Detects error rate anomalies using rolling-window analysis (Polars). Compares cu
         "ERROR: Connection timeout to database",
         "ERROR: Failed to acquire database lock"
       ],
-      "cache_hit": true
+      "logs_cache_hit": true
     },
     "test-database": {
       "baseline_error_rate": 0.05,
