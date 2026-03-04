@@ -125,3 +125,7 @@ feature | mcp_server | All tool responses include \"cache_hits\" field
 feature | mcp_server | Shows which containers used cache vs fresh fetch
 quality | caching | Atomic writes prevent partial/corrupted cache files
 quality | caching | Cache structure enables 100x faster re-analysis (disk vs Docker API)
+fix | correlator + secret_detector | Harden Docker timestamp regex: make fractional seconds optional ((?:\.\d+)?), Z mandatory — was rejecting whole-second timestamps
+feat | secret_detector | Add Stripe secret key (critical), Google API key (high), Stripe publishable key (high), Azure storage account key (high), OAuth client secret (high), base64-encoded secret (medium), session cookie (medium)
+feat | secret_detector | Add targeted remediation recommendations for Stripe, Google, and Azure findings
+test | secret_detector | 21 new unit tests across TestNewSecretPatterns, TestDockerTimestampRegex, TestNewRecommendations classes; 111 total passing

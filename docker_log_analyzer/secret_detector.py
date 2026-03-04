@@ -2,12 +2,14 @@
 Secret & sensitive data detection in Docker container logs.
 
 Detects patterns for:
-  - API keys (AWS, GitHub, generic)
-  - Auth tokens & credentials
+  - API keys (AWS, GitHub, Google, Stripe, generic)
+  - Auth tokens & credentials (Bearer, JWT, OAuth, Slack)
   - Database connection strings
-  - Private keys
+  - Private keys (RSA, EC, OpenSSH, DSA)
+  - Azure storage account keys
   - PII (emails, credit cards)
   - Base64-encoded secrets
+  - Session cookies
 """
 
 import re
@@ -73,7 +75,14 @@ class SecretDetector:
                 severity="critical",
                 description="GitHub personal/OAuth/app token",
             ),
-            
+            # Stripe Secret Keys (live)
+            SecretPattern(
+                pattern=r"sk_live_[0-9a-zA-Z]{24}",
+                name="Stripe Secret Key",
+                severity="critical",
+                description="Stripe live secret API key",
+            ),
+
             # === HIGH SEVERITY ===
             # Generic API Keys (common patterns) - case insensitive matching
             SecretPattern(
@@ -110,7 +119,35 @@ class SecretDetector:
                 severity="high",
                 description="JSON Web Token (JWT)",
             ),
-            
+            # Google API Keys
+            SecretPattern(
+                pattern=r"AIza[0-9A-Za-z\-_]{35}",
+                name="Google API Key",
+                severity="high",
+                description="Google Cloud API key",
+            ),
+            # Stripe Publishable Keys (live)
+            SecretPattern(
+                pattern=r"pk_live_[0-9a-zA-Z]{24}",
+                name="Stripe Publishable Key",
+                severity="high",
+                description="Stripe live publishable API key",
+            ),
+            # Azure Storage Account Keys
+            SecretPattern(
+                pattern=r"AccountKey=[A-Za-z0-9+/=]{40,}",
+                name="Azure Storage Account Key",
+                severity="high",
+                description="Azure storage account key in connection string",
+            ),
+            # OAuth Client Secrets
+            SecretPattern(
+                pattern=r"client_secret\s*[:=]\s*[A-Za-z0-9\-_]{24,}",
+                name="OAuth Client Secret",
+                severity="high",
+                description="OAuth client secret detected",
+            ),
+
             # === MEDIUM SEVERITY ===
             # Password assignments (with quotes and minimum length)
             SecretPattern(
@@ -139,6 +176,20 @@ class SecretDetector:
                 name="Secret Assignment",
                 severity="medium",
                 description="Generic secret/token variable",
+            ),
+            # Base64-encoded secrets (key/token/secret assignments without quotes)
+            SecretPattern(
+                pattern=r"(?:secret|token|key)\s*[:=]\s*[A-Za-z0-9+/]{40,}={0,2}",
+                name="Base64 Encoded Secret",
+                severity="medium",
+                description="Possible base64-encoded secret value",
+            ),
+            # Session cookies
+            SecretPattern(
+                pattern=r"sessionid=[A-Za-z0-9%\-._~+/]+=*",
+                name="Session Cookie",
+                severity="medium",
+                description="Session token exposed in logs",
             ),
         ]
         
@@ -174,7 +225,7 @@ class SecretDetector:
             # Extract timestamp if Docker format present (format: "YYYY-MM-DDTHH:MM:SS.sssssssZ <message>")
             timestamp = None
             message = line
-            docker_ts_match = re.match(r"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)\s+(.*)", line)
+            docker_ts_match = re.match(r"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z)\s+(.*)", line)
             if docker_ts_match:
                 timestamp, message = docker_ts_match.groups()
             
@@ -254,7 +305,16 @@ class SecretDetector:
         
         if summary["by_pattern"].get("Database URL with Credentials", 0) > 0:
             recommendations.append("Database credentials in logs: change password and review access logs")
-        
+
+        if summary["by_pattern"].get("Stripe Secret Key", 0) > 0:
+            recommendations.append("Stripe secret key detected: rotate immediately at dashboard.stripe.com")
+
+        if summary["by_pattern"].get("Google API Key", 0) > 0:
+            recommendations.append("Google API key detected: revoke and regenerate in Google Cloud Console")
+
+        if summary["by_pattern"].get("Azure Storage Account Key", 0) > 0:
+            recommendations.append("Azure storage key detected: regenerate key in Azure Portal")
+
         if summary["by_severity"].get("high", 0) > 0 or summary["by_severity"].get("critical", 0) > 0:
             recommendations.append("Review logging configuration to prevent credential leakage")
             recommendations.append("Consider using environment variables or secret managers instead of logs")

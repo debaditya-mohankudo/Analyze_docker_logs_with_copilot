@@ -17,7 +17,7 @@ from typing import Dict, List, Optional, Tuple
 from itertools import combinations
 
 DOCKER_TS_RE = re.compile(
-    r"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?)"
+    r"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z)"
 )
 
 ERROR_PATTERN_RE = re.compile(
