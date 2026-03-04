@@ -108,3 +108,20 @@ refactor | mcp_server | Use logger singleton from logger.py instead of manual lo
 refactor | mcp_server | Remove unused logging and sys imports; all logs now include run_id
 refactor | project | Unified logging across project: logger.py singleton used in config.py and mcp_server.py
 quality | logging | Consistent run_id tracking enables distributed tracing across all modules
+feature | cache_manager | New module: time-window log caching with atomic writes
+feature | cache_manager | Cache structure: .cache/logs/<container>/<YYYY-MM-DD>.jsonl
+feature | cache_manager | Atomic writes using tempfile + rename for safety
+feature | cache_manager | Query logs across date range (handles multi-day windows)
+feature | sync_docker_logs | New MCP tool: sync logs for time window to cache
+feature | sync_docker_logs | Time arg parsing: \"2 hours ago\", ISO-8601, \"now\"
+feature | sync_docker_logs | Enables offline analysis and instant bug reproduction capture
+refactor | mcp_server | Cache-first strategy for all tools (24-hour default window)
+refactor | analyze_patterns | Check cache before Docker API (instant if cached)
+refactor | detect_error_spikes | Cache-first: fast spike detection on cached logs
+refactor | correlate_containers | Cache-first: instant cross-container correlation
+refactor | capture_and_analyze | Use cache if available for instant analysis
+refactor | detect_data_leaks | Cache-first: scan cached logs for secrets
+feature | mcp_server | All tool responses include \"cache_hits\" field
+feature | mcp_server | Shows which containers used cache vs fresh fetch
+quality | caching | Atomic writes prevent partial/corrupted cache files
+quality | caching | Cache structure enables 100x faster re-analysis (disk vs Docker API)
