@@ -97,3 +97,10 @@ quality | config | Configuration now matches ACME agent pattern; improved IDE su
 refactor | config | Integrate logger singleton from logger.py for configuration logging with run_id tracking
 refactor | config | Add debug logs to field validators; log configuration load summary at INFO level
 refactor | config | Remove manual logging setup; use logger.set_level() for log level configuration
+docs | CLAUDE.md | Add comprehensive architectural guidelines and contribution rules
+docs | CLAUDE.md | Document design principles: stateless tools, deterministic local analysis, tool isolation
+docs | CLAUDE.md | Define MCP tool contracts, secret detection safety, Docker interaction rules
+docs | CLAUDE.md | Specify performance rules: log fetching limits, Polars vectorization, caching strategy
+docs | CLAUDE.md | Define testing strategy: unit/integration markers, CI configuration, coverage targets
+docs | CLAUDE.md | List forbidden patterns: no LLMs, Kafka, schedulers, persistent state
+docs | CLAUDE.md | Provide development workflow and future extension directions
