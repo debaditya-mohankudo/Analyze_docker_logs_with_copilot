@@ -122,7 +122,7 @@ contributors must manually clear cache.
 
 CI must run:
 ```bash
-pytest tests/ -m "not integration"
+uv run pytest tests/ -m "not integration"
 ```
 
 Full local run:
