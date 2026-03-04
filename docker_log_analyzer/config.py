@@ -9,6 +9,8 @@ from typing import List
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field, field_validator
 
+from .logger import logger
+
 
 class Settings(BaseSettings):
     """Application configuration loaded from environment and .env file."""
@@ -95,9 +97,11 @@ class Settings(BaseSettings):
     def validate_log_level(cls, v: str) -> str:
         """Validate that log level is a valid Python logging level."""
         valid_levels = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
-        if v.upper() not in valid_levels:
+        v_upper = v.upper()
+        if v_upper not in valid_levels:
             raise ValueError(f"log_level must be one of {valid_levels}")
-        return v.upper()
+        logger.debug(f"Validated log_level: {v_upper}")
+        return v_upper
 
     @field_validator("default_tail_lines", "default_spike_tail_lines")
     @classmethod
@@ -105,6 +109,7 @@ class Settings(BaseSettings):
         """Ensure positive integer values."""
         if v <= 0:
             raise ValueError("must be a positive integer")
+        logger.debug(f"Validated positive integer: {v}")
         return v
 
     @field_validator("default_spike_threshold")
@@ -113,6 +118,7 @@ class Settings(BaseSettings):
         """Ensure positive float threshold."""
         if v <= 0:
             raise ValueError("must be a positive float")
+        logger.debug(f"Validated positive float: {v}")
         return v
 
 
@@ -120,5 +126,5 @@ class Settings(BaseSettings):
 settings = Settings()
 
 # Configure logger with loaded settings
-logger_module = logging.getLogger("docker_log_analyzer")
-logger_module.setLevel(getattr(logging, settings.log_level))
+logger.set_level(getattr(logging, settings.log_level))
+logger.info(f"Configuration loaded: log_level={settings.log_level}, docker_host={settings.docker_host}")
