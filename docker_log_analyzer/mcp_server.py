@@ -17,8 +17,6 @@ Uses python-on-whales (CLI wrapper) instead of docker-py; compose is native, no 
 
 import asyncio
 import json
-import logging
-import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -32,6 +30,7 @@ from mcp.types import TextContent, Tool
 from .config import settings
 from .correlator import correlate
 from .log_pattern_analyzer import PatternDetector
+from .logger import logger
 from .secret_detector import SecretDetector
 from .spike_detector import DOCKER_TS_RE, detect_spikes
 
@@ -43,12 +42,7 @@ COMPOSE_FILE = _REPO_ROOT / "docker-compose.test.yml"
 _CACHE_DIR = _REPO_ROOT / ".cache" / "patterns"
 
 # ── Logging (stderr only; stdout is the MCP JSON stream) ───────────────────
-logging.basicConfig(
-    level=logging.DEBUG,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    stream=sys.stderr,
-)
-logger = logging.getLogger(__name__)
+# Logger is initialized from logger.py singleton (with run_id tracking)
 
 
 # ── Pattern cache helpers ────────────────────────────────────────────────────
