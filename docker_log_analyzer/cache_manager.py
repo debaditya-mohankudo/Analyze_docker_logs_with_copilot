@@ -18,13 +18,12 @@ Cache structure:
 """
 
 import json
-import logging
 import tempfile
-from datetime import datetime, date, time, timedelta, timezone
+from datetime import datetime, date, timedelta, timezone
 from pathlib import Path
 from typing import Optional, List
 
-logger = logging.getLogger(__name__)
+from .logger import logger
 
 CACHE_DIR = Path(".cache/logs")
 METADATA_FILE = CACHE_DIR / "metadata.json"
