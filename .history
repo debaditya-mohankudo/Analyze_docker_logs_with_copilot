@@ -87,3 +87,10 @@ refactor | mcp_server | Improves code readability, debuggability, and follows Py
 refactor | mcp_server | Maintains 100% backward compatibility; all 66 unit tests pass without modification
 quality | code | ✨ Excellent code quality update: lambda → explicit wrappers completes comprehensive refactoring initiative (CI optimization + test perf + registry pattern + idiom improvements)
 feature | secret_detector | New security scanning module for detecting sensitive data in logs
+refactor | config | Implement Pydantic Settings pattern with field validators
+refactor | config | Replace os.getenv() with type-safe BaseSettings singleton for application-wide use
+refactor | config | Add field validators: log_level (valid Python logging levels), positive integers/floats
+refactor | mcp_server | Update all config refs: config.DEFAULT_* → settings.default_* (snake_case)
+refactor | log_pattern_analyzer | Remove unused config import (all static methods in PatternDetector)
+ci | pyproject.toml | Add pydantic-settings>=2.0.0 dependency for structured configuration
+quality | config | Configuration now matches ACME agent pattern; improved IDE support, validation, and documentation
