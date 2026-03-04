@@ -1,4 +1,4 @@
-# Docker Log Analyzer – MCP Server
+# Docker Log Analyzer Using Natural Language – MCP Server
 
 A stateless, **LLM-free** Docker log analysis tool exposed as an [MCP](https://modelcontextprotocol.io) server for **VSCode Copilot Agent Mode**. No Kafka, no OpenAI API key — all analysis runs locally using regex and [Polars](https://pola.rs).
 
