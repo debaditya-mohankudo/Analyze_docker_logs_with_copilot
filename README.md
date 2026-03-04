@@ -87,13 +87,14 @@ uv run python -c "from docker_log_analyzer.mcp_server import run; print('OK')"
 | Tool | Parameters | Description |
 | ---- | ---------- | ----------- |
 | `list_containers` | — | List running Docker containers |
-| `analyze_patterns` | `container_name?`, `tail=500`, `force_refresh=false` | Timestamp format, language, log levels, health checks, top errors. Results cached to disk per container; `force_refresh=true` bypasses the cache. |
-| `detect_error_spikes` | `container_name?`, `tail=1000`, `spike_threshold=2.0` | Rolling-window error spike detection |
-| `correlate_containers` | `time_window_seconds=30`, `tail=500` | Pairwise cross-container error correlation |
-| `detect_data_leaks` | `duration_seconds=60`, `container_names[]?`, `severity_filter='all'` | Scans for secrets: AWS keys, API tokens, credentials, credit cards, PII. Returns findings with redaction and remediation recommendations. Severity levels: `critical`, `high`, `medium`, `all` |
+| `analyze_patterns` | `container_name?`, `tail=500`, `force_refresh=false`, `use_cache=true` | Timestamp format, language, log levels, health checks, top errors. Uses log cache-first (24h window), falls back to Docker API. Pattern results cached to disk per container; `force_refresh=true` re-analyses. |
+| `detect_error_spikes` | `container_name?`, `tail=1000`, `spike_threshold=2.0`, `use_cache=true` | Rolling-window error spike detection. Uses log cache-first (24h window). |
+| `correlate_containers` | `time_window_seconds=30`, `tail=500`, `use_cache=true` | Pairwise cross-container error correlation. Uses log cache-first (24h window). |
+| `detect_data_leaks` | `duration_seconds=60`, `container_names[]?`, `severity_filter='all'`, `use_cache=true` | Scans for secrets: AWS keys, API tokens, credentials, credit cards, PII. Uses log cache-first (24h window). Findings with redaction and recommendations. Severity: `critical`, `high`, `medium`, `all` |
+| `sync_docker_logs` | `container_names[]?`, `since="24 hours ago"`, `until="now"`, `force_refresh=false` | **Sync Docker logs to `.cache/logs/` for time window.** Enables fast offline analysis and instant bug reproduction. Time args: `"2 hours ago"`, `"7 days ago"`, ISO-8601 timestamps. All tools use cache-first after sync. |
 | `start_test_containers` | `rebuild=false` | Start 4-service test stack (`docker-compose.test.yml`) |
 | `stop_test_containers` | — | Stop and remove test containers |
-| `capture_and_analyze` | `container_names[]?`, `duration_seconds=120`, `spike_threshold=2.0`, `time_window_seconds=30` | Live capture for N seconds then combined report: spikes + correlation + per-container breakdown |
+| `capture_and_analyze` | `container_names[]?`, `duration_seconds=120`, `spike_threshold=2.0`, `time_window_seconds=30`, `use_cache=true` | Live capture for N seconds then combined report: spikes + correlation + per-container breakdown. Uses log cache-first if available (instant if logs synced). |
 
 ## Configuration
 
@@ -107,6 +108,64 @@ Optional environment variables (`.env` file):
 | `DEFAULT_SPIKE_TAIL_LINES` | `1000` | Log lines for spike detection |
 | `DEFAULT_SPIKE_THRESHOLD` | `2.0` | Spike ratio threshold (current / baseline) |
 | `DEFAULT_CORRELATION_WINDOW_SECONDS` | `30` | Co-occurrence window for correlation |
+| `USE_LOGS_CACHE` | `true` | Check `.cache/logs/` before Docker API (cache-first strategy) |
+| `CACHE_MAX_AGE_MINUTES` | `60` | Max cache age before re-fetching from Docker API |
+
+### Log Cache Strategy (Cache-First)
+
+All tools use a **cache-first strategy** for log fetching:
+
+1. **Check cache** – `.cache/logs/<container>/<YYYY-MM-DD>.jsonl`
+2. **If cache hit** (exists + fresh) – use cached logs instantly ⚡
+3. **If cache miss** – fetch fresh from Docker API (current behavior)
+
+**Sync logs first for maximum speed:**
+
+```bash
+# Sync logs for a time window (e.g., last 4 hours)
+uv run docker-log-analyzer-mcp sync_docker_logs --since "4 hours ago"
+
+# Now all tool calls use cache (100x faster!)
+uv run docker-log-analyzer-mcp analyze_patterns          # reads from cache
+uv run docker-log-analyzer-mcp detect_error_spikes      # reads from cache
+uv run docker-log-analyzer-mcp capture_and_analyze      # instant bug reproduction
+
+# Works even with containers stopped (offline analysis!)
+docker compose down
+uv run docker-log-analyzer-mcp correlate_containers     # still works via cache
+```
+
+**Cache structure:**
+
+```
+.cache/logs/
+  ├── metadata.json                          (sync tracking)
+  ├── web-app/
+  │   ├── 2026-03-04.jsonl (5000 lines)
+  │   ├── 2026-03-03.jsonl
+  │   └── 2026-03-02.jsonl
+  └── database/
+      └── 2026-03-04.jsonl
+```
+
+**Cache features:**
+- **Atomic writes** – temp file + rename, safe on crashes
+- **Multi-day windows** – queries across date boundaries
+- **Time-based args** – `"2 hours ago"`, `"7 days ago"`, ISO-8601 timestamps
+- **Metadata tracking** – synced_at, line_count per date
+- **Fallback safety** – always works without cache (just slower)
+
+**Clear cache if needed:**
+
+```bash
+# Clear cache for one container
+rm -rf .cache/logs/web-app/
+
+# Clear all log cache
+rm -rf .cache/logs/
+
+# Keep pattern cache separate (.cache/patterns/)
+```
 
 ### Pattern Analysis Cache
 

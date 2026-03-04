@@ -71,11 +71,32 @@ All tools are registered in mcp_server.py.
 ## 3. PERFORMANCE RULES
 -------------------------------------------------------------------------------
 
-### 3.1 Log Fetching
+### 3.1 Log Fetching (Cache-First Strategy)
 
-- Always use tail limits.
-- Never fetch unlimited logs.
-- Respect DEFAULT_TAIL_LINES from config.
+All tools use cache-first pattern:
+
+1. Check `.cache/logs/<container>/<YYYY-MM-DD>.jsonl`
+2. If fresh (< CACHE_MAX_AGE_MINUTES), use cached logs
+3. Otherwise, fetch fresh from Docker API
+
+**Log Caching Rules:**
+- Keyed by: container name + date
+- Stored under: `.cache/logs/<container>/`
+- Format: JSONL with ISO-8601 timestamps
+- Atomic writes via tempfile + rename
+- Metadata: `.cache/logs/metadata.json` tracks sync times
+- Default window: 24 hours per tool (configurable)
+- Fallback: Always works without cache (just slower)
+
+**sync_docker_logs tool:**
+- Explicitly caches logs for time window
+- Accepts relative ("2 hours ago") or ISO-8601 timestamps
+- Enables offline analysis after containers stop
+- Enables instant bug reproduction (no 2-min wait)
+
+**Response fields:**
+- `cache_hits` – dict showing which containers used cache
+- Enables monitoring cache effectiveness
 
 ### 3.2 Polars Usage
 
@@ -83,19 +104,20 @@ All tools are registered in mcp_server.py.
 - Avoid Python loops over log lines.
 - Parse timestamps once.
 
-### 3.3 Caching
+### 3.3 Pattern Analysis Cache
 
-Only analyze_patterns uses disk caching.
+`analyze_patterns` results cached separately.
 
 Cache rules:
 - Keyed by container name only
-- Stored under .cache/patterns/
+- Stored under `.cache/patterns/`
 - Must include:
     - cache_hit
     - cached_at (ISO-8601 UTC)
+- Independent from log cache
 
 If log format detection logic changes,
-contributors must manually clear cache.
+contributors must manually clear `.cache/patterns/`.
 
 -------------------------------------------------------------------------------
 ## 4. TESTING STRATEGY
