@@ -17,6 +17,7 @@ from docker_log_analyzer.mcp_server import (
     tool_detect_error_spikes,
     tool_correlate_containers,
     tool_detect_data_leaks,
+    tool_map_service_dependencies,
     tool_start_test_containers,
     tool_stop_test_containers,
 )
@@ -345,3 +346,81 @@ class TestDetectDataLeaks:
         assert result["status"] == "error"
         assert "not found" in result["error"].lower()
 
+
+# ── map_service_dependencies ───────────────────────────────────────────────────
+
+class TestMapServiceDependencies:
+
+    def test_returns_success_status(self, docker_client):
+        result = tool_map_service_dependencies(tail=100)
+        assert result["status"] == "success"
+
+    def test_required_top_level_keys(self, docker_client):
+        result = tool_map_service_dependencies(tail=100)
+        assert "dependencies" in result
+        assert "cascade_candidates" in result
+        assert "cache_hits" in result
+        assert "parameters" in result
+
+    def test_dependencies_is_dict(self, docker_client):
+        result = tool_map_service_dependencies(tail=100)
+        assert isinstance(result["dependencies"], dict)
+
+    def test_cascade_candidates_is_list(self, docker_client):
+        result = tool_map_service_dependencies(tail=100)
+        assert isinstance(result["cascade_candidates"], list)
+
+    def test_cache_hits_is_dict(self, docker_client):
+        result = tool_map_service_dependencies(tail=100)
+        assert isinstance(result["cache_hits"], dict)
+
+    def test_parameters_echoed_back(self, docker_client):
+        result = tool_map_service_dependencies(tail=200, include_transitive=True)
+        assert result["parameters"]["tail"] == 200
+        assert result["parameters"]["include_transitive"] is True
+
+    def test_dependency_edge_fields(self, docker_client):
+        result = tool_map_service_dependencies(tail=200)
+        for _src, edges in result["dependencies"].items():
+            assert isinstance(edges, list)
+            for edge in edges:
+                assert "target" in edge
+                assert "inferred_from" in edge
+                assert "confidence" in edge
+                assert "hit_count" in edge
+                assert edge["confidence"] in ("high", "medium", "low")
+
+    def test_cascade_candidate_fields(self, docker_client):
+        result = tool_map_service_dependencies(tail=500)
+        for c in result["cascade_candidates"]:
+            assert "from" in c
+            assert "to" in c
+            assert "dependency_type" in c
+            assert "correlation_score" in c
+            assert "confidence" in c
+            assert "evidence" in c
+            assert c["confidence"] in ("high", "medium", "low")
+            assert 0.0 <= c["correlation_score"] <= 1.0
+
+    def test_specific_containers_filter(self, docker_client):
+        result = tool_map_service_dependencies(
+            containers=["test-web-app"], tail=100
+        )
+        assert result["status"] == "success"
+        # cache_hits should only include the requested container
+        assert set(result["cache_hits"].keys()).issubset({"test-web-app"})
+
+    def test_include_transitive_flag_accepted(self, docker_client):
+        result = tool_map_service_dependencies(tail=100, include_transitive=True)
+        assert result["status"] == "success"
+        # Verify any transitive edge is properly labelled
+        for _src, edges in result["dependencies"].items():
+            for edge in edges:
+                if edge["inferred_from"] == "transitive":
+                    assert edge["confidence"] == "low"
+                    assert edge["hit_count"] == 0
+
+    def test_invalid_container_returns_error(self, docker_client):
+        result = tool_map_service_dependencies(containers=["nonexistent-xyz"])
+        assert result["status"] == "error"
+        assert "not found" in result["error"].lower()

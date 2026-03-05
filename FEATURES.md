@@ -719,6 +719,88 @@ rm .cache/logs/metadata.json
 
 ---
 
+## DIFF: map_service_dependencies
+
+Planned addition. Not yet implemented.
+
+**Proposed signature:**
+
+```python
+tool_map_service_dependencies(
+    containers: Optional[List[str]] = None,
+    include_transitive: bool = False,
+) -> dict
+```
+
+**Purpose:** Parse container logs for service calls, database connections, and external API calls to build a structural dependency graph with error cascade candidates.
+
+**Copilot use case:** "Show me how errors cascade between my microservices"
+
+### Differentiation from existing tools
+
+| Tool | What it answers |
+| ---- | --------------- |
+| `correlate_containers` | Did errors in A and B happen at the same time? (temporal co-occurrence) |
+| `map_service_dependencies` | Does A's logs show it calls B? (structural dependency) |
+| Combined | "A depends on B, and their errors correlate at r=0.82 — B errors likely cause A errors" |
+
+### Dependency signals (regex-parseable from logs)
+
+- HTTP calls: `http(s)://service-name:port`, `requests.get`, `fetch`, `axios`
+- DB connections: `postgres://`, `redis://`, `mongodb://`, `mysql://`
+- gRPC: `calling grpc`, service mesh headers
+- Container name mentions in log output
+
+Each edge includes `"inferred_from": ["http_url", "connection_string"]` to qualify confidence.
+
+### Output shape
+
+```json
+{
+  "dependencies": {
+    "gateway": ["web-app", "auth-service"],
+    "web-app": ["database", "cache"]
+  },
+  "cascade_candidates": [
+    {
+      "from": "database",
+      "to": ["web-app", "gateway"],
+      "evidence": "dependency_graph + error_correlation",
+      "confidence": "medium"
+    }
+  ],
+  "cache_hits": {}
+}
+```
+
+### Design decisions
+
+- **`trace_depth` dropped** — implies runtime tracing semantics (Jaeger/Zipkin) that logs cannot deliver. From logs, reliable dependency detection is 1-hop per container. Transitive closure is computed when `include_transitive=True` but labeled as speculative.
+- **"Error propagation paths" scoped to "cascade candidates"** — true propagation direction requires dependency graph + temporal correlation + causal ordering. The tool surfaces candidates with confidence levels (high/medium/low) based on correlation score + dependency evidence; it does not assert causality.
+- **Confidence qualifiers on all edges** — HTTP URL matches are high-confidence; container name mentions in log text are low-confidence.
+- **gRPC/event-driven coverage is limited** — HTTP-heavy microservices get the most value. Framework-specific gRPC patterns have false negatives; documented in tool description.
+
+### Implementation plan
+
+1. New module `dependency_mapper.py`:
+   - Regex patterns for HTTP URLs, DB connection strings, container name references
+   - `extract_dependencies(lines) -> List[Tuple[str, str, str]]` — `(target, inferred_from, confidence)`
+   - `build_graph(container_logs) -> dict` — adjacency dict with edge metadata
+   - `find_cascade_candidates(graph, correlation_results) -> List[dict]` — join with correlator output
+
+2. `mcp_server.py` tool registration:
+   - Fetch logs (cache-first, same pattern as existing tools)
+   - Call `correlate()` directly (no tool-to-tool calls) for cascade candidate scoring
+   - Return structured JSON
+
+3. Tests:
+   - Unit: regex patterns, graph builder, cascade candidate logic (~20 tests)
+   - Integration: live test containers, verify known dependency detected (~10 tests)
+
+**Estimated scope:** ~120 lines `dependency_mapper.py`, ~60 lines in `mcp_server.py`, ~30 tests.
+
+---
+
 ## See Also
 
 - [README.md](README.md) – Quick start, usage examples

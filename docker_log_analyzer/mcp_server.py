@@ -35,6 +35,7 @@ from .cache_manager import (
 )
 from .config import settings
 from .correlator import correlate
+from .dependency_mapper import build_graph, find_cascade_candidates
 from .log_pattern_analyzer import PatternDetector
 from .logger import logger
 from .secret_detector import SecretDetector
@@ -800,6 +801,90 @@ async def tool_detect_data_leaks(
         "recommendations": recommendations,
     }
 
+def tool_map_service_dependencies(
+    containers: Optional[list[str]] = None,
+    tail: int = 500,
+    include_transitive: bool = False,
+    use_cache: bool = True,
+) -> dict:
+    """Map service dependencies inferred from container log analysis.
+
+    Scans logs for HTTP URLs, database connection strings, gRPC dial calls, and
+    container name mentions to build a directed dependency graph. Joins with
+    temporal error correlation to surface likely error cascade candidates.
+
+    Logs fetching strategy (cache-first):
+    1. Check .cache/logs/<container>/<YYYY-MM-DD>.jsonl (24-hour window)
+    2. If cache hit, use cached logs (instant)
+    3. Otherwise, fetch fresh from Docker API
+
+    Note: Dependencies are inferred best-effort from log content.
+    HTTP URL matches are high-confidence; container name mentions are low-confidence.
+    gRPC/event-driven architectures may have limited coverage.
+    """
+    try:
+        client = _docker_client()
+    except RuntimeError as exc:
+        return {"status": "error", "error": str(exc)}
+
+    if containers:
+        try:
+            targets = [client.container.inspect(name) for name in containers]
+        except NoSuchContainer as exc:
+            return {"status": "error", "error": f"Container not found: {exc}"}
+    else:
+        targets = client.container.list()
+
+    if not targets:
+        return {
+            "status": "success",
+            "dependencies": {},
+            "cascade_candidates": [],
+            "cache_hits": {},
+            "message": "No running containers.",
+        }
+
+    now = datetime.now(timezone.utc)
+    since = now - timedelta(hours=24)
+
+    container_logs: dict[str, list[str]] = {}
+    cache_hits: dict[str, bool] = {}
+
+    for c in targets:
+        name = _container_name(c)
+        logs, was_cached = _fetch_logs_with_cache(c, name, since, now, use_cache=use_cache)
+        if logs:
+            container_logs[name] = logs
+            cache_hits[name] = was_cached
+
+    if not container_logs:
+        return {
+            "status": "success",
+            "dependencies": {},
+            "cascade_candidates": [],
+            "cache_hits": cache_hits,
+            "message": "No logs found in any container.",
+        }
+
+    graph = build_graph(container_logs, include_transitive=include_transitive)
+
+    cascade_candidates: list[dict] = []
+    if len(container_logs) >= 2:
+        correlations = correlate(container_logs, time_window_seconds=30)
+        cascade_candidates = find_cascade_candidates(graph, correlations)
+
+    return {
+        "status": "success",
+        "dependencies": graph,
+        "cascade_candidates": cascade_candidates,
+        "cache_hits": cache_hits,
+        "parameters": {
+            "tail": tail,
+            "include_transitive": include_transitive,
+        },
+    }
+
+
 # ── Tool wrapper functions (for registry) ──────────────────────────────────
 
 def _wrap_analyze_patterns(**kwargs) -> dict:
@@ -865,6 +950,15 @@ def _wrap_detect_data_leaks(**kwargs) -> dict:
         container_names=kwargs.get("container_names"),
         severity_filter=str(kwargs.get("severity_filter", "all")),
     ))
+
+
+def _wrap_map_service_dependencies(**kwargs) -> dict:
+    """Wrapper for map_service_dependencies with argument unpacking."""
+    return tool_map_service_dependencies(
+        containers=kwargs.get("containers"),
+        tail=int(kwargs.get("tail", 500)),
+        include_transitive=bool(kwargs.get("include_transitive", False)),
+    )
 
 
 # ── Tool registry (replaces if/elif dispatch) ──────────────────────────────
@@ -1166,6 +1260,47 @@ _registry.register(
                     "enum": ["all", "high", "critical"],
                     "description": "Filter by minimum severity: 'critical' (API keys), 'high' (tokens, DB URLs), 'all' (includes PII). Default 'all'.",
                     "default": "all",
+                },
+            },
+            "required": [],
+        },
+    }
+)
+
+
+_registry.register(
+    "map_service_dependencies",
+    _wrap_map_service_dependencies,
+    {
+        "description": (
+            "Infer service dependency graph from container log analysis. "
+            "Parses HTTP URLs, database connection strings, gRPC dial calls, and "
+            "container name mentions to build a directed graph. Joins with temporal "
+            "error correlation to surface likely error cascade paths. "
+            "Best for HTTP-heavy microservices; gRPC/event-driven coverage is limited. "
+            "No LLM required."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "containers": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Specific containers to analyse. Omit for all running containers.",
+                },
+                "tail": {
+                    "type": "integer",
+                    "description": "Log lines to fetch per container (default 500).",
+                    "default": 500,
+                },
+                "include_transitive": {
+                    "type": "boolean",
+                    "description": (
+                        "Add one-hop transitive edges (A→B + B→C → A→C). "
+                        "Transitive edges are marked confidence='low' and inferred_from='transitive'. "
+                        "Default false."
+                    ),
+                    "default": False,
                 },
             },
             "required": [],
