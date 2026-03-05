@@ -129,3 +129,10 @@ fix | correlator + secret_detector | Harden Docker timestamp regex: make fractio
 feat | secret_detector | Add Stripe secret key (critical), Google API key (high), Stripe publishable key (high), Azure storage account key (high), OAuth client secret (high), base64-encoded secret (medium), session cookie (medium)
 feat | secret_detector | Add targeted remediation recommendations for Stripe, Google, and Azure findings
 test | secret_detector | 21 new unit tests across TestNewSecretPatterns, TestDockerTimestampRegex, TestNewRecommendations classes; 111 total passing
+feature | dependency_mapper | New module: log-based service dependency inference (HTTP URLs, DB connection strings, gRPC/dial patterns, container name mentions)
+feature | dependency_mapper | build_graph(): directed dependency graph with hit_count per edge; per-line accumulation for accurate counts; self-loop exclusion
+feature | dependency_mapper | find_cascade_candidates(): join dependency graph with correlator output to surface cascade paths with high/medium/low confidence
+feature | mcp_server | Add tool_map_service_dependencies: cache-first, stateless; accepts containers, tail, include_transitive; returns dependencies + cascade_candidates
+test | dependency_mapper | 35 unit tests: HTTP/HTTPS/DB/gRPC/name-mention detection, dedup, localhost skip, hit_count, transitive edges, cascade candidate sorting
+test | mcp_integration | 11 new integration tests for map_service_dependencies tool: field presence, types, parameter echo, edge validation, cascade fields
+docs | FEATURES.md | Add DIFF section for map_service_dependencies: design rationale, output shape, confidence levels, dropped trace_depth rationale
