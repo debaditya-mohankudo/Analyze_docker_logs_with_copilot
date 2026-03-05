@@ -88,55 +88,55 @@ Use these natural language prompts in VSCode Copilot Chat (Agent mode) to invoke
 
 ### Discovery
 
-> "What Docker containers are currently running?"
-> "List all my running containers and their status."
+- "What Docker containers are currently running?"
+- "List all my running containers and their status."
 
 ### Pattern analysis
 
-> "Analyze the log patterns for the test-database container."
-> "What log format and programming language is test-web-app using?"
-> "Show me the log level distribution and top errors for test-gateway."
-> "Are there any health check endpoints being hit frequently in test-cache?"
+- "Analyze the log patterns for the test-database container."
+- "What log format and programming language is test-web-app using?"
+- "Show me the log level distribution and top errors for test-gateway."
+- "Are there any health check endpoints being hit frequently in test-cache?"
 
 ### Error spike detection
 
-> "Check for error spikes across all containers in the last 1000 lines."
-> "Detect error spikes in test-database with a threshold of 1.5."
-> "Are there any error rate anomalies in my containers right now?"
-> "Which containers had the worst error spikes in the last few minutes?"
+- "Check for error spikes across all containers in the last 1000 lines."
+- "Detect error spikes in test-database with a threshold of 1.5."
+- "Are there any error rate anomalies in my containers right now?"
+- "Which containers had the worst error spikes in the last few minutes?"
 
 ### Cross-container correlation
 
-> "Are there any correlated errors between my containers?"
-> "Correlate container errors using a 60-second time window."
-> "Which containers are failing together? Use a 30-second co-occurrence window."
-> "Is test-gateway causing failures in test-web-app and test-database?"
+- "Are there any correlated errors between my containers?"
+- "Correlate container errors using a 60-second time window."
+- "Which containers are failing together? Use a 30-second co-occurrence window."
+- "Is test-gateway causing failures in test-web-app and test-database?"
 
 ### Test containers
 
-> "Start the test log generator containers."
-> "Start the test containers and rebuild the images."
-> "Stop the test containers."
+- "Start the test log generator containers."
+- "Start the test containers and rebuild the images."
+- "Stop the test containers."
 
 ### Sensitive data detection
 
-> "Scan all containers for sensitive data like API keys and credentials."
-> "Check test-database logs for data leaks in the last 60 seconds."
-> "Detect critical-level secrets (API keys, tokens) in test-web-app."
-> "Are there any passwords or credit card numbers in my container logs?"
+- "Scan all containers for sensitive data like API keys and credentials."
+- "Check test-database logs for data leaks in the last 60 seconds."
+- "Detect critical-level secrets (API keys, tokens) in test-web-app."
+- "Are there any passwords or credit card numbers in my container logs?"
 
 ### Bug reproduction capture
 
-> "Watch test-web-app and test-database for the next 2 minutes — I'm about to reproduce the bug."
-> "Capture all container logs for 90 seconds, then tell me what happened."
-> "Monitor only test-gateway and test-cache for 1 minute with a spike threshold of 1.5."
-> "Start capturing now across all containers — I'll trigger the failure in a moment."
+- "Watch test-web-app and test-database for the next 2 minutes — I'm about to reproduce the bug."
+- "Capture all container logs for 90 seconds, then tell me what happened."
+- "Monitor only test-gateway and test-cache for 1 minute with a spike threshold of 1.5."
+- "Start capturing now across all containers — I'll trigger the failure in a moment."
 
 ### Combined investigation
 
-> "List my containers, then check for error spikes and tell me which ones are most correlated."
-> "My app seems unhealthy — analyze patterns and detect spikes across all containers."
-> "Check if test-web-app and test-database are failing at the same time."
+- "List my containers, then check for error spikes and tell me which ones are most correlated."
+- "My app seems unhealthy — analyze patterns and detect spikes across all containers."
+- "Check if test-web-app and test-database are failing at the same time."
 
 ## MCP Tools
 
