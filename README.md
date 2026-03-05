@@ -130,7 +130,7 @@ Use these natural language prompts in VSCode Copilot Chat (Agent mode) to invoke
 - "Watch test-web-app and test-database for the next 2 minutes — I'm about to reproduce the bug."
 - "Capture all container logs for 90 seconds, then tell me what happened."
 - "Monitor only test-gateway and test-cache for 1 minute with a spike threshold of 1.5."
-- "Start capturing now across all containers — I'll trigger the failure in a moment."
+- "Start capturing now across all containers — I'll trigger the failure in a moment. How long should I capture for?"
 
 ### Combined investigation
 
