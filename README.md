@@ -321,6 +321,21 @@ SQL — PHP: `PDOException`, `mysqli_error`, `mysql_error`, `SQLSTATE[*]`, `Quer
 - No API keys required
 - All analysis runs locally — no data leaves the machine
 
+## Future Directions
+
+### Watched Containers (Focused Analysis)
+
+Define a static `(container_name, language)` watchlist so tools focus only on containers you care about.
+
+**Design sketch:**
+
+- `containers.py` — editable list: `WATCHED = [("api", "python"), ("db", "java"), ...]`
+- `config.py` — exposes it as `settings.watched_containers` (overridable via env var)
+- `list_containers` — splits response into `watched` / `others` with a language hint per entry and an edit hint for adding more
+- Other tools — filter `client.container.list()` to watched names when no explicit `container_name` is given
+
+This avoids noise from sidecar/infra containers and lets language detection skip auto-detection for known containers.
+
 ## License
 
 MIT
