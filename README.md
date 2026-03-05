@@ -167,6 +167,57 @@ Optional environment variables (`.env` file):
 | `USE_LOGS_CACHE` | `true` | Check `.cache/logs/` before Docker API (cache-first strategy) |
 | `CACHE_MAX_AGE_MINUTES` | `60` | Max cache age before re-fetching from Docker API |
 
+### Remote Docker Setup
+
+To analyze logs from a **remote Docker host**, set the `DOCKER_HOST` environment variable to point to the remote daemon via SSH:
+
+#### Prerequisites
+
+- SSH access to remote machine (password-less auth recommended)
+- Docker daemon running on remote machine
+- `docker` CLI installed locally
+
+#### Configure SSH (one-time setup)
+
+Add to `~/.ssh/config`:
+
+```
+Host staging.example.com
+    User dev
+    IdentityFile ~/.ssh/your_key_file
+    StrictHostKeyChecking no
+```
+
+#### Test SSH connection to Docker daemon
+
+```bash
+docker -H ssh://dev@staging.example.com ps
+```
+
+#### Run analyzer on remote Docker
+
+```bash
+export DOCKER_HOST=ssh://dev@staging.example.com
+uv run docker-log-analyzer-mcp list_containers
+```
+
+#### Make it persistent (optional)
+
+Add to `~/.zshrc` or `~/.bash_profile`:
+
+```bash
+export DOCKER_HOST=ssh://dev@staging.example.com
+```
+
+Then all tool invocations automatically use the remote daemon:
+
+```bash
+uv run docker-log-analyzer-mcp detect_error_spikes
+uv run docker-log-analyzer-mcp detect_data_leaks
+```
+
+> **Note:** All analysis happens locally on your machine. Only Docker logs are fetched from the remote daemon — no secrets or sensitive data are transmitted over SSH beyond what Docker already exposes.
+
 ### Log Cache Strategy (Cache-First)
 
 All tools use a **cache-first strategy** for log fetching:
