@@ -15,13 +15,13 @@ A stateless, **LLM-free** Docker log analysis tool exposed as an [MCP](https://m
 | Metric | Value |
 | --- | --- |
 | **Coverage** | 53% (754 statements) — improved to 94-100% across core modules via targeted unit tests |
-| **Unit tests** | 111 tests across 4 modules |
-| **CI execution** | ~3.76s parallel via xdist (no Docker) |
-| **Integration tests** | 32 tests (Docker-dependent, local only) |
-| **Total test suite** | 143 tests (111 CI + 32 integration) |
+| **Unit tests** | 128 tests across 6 modules |
+| **CI execution** | ~0.8s parallel via xdist (no Docker) |
+| **Integration tests** | 46 tests (Docker-dependent, 14 optional SSH-based) |
+| **Total test suite** | 174 tests (128 unit + 46 integration) |
 
 **Module coverage:**
-- `config.py` – 100% (configuration parsing) 
+- `config.py` – 100% (configuration parsing, DOCKER_HOST handling)
 - `__init__.py` – 100% (package initialization)
 - `secret_detector.py` – 96% (20 patterns, redaction, recommendations)
 - `spike_detector.py` – 95% (rolling-window detection, timestamp parsing)
@@ -31,13 +31,15 @@ A stateless, **LLM-free** Docker log analysis tool exposed as an [MCP](https://m
 - `mcp_server.py` – 22% (tool implementations; improved via integration tests)
 
 **Test breakdown:**
+- `test_config_remote_docker.py` – 17 tests (DOCKER_HOST parsing, SSH/TCP/Unix socket handling, remote scenarios)
 - `test_spike_detector.py` – 16 tests (rolling-window spike detection, Docker timestamp parsing)
 - `test_correlator.py` – 17 tests (cross-container correlation, event extraction, scoring)
 - `test_pattern_detector.py` – 24 tests (timestamp formats, language detection, log levels, health checks, error patterns)
 - `test_secret_detector.py` – 45 tests (20 secret patterns, redaction, severity filtering, recommendations, Docker timestamp regex, edge cases)
 - `test_mcp_integration.py` – 32 integration tests (MCP tool calls with live Docker containers)
+- `test_remote_docker_integration.py` – 14 integration tests (remote Docker via SSH/TCP, graceful fallback for unavailable connections)
 
-**CI runs:** `pytest tests/ -m "not integration" --cov=docker_log_analyzer` (unit tests, ~111 tests)
+**CI runs:** `pytest tests/ -m "not integration" --cov=docker_log_analyzer` (128 unit tests, ~0.8s)
 
 ## Architecture
 
