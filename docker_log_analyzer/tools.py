@@ -383,8 +383,9 @@ def tool_correlate_containers(
     time_window_seconds: int = 30,
     tail: int = 500,
     use_cache: bool = True,
+    container_names: list[str] | None = None,
 ) -> dict:
-    """Compute pairwise temporal error correlation across all running containers."""
+    """Compute pairwise temporal error correlation across running containers."""
     try:
         client = _docker_client()
     except RuntimeError as exc:
@@ -392,6 +393,10 @@ def tool_correlate_containers(
 
     running = client.container.list()
     parameters = {"time_window_seconds": time_window_seconds, "tail": tail}
+
+    # Filter to user-selected containers if provided
+    if container_names:
+        running = [c for c in running if _container_name(c) in container_names]
 
     if len(running) < 2:
         return {

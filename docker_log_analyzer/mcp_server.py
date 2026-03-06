@@ -15,15 +15,17 @@ Exposes 10 tools to VSCode Copilot Agent Mode via .vscode/mcp.json:
   stop_test_containers      – stop and remove test log-generator containers
 
 All tools are stateless (fetch → analyse → return JSON). No external API calls.
-Tool implementations live in tools.py; this file is registry + MCP wiring only.
+Tool implementations live in tools.py; this file is FastMCP wiring.
 """
 
-import asyncio
-import json
+from __future__ import annotations
 
-from mcp.server import Server
-from mcp.server.stdio import stdio_server
-from mcp.types import TextContent, Tool
+try:
+    from mcp.server.fastmcp import FastMCP
+except ImportError as exc:  # pragma: no cover
+    raise RuntimeError(
+        "MCP dependency is missing. Install project dependencies with 'uv sync'."
+    ) from exc
 
 from .config import settings
 from .logger import logger
@@ -43,459 +45,209 @@ from .tools import (
 )
 
 
-# ── Wrappers (argument unpacking + type coercion) ───────────────────────────
+# ── FastMCP server ────────────────────────────────────────────────────────────
 
-def _wrap_analyze_patterns(**kwargs) -> dict:
-    """Wrapper for analyze_patterns with argument unpacking."""
+mcp = FastMCP("docker-log-analyzer")
+
+
+# ── Tools ─────────────────────────────────────────────────────────────────────
+
+@mcp.tool()
+async def list_containers() -> dict:
+    """List all running Docker containers with name, image, status, and labels."""
+    return tool_list_containers()
+
+
+@mcp.tool()
+async def analyze_patterns(
+    container_name: str | None = None,
+    tail: int = 500,
+    force_refresh: bool = False,
+) -> dict:
+    """Fetch Docker container logs and detect patterns: timestamp format, programming language,
+    log level distribution, health check frequency, and common error patterns. No LLM required.
+
+    Args:
+        container_name: Target container name. Omit to analyze all running containers.
+        tail: Number of recent log lines to fetch (default 500).
+        force_refresh: Bypass the on-disk cache and re-analyse live logs. Use when the
+            service has changed significantly since the last analysis.
+    """
     return tool_analyze_patterns(
-        container_name=kwargs.get("container_name"),
-        tail=int(kwargs.get("tail", settings.default_tail_lines)),
-        force_refresh=bool(kwargs.get("force_refresh", False)),
+        container_name=container_name,
+        tail=tail,
+        force_refresh=force_refresh,
     )
 
 
-def _wrap_detect_error_spikes(**kwargs) -> dict:
-    """Wrapper for detect_error_spikes with argument unpacking."""
+@mcp.tool()
+async def detect_error_spikes(
+    container_name: str | None = None,
+    tail: int = 1000,
+    window_minutes: int = 5,
+    spike_threshold: float = 2.0,
+) -> dict:
+    """Detect error spikes in Docker container logs using Polars rolling-window analysis.
+    Flags 1-minute buckets where error count exceeds spike_threshold × rolling baseline.
+    No LLM required.
+
+    Args:
+        container_name: Target container name. Omit to check all containers.
+        tail: Log lines to fetch per container (default 1000).
+        window_minutes: Spike detection window in minutes (default 5).
+        spike_threshold: Ratio of current bucket to rolling baseline that triggers a
+            spike (default 2.0 = 2× baseline).
+    """
     return tool_detect_error_spikes(
-        container_name=kwargs.get("container_name"),
-        tail=int(kwargs.get("tail", settings.default_spike_tail_lines)),
-        window_minutes=int(kwargs.get("window_minutes", settings.default_window_minutes)),
-        spike_threshold=float(kwargs.get("spike_threshold", settings.default_spike_threshold)),
+        container_name=container_name,
+        tail=tail,
+        window_minutes=window_minutes,
+        spike_threshold=spike_threshold,
     )
 
 
-def _wrap_correlate_containers(**kwargs) -> dict:
-    """Wrapper for correlate_containers with argument unpacking."""
+@mcp.tool()
+async def correlate_containers(
+    container_names: list[str] | None = None,
+    time_window_seconds: int = 30,
+    tail: int = 500,
+) -> dict:
+    """Compute pairwise temporal correlation of errors across containers.
+
+    Args:
+        container_names: Container names to correlate. Omit to correlate all running containers.
+        time_window_seconds: Co-occurrence window in seconds (default 30).
+        tail: Log lines to fetch per container (default 500).
+    """
     return tool_correlate_containers(
-        time_window_seconds=int(
-            kwargs.get("time_window_seconds", settings.default_correlation_window_seconds)
-        ),
-        tail=int(kwargs.get("tail", settings.default_tail_lines)),
+        time_window_seconds=time_window_seconds,
+        tail=tail,
+        container_names=container_names,
     )
 
 
-def _wrap_start_test_containers(**kwargs) -> dict:
-    """Wrapper for start_test_containers with argument unpacking."""
-    return tool_start_test_containers(
-        rebuild=bool(kwargs.get("rebuild", False)),
-    )
+@mcp.tool()
+async def start_test_containers(rebuild: bool = False) -> dict:
+    """Build and start the test log-generator containers defined in docker-compose.test.yml.
+    Spins up 4 containers (web-app, database, cache, gateway) that emit random logs in
+    different formats (ISO-8601, syslog, epoch, Apache) and languages (Python, Java, Go,
+    Node.js) with periodic error spikes for testing.
+
+    Args:
+        rebuild: Force rebuild of the Docker image before starting (default false).
+    """
+    return tool_start_test_containers(rebuild=rebuild)
 
 
-def _wrap_sync_docker_logs(**kwargs) -> dict:
-    """Wrapper for sync_docker_logs with argument unpacking."""
+@mcp.tool()
+async def stop_test_containers() -> dict:
+    """Stop and remove the test log-generator containers started by start_test_containers."""
+    return tool_stop_test_containers()
+
+
+@mcp.tool()
+async def sync_docker_logs(
+    container_names: list[str] | None = None,
+    since: str = "24 hours ago",
+    until: str = "now",
+    force_refresh: bool = False,
+) -> dict:
+    """Sync Docker logs to local cache (.cache/logs/) for a time window.
+    Enables fast offline analysis and bug reproduction by caching logs locally.
+    All tools use cache-first strategy when analyzing logs.
+
+    Args:
+        container_names: Specific containers to sync. Omit to sync all running containers.
+        since: Start of time window (default '24 hours ago'). Examples: '2 hours ago',
+            '7 days ago', '2026-03-04T10:00:00Z'.
+        until: End of time window (default 'now'). Same format as 'since'.
+        force_refresh: Skip cache, re-fetch all logs (default false).
+    """
     return tool_sync_docker_logs(
-        container_names=kwargs.get("container_names"),
-        since=str(kwargs.get("since", "24 hours ago")),
-        until=str(kwargs.get("until", "now")),
-        force_refresh=bool(kwargs.get("force_refresh", False)),
+        container_names=container_names,
+        since=since,
+        until=until,
+        force_refresh=force_refresh,
     )
 
 
-def _wrap_capture_and_analyze(**kwargs) -> dict:
-    """Wrapper for capture_and_analyze with argument unpacking."""
-    return asyncio.run(tool_capture_and_analyze(
-        container_names=kwargs.get("container_names"),
-        duration_seconds=int(kwargs.get("duration_seconds", 120)),
-        spike_threshold=float(kwargs.get("spike_threshold", 2.0)),
-        time_window_seconds=int(kwargs.get("time_window_seconds", 30)),
-    ))
+@mcp.tool()
+async def capture_and_analyze(
+    container_names: list[str] | None = None,
+    duration_seconds: int = 120,
+    spike_threshold: float = 2.0,
+    time_window_seconds: int = 30,
+) -> dict:
+    """Capture live logs for a specified duration then return a combined analysis: error
+    spikes, cross-container correlation, and per-container log level breakdown. Designed
+    for bug reproduction — call this, reproduce the issue, and get a unified report of
+    exactly what happened across your services during the window.
+
+    Args:
+        container_names: Containers to monitor. Omit to watch all running containers.
+        duration_seconds: Capture window in seconds (default 120 = 2 minutes).
+        spike_threshold: Error rate multiplier to flag as a spike (default 2.0).
+        time_window_seconds: Co-occurrence window for cross-container correlation
+            (default 30).
+    """
+    return await tool_capture_and_analyze(
+        container_names=container_names,
+        duration_seconds=duration_seconds,
+        spike_threshold=spike_threshold,
+        time_window_seconds=time_window_seconds,
+    )
 
 
-def _wrap_detect_data_leaks(**kwargs) -> dict:
-    """Wrapper for detect_data_leaks with argument unpacking."""
-    return asyncio.run(tool_detect_data_leaks(
-        duration_seconds=int(kwargs.get("duration_seconds", 60)),
-        container_names=kwargs.get("container_names"),
-        severity_filter=str(kwargs.get("severity_filter", "all")),
-    ))
+@mcp.tool()
+async def detect_data_leaks(
+    duration_seconds: int = 60,
+    container_names: list[str] | None = None,
+    severity_filter: str = "all",
+) -> dict:
+    """Detect sensitive data (API keys, credentials, tokens, PII) in container logs over a
+    specified time window. Returns findings sorted by severity with remediation
+    recommendations. Designed for security audits and compliance checks.
+
+    Args:
+        duration_seconds: Scan window in seconds (default 60).
+        container_names: Containers to scan. Omit to scan all running containers.
+        severity_filter: Filter by minimum severity — 'critical' (API keys), 'high'
+            (tokens, DB URLs), 'all' (includes PII). Default 'all'.
+    """
+    return await tool_detect_data_leaks(
+        duration_seconds=duration_seconds,
+        container_names=container_names,
+        severity_filter=severity_filter,
+    )
 
 
-def _wrap_map_service_dependencies(**kwargs) -> dict:
-    """Wrapper for map_service_dependencies with argument unpacking."""
+@mcp.tool()
+async def map_service_dependencies(
+    containers: list[str] | None = None,
+    tail: int = 500,
+    include_transitive: bool = False,
+) -> dict:
+    """Infer service dependency graph from container log analysis. Parses HTTP URLs,
+    database connection strings, gRPC dial calls, and container name mentions to build
+    a directed graph. Joins with temporal error correlation to surface likely error
+    cascade paths. Best for HTTP-heavy microservices; gRPC/event-driven coverage is
+    limited. No LLM required.
+
+    Args:
+        containers: Specific containers to analyse. Omit for all running containers.
+        tail: Log lines to fetch per container (default 500).
+        include_transitive: Add one-hop transitive edges (A→B + B→C → A→C). Transitive
+            edges are marked confidence='low' and inferred_from='transitive'.
+            Default false.
+    """
     return tool_map_service_dependencies(
-        containers=kwargs.get("containers"),
-        tail=int(kwargs.get("tail", 500)),
-        include_transitive=bool(kwargs.get("include_transitive", False)),
+        containers=containers,
+        tail=tail,
+        include_transitive=include_transitive,
     )
 
 
-# ── Tool registry (replaces if/elif dispatch) ──────────────────────────────
-
-class ToolRegistry:
-    """Registry pattern for MCP tools."""
-
-    def __init__(self):
-        self._tools: dict[str, dict] = {}
-
-    def register(self, name: str, handler, schema: dict):
-        """Register a tool with its handler and JSON schema."""
-        self._tools[name] = {
-            "handler": handler,
-            "schema": schema,
-        }
-
-    def get_handler(self, name: str):
-        """Get the handler function for a tool."""
-        if name not in self._tools:
-            return None
-        return self._tools[name]["handler"]
-
-    def get_schema(self, name: str) -> dict:
-        """Get the JSON schema for a tool."""
-        if name not in self._tools:
-            return {}
-        return self._tools[name]["schema"]
-
-    def list_tools(self) -> list[Tool]:
-        """Generate Tool objects for all registered tools."""
-        tools = []
-        for name, tool_def in self._tools.items():
-            schema = tool_def["schema"]
-            tools.append(
-                Tool(
-                    name=name,
-                    description=schema.get("description", ""),
-                    inputSchema=schema.get("inputSchema", {"type": "object", "properties": {}, "required": []}),
-                )
-            )
-        return tools
-
-
-# Create the global registry
-_registry = ToolRegistry()
-
-
-# Register all tools
-_registry.register(
-    "list_containers",
-    tool_list_containers,
-    {
-        "description": "List all running Docker containers with name, image, status, and labels.",
-        "inputSchema": {"type": "object", "properties": {}, "required": []},
-    }
-)
-
-_registry.register(
-    "analyze_patterns",
-    _wrap_analyze_patterns,
-    {
-        "description": (
-            "Fetch Docker container logs and detect patterns: timestamp format, "
-            "programming language, log level distribution, health check frequency, "
-            "and common error patterns. No LLM required."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "container_name": {
-                    "type": "string",
-                    "description": "Target container name. Omit to analyze all running containers.",
-                },
-                "tail": {
-                    "type": "integer",
-                    "description": "Number of recent log lines to fetch (default 500).",
-                    "default": 500,
-                },
-                "force_refresh": {
-                    "type": "boolean",
-                    "description": (
-                        "Bypass the on-disk cache and re-analyse live logs. "
-                        "Use when the service has changed significantly since the last analysis."
-                    ),
-                    "default": False,
-                },
-            },
-            "required": [],
-        },
-    }
-)
-
-_registry.register(
-    "detect_error_spikes",
-    _wrap_detect_error_spikes,
-    {
-        "description": (
-            "Detect error spikes in Docker container logs using Polars rolling-window analysis. "
-            "Flags 1-minute buckets where error count exceeds spike_threshold × rolling baseline. "
-            "No LLM required."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "container_name": {
-                    "type": "string",
-                    "description": "Target container name. Omit to check all containers.",
-                },
-                "tail": {
-                    "type": "integer",
-                    "description": "Log lines to fetch per container (default 1000).",
-                    "default": 1000,
-                },
-                "window_minutes": {
-                    "type": "integer",
-                    "description": "Spike detection window in minutes (default 5).",
-                    "default": 5,
-                },
-                "spike_threshold": {
-                    "type": "number",
-                    "description": (
-                        "Ratio of current bucket to rolling baseline that triggers a spike "
-                        "(default 2.0 = 2× baseline)."
-                    ),
-                    "default": 2.0,
-                },
-            },
-            "required": [],
-        },
-    }
-)
-
-_registry.register(
-    "correlate_containers",
-    _wrap_correlate_containers,
-    {
-        "description": (
-            "Compute pairwise temporal correlation of errors across all running containers. "
-            "Returns container pairs sorted by correlation score (0–1) with example "
-            "co-occurring error lines. No LLM required."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "time_window_seconds": {
-                    "type": "integer",
-                    "description": "Co-occurrence window in seconds (default 30).",
-                    "default": 30,
-                },
-                "tail": {
-                    "type": "integer",
-                    "description": "Log lines to fetch per container (default 500).",
-                    "default": 500,
-                },
-            },
-            "required": [],
-        },
-    }
-)
-
-_registry.register(
-    "start_test_containers",
-    _wrap_start_test_containers,
-    {
-        "description": (
-            "Build and start the test log-generator containers defined in docker-compose.test.yml. "
-            "Spins up 4 containers (web-app, database, cache, gateway) that emit random logs "
-            "in different formats (ISO-8601, syslog, epoch, Apache) and languages "
-            "(Python, Java, Go, Node.js) with periodic error spikes for testing."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "rebuild": {
-                    "type": "boolean",
-                    "description": "Force rebuild of the Docker image before starting (default false).",
-                    "default": False,
-                },
-            },
-            "required": [],
-        },
-    }
-)
-
-_registry.register(
-    "stop_test_containers",
-    tool_stop_test_containers,
-    {
-        "description": "Stop and remove the test log-generator containers started by start_test_containers.",
-        "inputSchema": {"type": "object", "properties": {}, "required": []},
-    }
-)
-
-_registry.register(
-    "sync_docker_logs",
-    _wrap_sync_docker_logs,
-    {
-        "description": (
-            "Sync Docker logs to local cache (.cache/logs/) for a time window. "
-            "Enables fast offline analysis and bug reproduction by caching logs locally. "
-            "All tools use cache-first strategy when analyzing logs."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "container_names": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Specific containers to sync. Omit to sync all running containers.",
-                },
-                "since": {
-                    "type": "string",
-                    "description": (
-                        "Start of time window (default '24 hours ago'). "
-                        "Examples: '2 hours ago', '7 days ago', '2026-03-04T10:00:00Z'"
-                    ),
-                    "default": "24 hours ago",
-                },
-                "until": {
-                    "type": "string",
-                    "description": "End of time window (default 'now'). Same format as 'since'.",
-                    "default": "now",
-                },
-                "force_refresh": {
-                    "type": "boolean",
-                    "description": "Skip cache, re-fetch all logs (default false).",
-                    "default": False,
-                },
-            },
-            "required": [],
-        },
-    }
-)
-
-_registry.register(
-    "capture_and_analyze",
-    _wrap_capture_and_analyze,
-    {
-        "description": (
-            "Capture live logs for a specified duration (default 2 minutes) then return a combined "
-            "analysis: error spikes, cross-container correlation, and per-container log level "
-            "breakdown. Designed for bug reproduction — call this, reproduce the issue, and get a "
-            "unified report of exactly what happened across your services during the window."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "container_names": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Containers to monitor. Omit to watch all running containers.",
-                },
-                "duration_seconds": {
-                    "type": "integer",
-                    "description": "Capture window in seconds (default 120 = 2 minutes).",
-                    "default": 120,
-                },
-                "spike_threshold": {
-                    "type": "number",
-                    "description": "Error rate multiplier to flag as a spike (default 2.0).",
-                    "default": 2.0,
-                },
-                "time_window_seconds": {
-                    "type": "integer",
-                    "description": "Co-occurrence window for cross-container correlation (default 30).",
-                    "default": 30,
-                },
-            },
-            "required": [],
-        },
-    }
-)
-
-_registry.register(
-    "detect_data_leaks",
-    _wrap_detect_data_leaks,
-    {
-        "description": (
-            "Detect sensitive data (API keys, credentials, tokens, PII) in container logs over a "
-            "specified time window (default 60s). Returns findings sorted by severity with "
-            "remediation recommendations. Designed for security audits and compliance checks."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "duration_seconds": {
-                    "type": "integer",
-                    "description": "Scan window in seconds (default 60).",
-                    "default": 60,
-                },
-                "container_names": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Containers to scan. Omit to scan all running containers.",
-                },
-                "severity_filter": {
-                    "type": "string",
-                    "enum": ["all", "high", "critical"],
-                    "description": "Filter by minimum severity: 'critical' (API keys), 'high' (tokens, DB URLs), 'all' (includes PII). Default 'all'.",
-                    "default": "all",
-                },
-            },
-            "required": [],
-        },
-    }
-)
-
-_registry.register(
-    "map_service_dependencies",
-    _wrap_map_service_dependencies,
-    {
-        "description": (
-            "Infer service dependency graph from container log analysis. "
-            "Parses HTTP URLs, database connection strings, gRPC dial calls, and "
-            "container name mentions to build a directed graph. Joins with temporal "
-            "error correlation to surface likely error cascade paths. "
-            "Best for HTTP-heavy microservices; gRPC/event-driven coverage is limited. "
-            "No LLM required."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "containers": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Specific containers to analyse. Omit for all running containers.",
-                },
-                "tail": {
-                    "type": "integer",
-                    "description": "Log lines to fetch per container (default 500).",
-                    "default": 500,
-                },
-                "include_transitive": {
-                    "type": "boolean",
-                    "description": (
-                        "Add one-hop transitive edges (A→B + B→C → A→C). "
-                        "Transitive edges are marked confidence='low' and inferred_from='transitive'. "
-                        "Default false."
-                    ),
-                    "default": False,
-                },
-            },
-            "required": [],
-        },
-    }
-)
-
-
-# Backward compatibility: export TOOLS list from registry
-TOOLS = _registry.list_tools()
-
-
-# ── MCP server wiring ───────────────────────────────────────────────────────
-
-def create_mcp_server() -> Server:
-    server = Server("docker-log-analyzer")
-
-    @server.list_tools()
-    async def list_tools():
-        return _registry.list_tools()
-
-    @server.call_tool()
-    async def call_tool(name: str, arguments: dict):
-        logger.debug("Tool called: %s, args: %s", name, arguments)
-        try:
-            handler = _registry.get_handler(name)
-            if handler is None:
-                result = {"status": "error", "error": f"Unknown tool: {name}"}
-            else:
-                result = handler(**arguments)
-        except Exception as exc:
-            logger.exception("Unhandled error in tool '%s'", name)
-            result = {"status": "error", "error": str(exc)}
-
-        return [TextContent(type="text", text=json.dumps(result, indent=2))]
-
-    return server
-
+# ── Entry point ───────────────────────────────────────────────────────────────
 
 def _log_startup_config() -> None:
     """Log active configuration settings for user visibility."""
@@ -514,22 +266,11 @@ def _log_startup_config() -> None:
     logger.info("─" * 70)
 
 
-async def _main_async() -> None:
-    server = create_mcp_server()
-    logger.info("Docker Log Analyzer MCP Server starting (non-LLM mode)...")
-    _log_startup_config()
-    async with stdio_server() as (read_stream, write_stream):
-        logger.info("MCP Server ready – waiting for tool calls via stdio.")
-        await server.run(
-            read_stream,
-            write_stream,
-            server.create_initialization_options(),
-        )
-
-
 def run() -> None:
     """Synchronous entry point registered in pyproject.toml."""
-    asyncio.run(_main_async())
+    logger.info("Docker Log Analyzer MCP Server starting (FastMCP / non-LLM mode)...")
+    _log_startup_config()
+    mcp.run()
 
 
 if __name__ == "__main__":
