@@ -217,6 +217,19 @@ class TestReadCachedLogsForWindowParquet:
         assert result is not None
         assert len(result) == 1
 
+    def test_corrupt_parquet_file_returns_none(self, isolated_cache):
+        """A corrupt .parquet file must return None without raising."""
+        parquet_path = isolated_cache / "web-app" / "2026-03-06.parquet"
+        parquet_path.parent.mkdir(parents=True, exist_ok=True)
+        parquet_path.write_bytes(b"this is not a valid parquet file")
+
+        result = cm.read_cached_logs_for_window(
+            "web-app",
+            since=_utc(2026, 3, 6, 9),
+            until=_utc(2026, 3, 6, 11),
+        )
+        assert result is None
+
 
 
 # ---------------------------------------------------------------------------
