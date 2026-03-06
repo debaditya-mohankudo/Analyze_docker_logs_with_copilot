@@ -1,6 +1,6 @@
 # Wiki Hub: MCP Tools Reference
 
-Canonical reference for all 11 MCP tools — parameters, return shapes, and behavior.
+Canonical reference for all 10 MCP tools — parameters, return shapes, and behavior.
 
 ---
 
@@ -24,9 +24,8 @@ Canonical reference for all 11 MCP tools — parameters, return shapes, and beha
 | 6 | [sync_docker_logs](#6-sync_docker_logs) | Sync logs to cache for offline / fast analysis |
 | 7 | [capture_and_analyze](#7-capture_and_analyze) | Live capture + combined spike + correlation report |
 | 8 | [map_service_dependencies](#8-map_service_dependencies) | Log-based dependency graph + cascade candidates |
-| 9 | [interactive_dependency_mapping](#9-interactive_dependency_mapping) | Guided dependency analysis with user questions |
-| 10 | [start_test_containers](#10-start_test_containers) | Start 4-service test stack |
-| 11 | [stop_test_containers](#11-stop_test_containers) | Stop and remove test containers |
+| 9 | [start_test_containers](#9-start_test_containers) | Start 4-service test stack |
+| 10 | [stop_test_containers](#10-stop_test_containers) | Stop and remove test containers |
 
 ---
 
@@ -450,116 +449,7 @@ Starts the 4-service test log generator stack from `docker-compose.test.yml`.
 
 ---
 
-## 9. interactive_dependency_mapping
-
-Interactive service dependency analysis with guided user questions. Provides intelligent service filtering and performs comprehensive dependency mapping based on user selections.
-
-**Parameters:** None (all configuration is done through interactive questions)
-
-**Interactive Questions:**
-
-1. **Service Scope Selection:**
-   ```
-   "Which services should I analyze?"
-   Options:
-   - "All running containers" (recommended) 
-   - "Specific services only" (prompts for container names)
-   - "Error-prone services only" (auto-detects containers with recent errors)
-   - Freeform input for custom selection
-   ```
-
-2. **Follow-up for Specific Services:**
-   ```
-   "Enter container names (available: container1, container2, ...)"
-   - Comma-separated container name input
-   - Validates against running containers
-   ```
-
-**Returns:**
-```json
-{
-  "status": "success",
-  "dependencies": {
-    "container-name": [
-      {
-        "target": "dependency-target",
-        "inferred_from": "http_url",
-        "confidence": "high", 
-        "hit_count": 15
-      }
-    ]
-  },
-  "cascade_candidates": [
-    {
-      "from": "database",
-      "to": "web-app", 
-      "dependency_type": "postgres_connection",
-      "correlation_score": 0.82,
-      "confidence": "high",
-      "evidence": "Direct dependency + strong temporal correlation"
-    }
-  ],
-  "user_selection": {
-    "scope_choice": "Error-prone services only",
-    "analyzed_containers": ["web-app", "database"],
-    "total_available": 5
-  },
-  "cache_hits": {"web-app": true, "database": false}
-}
-```
-
-**Behavior:**
-- Automatically detects running containers for context
-- Provides intelligent defaults and recommendations
-- For "Error-prone services only" - scans last 100 log lines per container for ERROR/FATAL/CRITICAL keywords
-- Validates user input against available containers
-- Falls back gracefully if no valid selections made
-- Enhances standard dependency mapping results with user choice context
-
-**Error Conditions:**
-- No running containers: Returns error with guidance
-- Invalid container names: Lists available containers
-- No error-prone services found: Returns success with health confirmation
-
-**Use Cases:**
-- **Guided troubleshooting:** "I want to analyze dependencies but not sure which services"
-- **Targeted analysis:** "Focus only on services having issues right now"  
-- **Learning mode:** "Show me what containers I have and help me pick"
-- **Custom workflows:** "Let me specify exactly which services to analyze"
-
----
-
-## 10. start_test_containers
-
-Start 4 test log-generator containers for testing and demonstration.
-
-**Parameters:**
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `rebuild` | bool | false | Force rebuild of containers before start |
-
-**Returns:**
-```json
-{
-  "status": "success", 
-  "containers_started": ["test-web-app", "test-database", "test-gateway", "test-cache"],
-  "message": "Test containers started. Use list_containers to see them."
-}
-```
-
-**Test services:**
-
-| Service | Language | Log format | Spike interval | Notes |
-|---------|----------|-----------|----------------|-------|
-| `test-web-app` | Python | ISO-8601 | 90 s | Primary app |
-| `test-database` | Java | syslog | 90 s | Correlated with web-app |
-| `test-gateway` | Node.js | Apache | 90 s | Correlated with web-app |
-| `test-cache` | Go | epoch | 120 s | Independent spikes |
-
----
-
-## 11. stop_test_containers
+## 10. stop_test_containers
 
 Stops and removes test containers.
 
@@ -577,7 +467,7 @@ Stops and removes test containers.
 
 ## Retrieval keywords
 
-tool, MCP, parameters, returns, list_containers, analyze_patterns, detect_error_spikes, detect_data_leaks, correlate_containers, sync_docker_logs, capture_and_analyze, map_service_dependencies, interactive_dependency_mapping, start_test_containers, stop_test_containers, reference, contract, schema, tail, use_cache, confidence, hit_count, cascade, dependency, spike, correlation, secret, pattern, guided, questions, interactive, user_selection
+tool, MCP, parameters, returns, list_containers, analyze_patterns, detect_error_spikes, detect_data_leaks, correlate_containers, sync_docker_logs, capture_and_analyze, map_service_dependencies, start_test_containers, stop_test_containers, reference, contract, schema, tail, use_cache, confidence, hit_count, cascade, dependency, spike, correlation, secret, pattern
 
 **[negative keywords / not-this-doc]**
 algorithm internals, module design, CI, coverage, test suite, setup, installation, Copilot prompts

@@ -1,19 +1,15 @@
 """
 MCP Server for Docker Log Pattern Analysis (non-LLM).
 
-Exposes 11 tools to VSCode Copilot Agent Mode via .vscode/mcp.json:
+Exposes 7 tools to VSCode Copilot Agent Mode via .vscode/mcp.json:
 
-  list_containers                    – discover running Docker containers
-  analyze_patterns                   – PatternDetector per container (timestamps, language, log levels)
-  detect_error_spikes                – Polars rolling-window spike detection
-  correlate_containers               – pairwise cross-container temporal error correlation
-  detect_data_leaks                  – SecretDetector for API keys, credentials, PII, sensitive data
-  sync_docker_logs                   – sync logs to cache for offline analysis
-  capture_and_analyze                – live log capture with combined analysis
-  map_service_dependencies           – infer dependency graph from log analysis
-  interactive_dependency_mapping     – guided dependency analysis with user questions
-  start_test_containers              – build & start test log-generator containers (docker-compose.test.yml)
-  stop_test_containers               – stop and remove test log-generator containers
+  list_containers        – discover running Docker containers
+  analyze_patterns       – PatternDetector per container (timestamps, language, log levels)
+  detect_error_spikes    – Polars rolling-window spike detection
+  correlate_containers   – pairwise cross-container temporal error correlation
+  detect_data_leaks      – SecretDetector for API keys, credentials, PII, sensitive data
+  start_test_containers  – build & start test log-generator containers (docker-compose.test.yml)
+  stop_test_containers   – stop and remove test log-generator containers
 
 All tools are stateless (fetch → analyse → return JSON). No external API calls.
 Uses python-on-whales (CLI wrapper) instead of docker-py; compose is native, no subprocess.
@@ -889,109 +885,6 @@ def tool_map_service_dependencies(
     }
 
 
-async def tool_interactive_dependency_mapping() -> dict:
-    """Interactive service dependency analysis with user questions.
-    
-    This tool is designed to be called by VSCode Copilot which will handle
-    the interactive prompting. The actual user questions are managed by
-    the Copilot agent interface.
-    
-    Returns a guided analysis prompt for the user and falls back to 
-    comprehensive dependency analysis.
-    """
-    
-    # First, get list of running containers for context
-    try:
-        client = _docker_client()
-        running_containers = client.container.list()
-        container_names = [_container_name(c) for c in running_containers]
-    except RuntimeError as exc:
-        return {"status": "error", "error": str(exc)}
-    
-    if not container_names:
-        return {
-            "status": "error", 
-            "message": "No running containers found. Please start some containers first."
-        }
-    
-    # Provide context and options for the Copilot agent to present to user
-    analysis_options = {
-        "available_containers": container_names,
-        "total_containers": len(container_names),
-        "suggested_modes": [
-            {
-                "mode": "all_containers",
-                "description": f"Analyze all {len(container_names)} running containers",
-                "command_hint": "map_service_dependencies with no container filter"
-            },
-            {
-                "mode": "error_prone_only", 
-                "description": "Auto-detect containers with recent errors",
-                "command_hint": "Pre-filter containers with ERROR/FATAL/CRITICAL logs"
-            },
-            {
-                "mode": "custom_selection",
-                "description": "Analyze specific containers",
-                "command_hint": "map_service_dependencies with containers parameter",
-                "available_containers": container_names
-            }
-        ]
-    }
-    
-    # Per quick error detection to identify problematic containers
-    error_containers = []
-    container_health = {}
-    
-    for container_name in container_names:
-        try:
-            container = client.container.inspect(container_name)
-            logs = _fetch_logs(container, tail=100)
-            error_count = sum(1 for line in logs if any(
-                level in line.upper() for level in ["ERROR", "FATAL", "CRITICAL"]
-            ))
-            container_health[container_name] = {
-                "error_lines": error_count,
-                "total_lines_checked": len(logs),
-                "has_recent_errors": error_count > 0
-            }
-            if error_count > 0:
-                error_containers.append(container_name)
-        except Exception:
-            container_health[container_name] = {
-                "error_lines": 0,
-                "total_lines_checked": 0, 
-                "has_recent_errors": False,
-                "check_failed": True
-            }
-    
-    # Based on the guidance request, perform a comprehensive analysis
-    # This provides maximum value when user is unsure what to focus on
-    result = tool_map_service_dependencies(
-        containers=None,  # Analyze all containers for comprehensive view
-        tail=500,
-        include_transitive=False,
-        use_cache=True
-    )
-    
-    # Enhance the result with interactive guidance information
-    if result["status"] == "success":
-        result["interactive_guidance"] = {
-            "analysis_options": analysis_options,
-            "container_health": container_health,
-            "error_prone_containers": error_containers,
-            "recommendations": [
-                f"Found {len(error_containers)} containers with recent errors" if error_containers 
-                else "All containers appear healthy (no recent ERROR/FATAL/CRITICAL logs)",
-                f"Consider focusing analysis on: {', '.join(error_containers[:3])}" if len(error_containers) > 0
-                else "Full dependency analysis completed for all services",
-                "Use map_service_dependencies with specific container names to focus on particular services"
-            ]
-        }
-        result["analysis_mode"] = "comprehensive_with_guidance"
-    
-    return result
-
-
 # ── Tool wrapper functions (for registry) ──────────────────────────────────
 
 def _wrap_analyze_patterns(**kwargs) -> dict:
@@ -1066,12 +959,6 @@ def _wrap_map_service_dependencies(**kwargs) -> dict:
         tail=int(kwargs.get("tail", 500)),
         include_transitive=bool(kwargs.get("include_transitive", False)),
     )
-
-
-def _wrap_interactive_dependency_mapping(**kwargs) -> dict:
-    """Wrapper for interactive dependency mapping."""
-    import asyncio
-    return asyncio.run(tool_interactive_dependency_mapping())
 
 
 # ── Tool registry (replaces if/elif dispatch) ──────────────────────────────
@@ -1418,25 +1305,6 @@ _registry.register(
             },
             "required": [],
         },
-    }
-)
-
-_registry.register(
-    "interactive_dependency_mapping",
-    _wrap_interactive_dependency_mapping,
-    {
-        "description": (
-            "Interactive service dependency analysis with guided questions. "
-            "Asks the user to specify which services to analyze, then performs "
-            "comprehensive dependency mapping with error cascade analysis. "
-            "Provides intelligent service filtering options including error-prone "
-            "services detection. Best for guided troubleshooting workflows."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {},
-            "required": []
-        }
     }
 )
 
