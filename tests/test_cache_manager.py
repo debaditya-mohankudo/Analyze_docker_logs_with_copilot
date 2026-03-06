@@ -3,11 +3,15 @@ Unit tests for cache_manager.py (Parquet log cache).
 
 Tests cover:
 - write_cached_logs_for_date() produces .parquet with correct schema
+- write_cached_logs_for_date() uses datetime.now(UTC) fallback for unparseable timestamps
 - read_cached_logs_for_window() reads parquet and filters by time window
 - _read_jsonl_file() fallback for legacy .jsonl files
+- _read_jsonl_file() skips malformed JSON lines
+- _read_jsonl_file() handles Z-suffix timestamps and missing timestamp fields
 - Cache miss returns None
 - Empty log list produces no file
 - _update_metadata() writes metadata.json
+- get_cache_info() handles missing/corrupted metadata
 - clear_cache() removes files
 """
 
@@ -116,6 +120,18 @@ class TestWriteCachedLogsForDate:
         assert "web-app" in meta
         assert "2026-03-06" in meta["web-app"]
         assert meta["web-app"]["2026-03-06"]["line_count"] == 1
+
+    def test_unparseable_timestamp_uses_utc_now_fallback(self, isolated_cache):
+        """Lines with no leading ISO-8601 timestamp must not be dropped."""
+        from datetime import date
+        logs = ["no-timestamp-here just plain text"]
+        cm.write_cached_logs_for_date("web-app", logs, date(2026, 3, 6))
+
+        df = pl.read_parquet(isolated_cache / "web-app" / "2026-03-06.parquet")
+        assert len(df) == 1
+        assert df["message"][0] == "no-timestamp-here just plain text"
+        # Timestamp must be timezone-aware UTC
+        assert df["timestamp"].dtype == pl.Datetime("us", "UTC")
 
 
 # ---------------------------------------------------------------------------
@@ -263,6 +279,52 @@ class TestReadJsonlFallback:
         assert result is not None
         assert len(result) == 4  # minutes 3, 4, 5, 6
 
+    def test_jsonl_malformed_lines_are_skipped(self, isolated_cache):
+        """Lines that are not valid JSON must be silently skipped."""
+        ts = _utc(2026, 3, 6, 10, 0, 0)
+        raw = _make_log_line(ts, "good log")
+        jsonl_path = isolated_cache / "web-app" / "2026-03-06.jsonl"
+        jsonl_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(jsonl_path, "w") as f:
+            f.write("{not valid json}\n")
+            f.write(json.dumps({"timestamp": ts.isoformat(), "message": raw}) + "\n")
+            f.write("another bad line\n")
+
+        result = cm.read_cached_logs_for_window(
+            "web-app",
+            since=_utc(2026, 3, 6, 9),
+            until=_utc(2026, 3, 6, 11),
+        )
+        assert result == [raw]
+
+    def test_jsonl_z_suffix_timestamp_parsed_correctly(self, isolated_cache):
+        """Timestamps ending in 'Z' (UTC shorthand) must parse without error."""
+        ts = _utc(2026, 3, 6, 10, 30, 0)
+        raw = _make_log_line(ts, "z-ts log")
+        jsonl_path = isolated_cache / "web-app" / "2026-03-06.jsonl"
+        z_ts = ts.strftime("%Y-%m-%dT%H:%M:%S.000000Z")
+        self._write_jsonl(jsonl_path, [{"timestamp": z_ts, "message": raw}])
+
+        result = cm.read_cached_logs_for_window(
+            "web-app",
+            since=_utc(2026, 3, 6, 9),
+            until=_utc(2026, 3, 6, 11),
+        )
+        assert result == [raw]
+
+    def test_jsonl_missing_timestamp_field_skipped(self, isolated_cache):
+        """Entries without a 'timestamp' key must be silently skipped."""
+        jsonl_path = isolated_cache / "web-app" / "2026-03-06.jsonl"
+        self._write_jsonl(jsonl_path, [{"message": "no ts here"}])
+
+        result = cm.read_cached_logs_for_window(
+            "web-app",
+            since=_utc(2026, 3, 6, 9),
+            until=_utc(2026, 3, 6, 11),
+        )
+        # Returns empty list (no matching entries), which triggers None path
+        assert result is None
+
 
 # ---------------------------------------------------------------------------
 # _atomic_write_parquet
@@ -321,6 +383,16 @@ class TestGetCacheInfo:
         info = cm.get_cache_info("web-app")
         assert info is not None
         assert "2026-03-06" in info
+
+    def test_returns_none_for_unknown_container(self, isolated_cache):
+        ts = _utc(2026, 3, 6, 10, 0, 0)
+        cm.write_cached_logs_for_date("web-app", [_make_log_line(ts, "x")], ts.date())
+        assert cm.get_cache_info("other-container") is None
+
+    def test_returns_none_on_corrupted_metadata(self, isolated_cache):
+        isolated_cache.mkdir(parents=True, exist_ok=True)
+        (isolated_cache / "metadata.json").write_text("{bad json")
+        assert cm.get_cache_info("web-app") is None
 
 
 class TestClearCache:
