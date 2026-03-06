@@ -59,6 +59,10 @@ class Settings(BaseSettings):
         default=30,
         description="Default time window in seconds for container correlation",
     )
+    correlation_cache_ttl_minutes: int = Field(
+        default=30,
+        description="TTL for correlation result cache in minutes (0 = disabled)",
+    )
 
     # Error Patterns for spike and correlation detection
     error_patterns: List[str] = Field(

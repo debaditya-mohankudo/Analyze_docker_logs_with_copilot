@@ -97,6 +97,7 @@ Optional environment variables (`.env` file or shell):
 | `DEFAULT_SPIKE_TAIL_LINES` | `1000` | Log lines for spike detection |
 | `DEFAULT_SPIKE_THRESHOLD` | `2.0` | Spike ratio threshold (current / baseline) |
 | `DEFAULT_CORRELATION_WINDOW_SECONDS` | `30` | Co-occurrence window for correlation |
+| `CORRELATION_CACHE_TTL_MINUTES` | `30` | TTL for correlation result cache (0 = disabled) |
 | `USE_LOGS_CACHE` | `true` | Enable cache-first strategy |
 | `CACHE_MAX_AGE_MINUTES` | `60` | Max cache age before re-fetching from Docker API |
 
@@ -146,6 +147,8 @@ uv run docker-log-analyzer-mcp correlate_containers   # still works via cache
       └── 2026-03-06.jsonl
 .cache/patterns/
   └── test-web-app.json             (analyze_patterns result, separate from log cache)
+.cache/correlations/
+  └── <md5>.json                    (correlate_containers result, keyed by container set + params)
 ```
 
 ### Clear cache
@@ -155,6 +158,7 @@ rm -rf .cache/logs/               # all log cache
 rm -rf .cache/logs/test-web-app/  # one container
 rm -rf .cache/patterns/           # pattern analysis cache (separate)
 rm .cache/patterns/test-web-app.json  # one container's pattern cache
+rm -rf .cache/correlations/       # correlation result cache
 ```
 
 ---

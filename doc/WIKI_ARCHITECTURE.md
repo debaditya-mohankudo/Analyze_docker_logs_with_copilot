@@ -84,13 +84,21 @@ docker_log_analyzer/
    - `medium` = dep confidence in (high, medium) AND correlation_score > 0
    - `low` = dep confidence low, or transitive edge
 
-### Cache System (`cache_manager.py`)
+### Cache System (`cache_manager.py` + `tools.py`)
 
+**Log cache:**
 1. Key: `container_name + YYYY-MM-DD`
 2. Path: `.cache/logs/<container>/<YYYY-MM-DD>.jsonl`
 3. **Write:** atomic tempfile + rename (crash-safe; no partial files)
 4. **Read:** multi-day window merge — reads N JSONL files, filters by timestamp range
 5. **Metadata:** `.cache/logs/metadata.json` tracks `synced_at` + `line_count` per date per container
+
+**Correlation result cache (`tools.py`):**
+1. Key: MD5 of `sorted(container_names) + time_window_seconds + tail`
+2. Path: `.cache/correlations/<md5>.json`
+3. **TTL:** `CORRELATION_CACHE_TTL_MINUTES` (default 30 min); set to `0` to disable
+4. **Write:** atomic tempfile + rename; stores full result JSON including `cached_at`
+5. **Response field:** `correlation_cache_hit: true` when result served from cache
 
 ---
 

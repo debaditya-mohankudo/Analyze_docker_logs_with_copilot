@@ -9,6 +9,7 @@ No background threads, no persistent in-memory state, no external API calls.
 """
 
 import asyncio
+import hashlib
 import json
 import re
 from datetime import datetime, timezone, timedelta, date
@@ -39,6 +40,9 @@ COMPOSE_FILE = _REPO_ROOT / "docker-compose.test.yml"
 # Pattern analysis cache directory (keyed by container name)
 PATTERN_CACHE_DIR = _REPO_ROOT / ".cache" / "patterns"
 
+# Correlation result cache directory (keyed by MD5 of inputs)
+CORRELATION_CACHE_DIR = _REPO_ROOT / ".cache" / "correlations"
+
 
 # ── Pattern cache helpers ────────────────────────────────────────────────────
 
@@ -58,6 +62,38 @@ def _read_cache(container_name: str) -> Optional[dict]:
 def _write_cache(container_name: str, data: dict) -> None:
     PATTERN_CACHE_DIR.mkdir(parents=True, exist_ok=True)
     _cache_path(container_name).write_text(json.dumps(data, indent=2))
+
+
+# ── Correlation cache helpers ────────────────────────────────────────────────
+
+def _correlation_cache_key(container_names: list[str], time_window_seconds: int, tail: int) -> str:
+    """MD5 of sorted container names + parameters → stable cache filename."""
+    key_str = ",".join(sorted(container_names)) + f"|{time_window_seconds}|{tail}"
+    return hashlib.md5(key_str.encode()).hexdigest()
+
+
+def _read_correlation_cache(cache_key: str) -> Optional[dict]:
+    """Return cached correlation result if within TTL, else None."""
+    path = CORRELATION_CACHE_DIR / f"{cache_key}.json"
+    if not path.exists():
+        return None
+    data = json.loads(path.read_text())
+    ttl_seconds = settings.correlation_cache_ttl_minutes * 60
+    if ttl_seconds <= 0:
+        return None
+    cached_at = datetime.fromisoformat(data["cached_at"])
+    if (datetime.now(timezone.utc) - cached_at).total_seconds() > ttl_seconds:
+        return None
+    return data
+
+
+def _write_correlation_cache(cache_key: str, result: dict) -> None:
+    """Atomically write correlation result to cache."""
+    CORRELATION_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    path = CORRELATION_CACHE_DIR / f"{cache_key}.json"
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(result))
+    tmp.rename(path)
 
 
 # ── Docker helpers ──────────────────────────────────────────────────────────
@@ -365,6 +401,15 @@ def tool_correlate_containers(
             "parameters": parameters,
         }
 
+    running_names = [_container_name(c) for c in running]
+    corr_cache_key = _correlation_cache_key(running_names, time_window_seconds, tail)
+
+    if use_cache:
+        cached = _read_correlation_cache(corr_cache_key)
+        if cached is not None:
+            logger.debug("Correlation cache hit (key=%s)", corr_cache_key)
+            return {**cached, "correlation_cache_hit": True}
+
     container_logs = {}
     cache_hits = {}
     now = datetime.now(timezone.utc)
@@ -379,12 +424,16 @@ def tool_correlate_containers(
 
     correlations = correlate(container_logs, time_window_seconds)
 
-    return {
+    result = {
         "status": "success",
         "correlations": correlations,
         "cache_hits": cache_hits,
+        "correlation_cache_hit": False,
+        "cached_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "parameters": parameters,
     }
+    _write_correlation_cache(corr_cache_key, result)
+    return result
 
 
 def tool_start_test_containers(rebuild: bool = False) -> dict:

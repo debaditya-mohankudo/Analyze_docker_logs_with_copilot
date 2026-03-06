@@ -16,9 +16,9 @@ Use this hub for test strategy, CI configuration, coverage targets, and adding n
 
 | Metric | Value |
 |--------|-------|
-| Unit tests | 163 (no Docker required) |
-| Integration tests | 57 (Docker + test containers) |
-| Total | 220 |
+| Unit tests | 177 (no Docker required) |
+| Integration tests | 67 (Docker + test containers) |
+| Total | 244 |
 | CI execution (unit only) | ~0.8 s parallel via pytest-xdist |
 | Coverage (core modules) | 90–100% |
 
@@ -47,6 +47,7 @@ uv run pytest tests/test_dependency_mapper.py -v
 | `test_config_remote_docker.py` | 17 | unit | DOCKER_HOST parsing, SSH/TCP/Unix socket scenarios, config validation |
 | `test_spike_detector.py` | 16 | unit | Rolling-window spike detection, Docker timestamp parsing, edge cases |
 | `test_correlator.py` | 17 | unit | Correlation scoring, event extraction, empty/single container |
+| `test_correlation_cache.py` | 14 | unit | Cache key stability, TTL expiry, TTL=0 disable, cache miss/hit flow, use_cache=false bypass |
 | `test_pattern_detector.py` | 24 | unit | Timestamp formats (ISO/syslog/epoch/Apache), language detection, log levels, health checks |
 | `test_secret_detector.py` | 45 | unit | 20 secret patterns, redaction, severity filtering, remediation, Docker timestamp regex |
 | `test_dependency_mapper.py` | 35 | unit | HTTP/HTTPS/DB/gRPC/name-mention extraction, graph builder, cascade candidates, hit_count, transitive |

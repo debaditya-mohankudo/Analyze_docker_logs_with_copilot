@@ -232,11 +232,15 @@ Detects correlated errors across containers within a configurable time window.
       ]
     }
   ],
-  "cache_hits": { "test-web-app": true, "test-database": true }
+  "cache_hits": { "test-web-app": true, "test-database": true },
+  "correlation_cache_hit": false,
+  "cached_at": "2026-03-06T10:30:00Z"
 }
 ```
 
 **Score:** `co_occurrences / errors_a` — fraction of container A errors with at least one co-occurring B error within window. Range: 0.0–1.0. Results sorted descending by score.
+
+**Correlation result cache:** Results are cached to `.cache/correlations/<md5>.json` keyed by sorted container names + `time_window_seconds` + `tail`. TTL controlled by `CORRELATION_CACHE_TTL_MINUTES` (default 30 min). Set to `0` to disable. `correlation_cache_hit: true` when served from cache.
 
 ---
 
