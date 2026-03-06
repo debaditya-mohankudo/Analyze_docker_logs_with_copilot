@@ -2,7 +2,7 @@
 Time-window based log cache manager with atomic writes.
 
 All tools use cache-first pattern:
-1. Check .cache/logs/<container>/<YYYY-MM-DD>.jsonl
+1. Check .cache/logs/<container>/<YYYY-MM-DD>.parquet
 2. If available and covers time window, use cached logs
 3. Otherwise, fetch fresh from Docker API
 
@@ -10,11 +10,14 @@ Cache structure:
 .cache/logs/
   ├── metadata.json
   ├── web-app/
-  │   ├── 2026-03-04.jsonl
-  │   ├── 2026-03-03.jsonl
-  │   └── 2026-03-02.jsonl
+  │   ├── 2026-03-04.parquet
+  │   ├── 2026-03-03.parquet
+  │   └── 2026-03-02.parquet
   └── database/
-      └── 2026-03-04.jsonl
+      └── 2026-03-04.parquet
+
+Legacy .jsonl files are still read if a .parquet counterpart is absent (fallback).
+New writes always produce .parquet.
 """
 
 import json
@@ -22,6 +25,8 @@ import tempfile
 from datetime import datetime, date, timedelta, timezone
 from pathlib import Path
 from typing import Optional, List
+
+import polars as pl
 
 from .logger import logger
 
@@ -39,9 +44,7 @@ def _parse_timestamp(log_line: str) -> Optional[datetime]:
     # Docker logs format: TIMESTAMP MESSAGE
     # e.g., "2026-03-04T10:30:45.123456789Z [INFO] ..."
     try:
-        # Take first part (timestamp) before space
         ts_str = log_line.split()[0]
-        # Parse ISO-8601 with 'Z' suffix
         if ts_str.endswith("Z"):
             ts_str = ts_str[:-1] + "+00:00"
         return datetime.fromisoformat(ts_str)
@@ -50,24 +53,38 @@ def _parse_timestamp(log_line: str) -> Optional[datetime]:
 
 
 def _atomic_write(file_path: Path, content: str) -> None:
-    """Write to file atomically using temp file + rename."""
+    """Write text to file atomically using temp file + rename."""
     _ensure_cache_dir()
     file_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Write to temp file first
     with tempfile.NamedTemporaryFile(
-        mode='w',
+        mode="w",
         dir=file_path.parent,
-        prefix='.tmp-',
-        suffix='.jsonl',
+        prefix=".tmp-",
+        suffix=".json",
         delete=False,
     ) as tmp:
         tmp.write(content)
         tmp_path = tmp.name
 
-    # Atomic rename
     Path(tmp_path).replace(file_path)
     logger.debug(f"Atomic write: {file_path}")
+
+
+def _atomic_write_parquet(file_path: Path, df: pl.DataFrame) -> None:
+    """Write a Polars DataFrame to a Parquet file atomically (temp + rename).
+
+    Uses zstd compression. On failure the temp file is cleaned up.
+    """
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = file_path.parent / f".tmp-{file_path.name}"
+    try:
+        df.write_parquet(tmp_path, compression="zstd")
+        tmp_path.replace(file_path)
+        logger.debug(f"Atomic write (parquet): {file_path}")
+    except Exception:
+        tmp_path.unlink(missing_ok=True)
+        raise
 
 
 def read_cached_logs_for_window(
@@ -78,52 +95,44 @@ def read_cached_logs_for_window(
     """
     Read cached logs for a specific time window.
 
+    Checks .parquet files first; falls back to legacy .jsonl if .parquet is absent.
     Queries across multiple daily files if window spans days.
     Returns None if any part of window is missing (fallback to Docker API).
 
     Args:
         container_name: Container name (e.g., "web-app")
-        since: Start of time window (datetime)
-        until: End of time window (datetime)
+        since: Start of time window (UTC-aware datetime)
+        until: End of time window (UTC-aware datetime)
 
     Returns:
-        List of log lines, or None if cache miss/incomplete
+        List of log lines (raw Docker format), or None on cache miss/incomplete.
     """
-    logs = []
+    logs: List[str] = []
     current_date = since.date()
+
+    # Ensure timezone-aware for Polars comparisons
+    if since.tzinfo is None:
+        since = since.replace(tzinfo=timezone.utc)
+    if until.tzinfo is None:
+        until = until.replace(tzinfo=timezone.utc)
 
     try:
         while current_date <= until.date():
-            cache_file = CACHE_DIR / container_name / f"{current_date}.jsonl"
+            parquet_file = CACHE_DIR / container_name / f"{current_date}.parquet"
+            jsonl_file = CACHE_DIR / container_name / f"{current_date}.jsonl"
 
-            if not cache_file.exists():
-                logger.debug(f"Cache miss: {cache_file} (missing)")
-                return None  # Missing data, fetch fresh
+            if parquet_file.exists():
+                result = _read_parquet_file(parquet_file, since, until)
+            elif jsonl_file.exists():
+                logger.debug(f"Parquet cache miss, falling back to JSONL: {jsonl_file}")
+                result = _read_jsonl_file(jsonl_file, since, until)
+            else:
+                logger.debug(f"Cache miss: no file for {container_name} on {current_date}")
+                return None  # Missing data — fetch fresh from Docker
 
-            # Read file and filter by timestamp range
-            try:
-                with open(cache_file) as f:
-                    for line in f:
-                        if not line.strip():
-                            continue
-                        try:
-                            log_obj = json.loads(line)
-                            ts_str = log_obj.get("timestamp")
-                            if ts_str:
-                                # Parse ISO-8601 timestamp
-                                if ts_str.endswith("Z"):
-                                    ts_str = ts_str[:-1] + "+00:00"
-                                ts = datetime.fromisoformat(ts_str)
-
-                                if since <= ts <= until:
-                                    logs.append(line.strip())
-                        except (json.JSONDecodeError, ValueError):
-                            # Skip malformed lines
-                            continue
-            except IOError as e:
-                logger.warning(f"Error reading cache file {cache_file}: {e}")
-                return None
-
+            if result is None:
+                return None  # Read error
+            logs.extend(result)
             current_date += timedelta(days=1)
 
         if logs:
@@ -138,15 +147,63 @@ def read_cached_logs_for_window(
         return None
 
 
+def _read_parquet_file(
+    cache_file: Path,
+    since: datetime,
+    until: datetime,
+) -> Optional[List[str]]:
+    """Read and filter a Parquet cache file by timestamp range."""
+    try:
+        df = pl.read_parquet(cache_file, columns=["timestamp", "message"])
+        filtered = df.filter(
+            (pl.col("timestamp") >= since) & (pl.col("timestamp") <= until)
+        )
+        return filtered["message"].to_list()
+    except Exception as e:
+        logger.warning(f"Error reading parquet cache {cache_file}: {e}")
+        return None
+
+
+def _read_jsonl_file(
+    cache_file: Path,
+    since: datetime,
+    until: datetime,
+) -> Optional[List[str]]:
+    """Read and filter a legacy JSONL cache file by timestamp range."""
+    lines = []
+    try:
+        with open(cache_file) as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                try:
+                    log_obj = json.loads(line)
+                    ts_str = log_obj.get("timestamp")
+                    if ts_str:
+                        if ts_str.endswith("Z"):
+                            ts_str = ts_str[:-1] + "+00:00"
+                        ts = datetime.fromisoformat(ts_str)
+                        if ts.tzinfo is None:
+                            ts = ts.replace(tzinfo=timezone.utc)
+                        if since <= ts <= until:
+                            lines.append(log_obj.get("message", line.strip()))
+                except (json.JSONDecodeError, ValueError):
+                    continue
+        return lines
+    except IOError as e:
+        logger.warning(f"Error reading JSONL cache {cache_file}: {e}")
+        return None
+
+
 def write_cached_logs_for_date(
     container_name: str,
     logs: List[str],
     date_val: date,
 ) -> None:
     """
-    Write logs for a specific date to cache (atomic).
+    Write logs for a specific date to cache as Parquet (atomic).
 
-    Each log line is stored as JSON: {"timestamp": "...", "message": "..."}
+    Schema: timestamp (Datetime[us, UTC]), message (String)
 
     Args:
         container_name: Container name (e.g., "web-app")
@@ -157,41 +214,38 @@ def write_cached_logs_for_date(
     container_dir = CACHE_DIR / container_name
     container_dir.mkdir(parents=True, exist_ok=True)
 
-    cache_file = container_dir / f"{date_val}.jsonl"
+    cache_file = container_dir / f"{date_val}.parquet"
 
-    # Convert Docker log lines to JSON format
-    json_lines = []
+    timestamps: List[datetime] = []
+    messages: List[str] = []
+
     for line in logs:
         if not line.strip():
             continue
-
         ts = _parse_timestamp(line)
-        if ts:
-            ts_iso = ts.isoformat()
-        else:
-            ts_iso = datetime.now(timezone.utc).isoformat()
+        if ts is None:
+            ts = datetime.now(timezone.utc)
+        elif ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        timestamps.append(ts)
+        messages.append(line)
 
-        log_obj = {
-            "timestamp": ts_iso,
-            "message": line,
-        }
-        json_lines.append(json.dumps(log_obj))
+    if not timestamps:
+        return
 
-    if json_lines:
-        # Atomic write
-        _atomic_write(cache_file, '\n'.join(json_lines) + '\n')
+    df = pl.DataFrame({"timestamp": timestamps, "message": messages}).with_columns(
+        pl.col("timestamp").cast(pl.Datetime("us", "UTC"))
+    )
 
-        # Update metadata
-        _update_metadata(container_name, date_val, len(json_lines))
-
-        logger.info(f"Cached {len(json_lines)} logs for {container_name} ({date_val})")
+    _atomic_write_parquet(cache_file, df)
+    _update_metadata(container_name, date_val, len(timestamps))
+    logger.info(f"Cached {len(timestamps)} logs for {container_name} ({date_val})")
 
 
 def _update_metadata(container_name: str, date_val: date, line_count: int) -> None:
     """Update metadata.json with cache info (atomic)."""
     _ensure_cache_dir()
 
-    # Read existing metadata
     if METADATA_FILE.exists():
         try:
             with open(METADATA_FILE) as f:
@@ -201,7 +255,6 @@ def _update_metadata(container_name: str, date_val: date, line_count: int) -> No
     else:
         metadata = {}
 
-    # Update entry
     if container_name not in metadata:
         metadata[container_name] = {}
 
@@ -210,8 +263,7 @@ def _update_metadata(container_name: str, date_val: date, line_count: int) -> No
         "line_count": line_count,
     }
 
-    # Atomic write
-    _atomic_write(METADATA_FILE, json.dumps(metadata, indent=2) + '\n')
+    _atomic_write(METADATA_FILE, json.dumps(metadata, indent=2) + "\n")
 
 
 def get_cache_info(container_name: str) -> Optional[dict]:

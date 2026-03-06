@@ -21,6 +21,7 @@ dependencies = [
     "python-on-whales>=0.60.0",
     "python-dotenv>=1.0.1",
     "polars>=0.20.0",
+    "pyarrow>=14.0.0",
     "mcp>=0.7.0",
     "pydantic-settings>=2.0.0",
 ]

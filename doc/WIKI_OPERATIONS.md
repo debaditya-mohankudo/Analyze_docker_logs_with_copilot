@@ -112,7 +112,7 @@ All log-reading tools use a **cache-first strategy**:
 ```
 Tool call (e.g., detect_error_spikes)
   ↓
-Check .cache/logs/<container>/YYYY-MM-DD.jsonl
+Check .cache/logs/<container>/YYYY-MM-DD.parquet
   ↓
   ├─ Hit (recent)  → Use cached logs → Instant response ⚡
   ├─ Miss          → Fetch from Docker API → Cache result
@@ -141,10 +141,10 @@ uv run docker-log-analyzer-mcp correlate_containers   # still works via cache
 .cache/logs/
   ├── metadata.json                 (sync tracking: synced_at, line_count per date)
   ├── test-web-app/
-  │   ├── 2026-03-06.jsonl          (line-per-JSON: {"timestamp": "...", "message": "..."})
-  │   └── 2026-03-05.jsonl
+  │   ├── 2026-03-06.parquet        (columnar: timestamp [Datetime us UTC], message [String])
+  │   └── 2026-03-05.parquet
   └── test-database/
-      └── 2026-03-06.jsonl
+      └── 2026-03-06.parquet
 .cache/patterns/
   └── test-web-app.json             (analyze_patterns result, separate from log cache)
 .cache/correlations/
@@ -249,7 +249,7 @@ docker compose -f docker-compose.test.yml down
 |---------|---------|
 | Cache returning stale data | `rm -rf .cache/logs/` or pass `use_cache=false` to any tool |
 | `sync_docker_logs` returns fewer logs than expected | Container may have been created more recently than your `--since` window; check with `docker inspect <name> \| grep Created` |
-| Disk space growing | `find .cache/logs -name "*.jsonl" -mtime +7 -delete` |
+| Disk space growing | `find .cache/logs -name "*.parquet" -mtime +7 -delete` |
 | `metadata.json` corrupted or missing | Safe to delete — regenerated on next sync |
 | Docker unavailable in tests | Unit tests auto-skip Docker; run `uv run pytest tests/ -m "not integration"` |
 

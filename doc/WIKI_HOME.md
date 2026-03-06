@@ -52,6 +52,12 @@ Use this table to answer questions with minimal hops.
 | [WIKI_OPERATIONS.md](WIKI_OPERATIONS.md) | Setup, configuration, cache, remote Docker, Copilot prompts |
 | [WIKI_QUALITY.md](WIKI_QUALITY.md) | Test suite, CI, coverage, adding tests |
 
+## Upgrade Plans
+
+| Plan                                                           | Status     | Purpose                                                         |
+|----------------------------------------------------------------|------------|-----------------------------------------------------------------|
+| [WIKI_UPGRADE_PARQUET_CACHE.md](WIKI_UPGRADE_PARQUET_CACHE.md) | DONE       | Migrate log cache from JSONL to Parquet for faster Polars reads |
+
 ---
 
 ## Authoring Rules

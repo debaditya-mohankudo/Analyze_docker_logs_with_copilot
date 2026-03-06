@@ -75,14 +75,15 @@ All tools are registered in mcp_server.py.
 
 All tools use cache-first pattern:
 
-1. Check `.cache/logs/<container>/<YYYY-MM-DD>.jsonl`
+1. Check `.cache/logs/<container>/<YYYY-MM-DD>.parquet`
 2. If fresh (< CACHE_MAX_AGE_MINUTES), use cached logs
 3. Otherwise, fetch fresh from Docker API
 
 **Log Caching Rules:**
 - Keyed by: container name + date
 - Stored under: `.cache/logs/<container>/`
-- Format: JSONL with ISO-8601 timestamps
+- Format: Parquet (zstd), columns: `timestamp` (Datetime[us,UTC]), `message` (String)
+- Legacy `.jsonl` files are still readable as a fallback; new writes always produce `.parquet`
 - Atomic writes via tempfile + rename
 - Metadata: `.cache/logs/metadata.json` tracks sync times
 - Default window: 24 hours per tool (configurable)
