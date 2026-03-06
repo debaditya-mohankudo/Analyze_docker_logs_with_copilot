@@ -83,7 +83,6 @@ All tools use cache-first pattern:
 - Keyed by: container name + date
 - Stored under: `.cache/logs/<container>/`
 - Format: Parquet (zstd), columns: `timestamp` (Datetime[us,UTC]), `message` (String)
-- Legacy `.jsonl` files are still readable as a fallback; new writes always produce `.parquet`
 - Atomic writes via tempfile + rename
 - Metadata: `.cache/logs/metadata.json` tracks sync times
 - Default window: 24 hours per tool (configurable)

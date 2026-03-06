@@ -39,7 +39,7 @@ docker_log_analyzer/
   dependency_mapper.py    # Log-based dependency graph inference (regex → adjacency dict)
   log_pattern_analyzer.py # PatternDetector: timestamp format, language, log levels
   secret_detector.py      # SecretDetector: 20 patterns, redaction, severity
-  cache_manager.py        # Atomic Parquet log cache (write + multi-day read; JSONL fallback)
+  cache_manager.py        # Atomic Parquet log cache (write + multi-day read)
   config.py               # Pydantic BaseSettings singleton (settings.*)
   logger.py               # LoggerWithRunID singleton (run_id in every log line)
 ```
@@ -90,7 +90,7 @@ docker_log_analyzer/
 1. Key: `container_name + YYYY-MM-DD`
 2. Path: `.cache/logs/<container>/<YYYY-MM-DD>.parquet`
 3. **Write:** `_atomic_write_parquet()` — zstd-compressed Parquet, crash-safe via temp + rename
-4. **Read:** `_read_parquet_file()` — Polars columnar filter; falls back to `_read_jsonl_file()` for legacy `.jsonl` files
+4. **Read:** `_read_parquet_file()` — Polars columnar filter by timestamp range
 5. **Metadata:** `.cache/logs/metadata.json` tracks `synced_at` + `line_count` per date per container
 6. **Schema:** `timestamp` (`Datetime[us,UTC]`), `message` (`String`)
 
@@ -139,7 +139,7 @@ docker_log_analyzer/
 
 ## Retrieval keywords
 
-architecture, design, module, stateless, cache, polars, correlator, spike_detector, dependency_mapper, secret_detector, log_pattern_analyzer, mcp_server, tool registry, wrap, algorithm, signal, confidence, transitive, hit_count, rolling_mean, MAX_CO_OCCURRENCES, atomic write, parquet, pyarrow, zstd, JSONL fallback, BaseSettings, run_id
+architecture, design, module, stateless, cache, polars, correlator, spike_detector, dependency_mapper, secret_detector, log_pattern_analyzer, mcp_server, tool registry, wrap, algorithm, signal, confidence, transitive, hit_count, rolling_mean, MAX_CO_OCCURRENCES, atomic write, parquet, pyarrow, zstd, BaseSettings, run_id
 
 **[negative keywords / not-this-doc]**
 setup, install, configure, environment variable, copilot prompt, test suite, CI, coverage, unit tests, remote docker, SSH

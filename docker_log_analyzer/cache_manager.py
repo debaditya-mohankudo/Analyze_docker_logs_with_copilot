@@ -15,9 +15,6 @@ Cache structure:
   │   └── 2026-03-02.parquet
   └── database/
       └── 2026-03-04.parquet
-
-Legacy .jsonl files are still read if a .parquet counterpart is absent (fallback).
-New writes always produce .parquet.
 """
 
 import json
@@ -95,8 +92,7 @@ def read_cached_logs_for_window(
     """
     Read cached logs for a specific time window.
 
-    Checks .parquet files first; falls back to legacy .jsonl if .parquet is absent.
-    Queries across multiple daily files if window spans days.
+    Queries across multiple daily .parquet files if window spans days.
     Returns None if any part of window is missing (fallback to Docker API).
 
     Args:
@@ -119,17 +115,12 @@ def read_cached_logs_for_window(
     try:
         while current_date <= until.date():
             parquet_file = CACHE_DIR / container_name / f"{current_date}.parquet"
-            jsonl_file = CACHE_DIR / container_name / f"{current_date}.jsonl"
 
-            if parquet_file.exists():
-                result = _read_parquet_file(parquet_file, since, until)
-            elif jsonl_file.exists():
-                logger.debug(f"Parquet cache miss, falling back to JSONL: {jsonl_file}")
-                result = _read_jsonl_file(jsonl_file, since, until)
-            else:
+            if not parquet_file.exists():
                 logger.debug(f"Cache miss: no file for {container_name} on {current_date}")
                 return None  # Missing data — fetch fresh from Docker
 
+            result = _read_parquet_file(parquet_file, since, until)
             if result is None:
                 return None  # Read error
             logs.extend(result)
@@ -163,36 +154,6 @@ def _read_parquet_file(
         logger.warning(f"Error reading parquet cache {cache_file}: {e}")
         return None
 
-
-def _read_jsonl_file(
-    cache_file: Path,
-    since: datetime,
-    until: datetime,
-) -> Optional[List[str]]:
-    """Read and filter a legacy JSONL cache file by timestamp range."""
-    lines = []
-    try:
-        with open(cache_file) as f:
-            for line in f:
-                if not line.strip():
-                    continue
-                try:
-                    log_obj = json.loads(line)
-                    ts_str = log_obj.get("timestamp")
-                    if ts_str:
-                        if ts_str.endswith("Z"):
-                            ts_str = ts_str[:-1] + "+00:00"
-                        ts = datetime.fromisoformat(ts_str)
-                        if ts.tzinfo is None:
-                            ts = ts.replace(tzinfo=timezone.utc)
-                        if since <= ts <= until:
-                            lines.append(log_obj.get("message", line.strip()))
-                except (json.JSONDecodeError, ValueError):
-                    continue
-        return lines
-    except IOError as e:
-        logger.warning(f"Error reading JSONL cache {cache_file}: {e}")
-        return None
 
 
 def write_cached_logs_for_date(
