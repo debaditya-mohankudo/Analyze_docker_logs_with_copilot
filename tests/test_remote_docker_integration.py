@@ -187,12 +187,13 @@ class TestRemoteDockerViaSSH:
             try:
                 from docker_log_analyzer.tools import tool_detect_data_leaks
 
-                result = tool_detect_data_leaks(
+                import asyncio
+                result = asyncio.run(tool_detect_data_leaks(
                     duration_seconds=30,
                     container_names=["test-web-app"],
                     severity_filter="all",
                     use_cache=False,
-                )
+                ))
                 if result.get("status") == "error":
                     pytest.skip(f"SSH connection failed: {result.get('error')}")
                 assert result["status"] == "ok"
