@@ -1,6 +1,6 @@
 [project]
 name = "docker-log-analyzer"
-version = "0.2.0"
+version = "0.3.0"
 description = "Non-LLM Docker log pattern analysis MCP server for VSCode Copilot Agent Mode"
 readme = "README.md"
 requires-python = ">=3.11"
