@@ -11,7 +11,7 @@ To run only these tests:
 
 import pytest
 
-from docker_log_analyzer.mcp_server import (
+from docker_log_analyzer.tools import (
     tool_list_containers,
     tool_analyze_patterns,
     tool_detect_error_spikes,

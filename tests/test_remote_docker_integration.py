@@ -58,7 +58,7 @@ class TestRemoteDockerViaSSH:
         """
         with patch.dict(os.environ, {"DOCKER_HOST": "ssh://localhost"}, clear=False):
             try:
-                from docker_log_analyzer.mcp_server import tool_list_containers
+                from docker_log_analyzer.tools import tool_list_containers
 
                 result = tool_list_containers()
                 # If SSH not available, should return error gracefully
@@ -80,7 +80,7 @@ class TestRemoteDockerViaSSH:
         """
         with patch.dict(os.environ, {"DOCKER_HOST": "ssh://localhost"}, clear=False):
             try:
-                from docker_log_analyzer.mcp_server import tool_list_containers
+                from docker_log_analyzer.tools import tool_list_containers
 
                 result = tool_list_containers()
                 if result.get("status") == "error":
@@ -106,7 +106,7 @@ class TestRemoteDockerViaSSH:
         """
         with patch.dict(os.environ, {"DOCKER_HOST": "ssh://localhost"}, clear=False):
             try:
-                from docker_log_analyzer.mcp_server import tool_analyze_patterns
+                from docker_log_analyzer.tools import tool_analyze_patterns
 
                 result = tool_analyze_patterns(
                     container_name="test-web-app",
@@ -133,7 +133,7 @@ class TestRemoteDockerViaSSH:
         """
         with patch.dict(os.environ, {"DOCKER_HOST": "ssh://localhost"}, clear=False):
             try:
-                from docker_log_analyzer.mcp_server import tool_detect_error_spikes
+                from docker_log_analyzer.tools import tool_detect_error_spikes
 
                 result = tool_detect_error_spikes(
                     container_name="test-web-app",
@@ -160,7 +160,7 @@ class TestRemoteDockerViaSSH:
         """
         with patch.dict(os.environ, {"DOCKER_HOST": "ssh://localhost"}, clear=False):
             try:
-                from docker_log_analyzer.mcp_server import tool_correlate_containers
+                from docker_log_analyzer.tools import tool_correlate_containers
 
                 result = tool_correlate_containers(
                     time_window_seconds=60,
@@ -185,7 +185,7 @@ class TestRemoteDockerViaSSH:
         """
         with patch.dict(os.environ, {"DOCKER_HOST": "ssh://localhost"}, clear=False):
             try:
-                from docker_log_analyzer.mcp_server import tool_detect_data_leaks
+                from docker_log_analyzer.tools import tool_detect_data_leaks
 
                 result = tool_detect_data_leaks(
                     duration_seconds=30,
@@ -251,7 +251,7 @@ class TestRemoteDockerFallbacks:
             clear=False,
         ):
             try:
-                from docker_log_analyzer.mcp_server import tool_list_containers
+                from docker_log_analyzer.tools import tool_list_containers
 
                 result = tool_list_containers()
                 # Should either error gracefully or skip
@@ -328,7 +328,7 @@ class TestRemoteDockerDocumentation:
         and set DOCKER_HOST=ssh://your-host manually.
         """
         try:
-            from docker_log_analyzer.mcp_server import tool_list_containers
+            from docker_log_analyzer.tools import tool_list_containers
 
             result = tool_list_containers()
             assert result["status"] == "ok"
@@ -352,7 +352,7 @@ class TestRemoteDockerDocumentation:
         For actual SSH testing, set DOCKER_HOST=ssh://your-host manually.
         """
         try:
-            from docker_log_analyzer.mcp_server import tool_analyze_patterns
+            from docker_log_analyzer.tools import tool_analyze_patterns
 
             result = tool_analyze_patterns(
                 container_name="test-web-app",

@@ -65,7 +65,7 @@ def setup_integration_containers(request):
         yield
         return
     
-    from docker_log_analyzer.mcp_server import tool_start_test_containers, tool_stop_test_containers
+    from docker_log_analyzer.tools import tool_start_test_containers, tool_stop_test_containers
     
     # Start containers
     result = tool_start_test_containers(rebuild=False)
