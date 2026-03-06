@@ -285,6 +285,27 @@ class TestAtomicWriteParquet:
         tmp_files = list((tmp_path / "sub").glob(".tmp-*"))
         assert tmp_files == []
 
+    def test_tmp_file_cleaned_up_on_failure(self, tmp_path, monkeypatch):
+        """The except branch must unlink the temp file if write_parquet raises."""
+        dest = tmp_path / "output.parquet"
+
+        def _bad_write(path, **kwargs):
+            # Simulate write_parquet creating the temp file then raising
+            Path(path).touch()
+            raise RuntimeError("simulated write failure")
+
+        df = pl.DataFrame({"a": [1]})
+        monkeypatch.setattr(df, "write_parquet", _bad_write)
+
+        with pytest.raises(RuntimeError, match="simulated write failure"):
+            cm._atomic_write_parquet(dest, df)
+
+        # Destination must not exist (rename never happened)
+        assert not dest.exists()
+        # Temp file must have been cleaned up
+        tmp_files = list(tmp_path.glob(".tmp-*"))
+        assert tmp_files == []
+
 
 # ---------------------------------------------------------------------------
 # get_cache_info / clear_cache
