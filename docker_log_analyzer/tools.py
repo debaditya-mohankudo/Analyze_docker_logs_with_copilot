@@ -37,7 +37,6 @@ from .docker import (
     _fetch_logs,
     _fetch_logs_window,
     _container_name,
-    _parse_time_arg,
     _fetch_logs_with_cache,
 )
 
@@ -102,6 +101,17 @@ def _write_correlation_cache(cache_key: str, result: dict) -> None:
     tmp = path.with_suffix(".tmp")
     tmp.write_text(json.dumps(result))
     tmp.rename(path)
+
+
+# ── ISO-8601 time parser ────────────────────────────────────────────────────
+
+def _parse_iso(s: Optional[str]) -> datetime:
+    """Parse an ISO-8601 UTC string. None or empty → current UTC time."""
+    if not s:
+        return datetime.now(timezone.utc)
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
+    return datetime.fromisoformat(s)
 
 
 # ── Tool implementations ────────────────────────────────────────────────────
@@ -378,8 +388,8 @@ def tool_stop_test_containers() -> dict:
 
 def tool_sync_docker_logs(
     container_names: Optional[list[str]] = None,
-    since: str = "24 hours ago",
-    until: str = "now",
+    since: Optional[str] = None,
+    until: Optional[str] = None,
     force_refresh: bool = False,
 ) -> dict:
     """Sync Docker logs to local cache (.cache/logs/) for a time window.
@@ -389,8 +399,8 @@ def tool_sync_docker_logs(
 
     Args:
         container_names: Specific containers to sync. Omit for all running.
-        since: Start time ("2 hours ago", "2026-03-04T10:00:00Z", etc.)
-        until: End time (default "now")
+        since: Start time as ISO-8601 UTC (e.g. "2026-03-04T10:00:00Z"). Defaults to 24 hours ago.
+        until: End time as ISO-8601 UTC. Defaults to now.
         force_refresh: Skip cache, re-fetch everything
     """
     try:
@@ -398,8 +408,8 @@ def tool_sync_docker_logs(
     except RuntimeError as exc:
         return {"status": "error", "error": str(exc)}
 
-    since_dt = _parse_time_arg(since)
-    until_dt = _parse_time_arg(until)
+    since_dt = _parse_iso(since) if since else datetime.now(timezone.utc) - timedelta(hours=24)
+    until_dt = _parse_iso(until)
 
     if since_dt > until_dt:
         return {"status": "error", "error": "since must be before until"}

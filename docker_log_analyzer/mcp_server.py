@@ -149,8 +149,8 @@ async def stop_test_containers() -> dict:
 @mcp.tool()
 async def sync_docker_logs(
     container_names: list[str] | None = None,
-    since: str = "24 hours ago",
-    until: str = "now",
+    since: str | None = None,
+    until: str | None = None,
     force_refresh: bool = False,
 ) -> dict:
     """Sync Docker logs to local cache (.cache/logs/) for a time window.
@@ -159,9 +159,9 @@ async def sync_docker_logs(
 
     Args:
         container_names: Specific containers to sync. Omit to sync all running containers.
-        since: Start of time window (default '24 hours ago'). Examples: '2 hours ago',
-            '7 days ago', '2026-03-04T10:00:00Z'.
-        until: End of time window (default 'now'). Same format as 'since'.
+        since: Start of time window as ISO-8601 UTC string (e.g. '2026-03-04T10:00:00Z').
+            Omit to default to 24 hours ago.
+        until: End of time window as ISO-8601 UTC string. Omit to default to now.
         force_refresh: Skip cache, re-fetch all logs (default false).
     """
     return tool_sync_docker_logs(

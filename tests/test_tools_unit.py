@@ -196,26 +196,28 @@ class TestDockerHelpers:
 
 
 class TestTimeAndCacheHelpers:
-    def test_parse_time_arg_now(self):
-        now = tools._parse_time_arg("now")
-        assert now.tzinfo is not None
-
-    def test_parse_time_arg_relative(self):
-        parsed = tools._parse_time_arg("2 hours ago")
-        delta = datetime.now(timezone.utc) - parsed
-        assert 7190 <= delta.total_seconds() <= 7210
-
-    def test_parse_time_arg_iso_z(self):
-        parsed = tools._parse_time_arg("2026-03-04T10:00:00Z")
-        assert parsed.tzinfo is not None
-        assert parsed.year == 2026
-        assert parsed.hour == 10
-
-    def test_parse_time_arg_invalid_falls_back_to_now(self):
+    def test_parse_iso_none_returns_now(self):
         before = datetime.now(timezone.utc)
-        parsed = tools._parse_time_arg("invalid time")
+        parsed = tools._parse_iso(None)
         after = datetime.now(timezone.utc)
         assert before <= parsed <= after
+
+    def test_parse_iso_empty_string_returns_now(self):
+        before = datetime.now(timezone.utc)
+        parsed = tools._parse_iso("")
+        after = datetime.now(timezone.utc)
+        assert before <= parsed <= after
+
+    def test_parse_iso_z_suffix(self):
+        parsed = tools._parse_iso("2026-03-04T10:00:00Z")
+        assert parsed.year == 2026
+        assert parsed.hour == 10
+        assert parsed.tzinfo is not None
+
+    def test_parse_iso_with_offset(self):
+        parsed = tools._parse_iso("2026-03-04T10:00:00+00:00")
+        assert parsed.year == 2026
+        assert parsed.hour == 10
 
     def test_fetch_logs_with_cache_hit(self):
         c = _FakeContainer("svc", logs_result="fresh")
@@ -421,15 +423,12 @@ class TestCorrelateLifecycleAndSync:
         c = _FakeContainer("/svc")
         client = _mock_client(list_containers=[c], inspect_map={"svc": c})
         with patch("docker_log_analyzer.tools._docker_client", return_value=client), patch(
-            "docker_log_analyzer.tools._parse_time_arg",
-            side_effect=[
-                datetime(2026, 3, 6, 10, 0, 0, tzinfo=timezone.utc),
-                datetime(2026, 3, 6, 11, 0, 0, tzinfo=timezone.utc),
-            ],
-        ), patch("docker_log_analyzer.tools._fetch_logs_window", return_value=["l1", "l2"]), patch(
-            "docker_log_analyzer.tools.write_cached_logs_for_date"
-        ) as write_cache:
-            out = tools.tool_sync_docker_logs()
+            "docker_log_analyzer.tools._fetch_logs_window", return_value=["l1", "l2"]
+        ), patch("docker_log_analyzer.tools.write_cached_logs_for_date") as write_cache:
+            out = tools.tool_sync_docker_logs(
+                since="2026-03-06T10:00:00Z",
+                until="2026-03-06T11:00:00Z",
+            )
         assert out["status"] == "success"
         write_cache.assert_called()
 

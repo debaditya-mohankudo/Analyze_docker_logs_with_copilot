@@ -4,10 +4,8 @@ Low-level wrappers around python-on-whales: client construction, log fetching,
 container name normalisation, time argument parsing, and cache-first log retrieval.
 """
 
-import re
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
 from python_on_whales import DockerClient
 from python_on_whales.exceptions import DockerException, NoSuchContainer
@@ -65,42 +63,6 @@ def _fetch_logs_window(container, since: datetime, until: datetime) -> list[str]
 def _container_name(c) -> str:
     """Return clean container name (strip leading slash if present)."""
     return c.name.lstrip("/")
-
-
-def _parse_time_arg(time_str: str) -> datetime:
-    """
-    Parse a time argument into a UTC datetime.
-
-    Supported formats:
-        "2 hours ago", "30 minutes ago", "7 days ago"
-        "now"
-        "2026-03-04T10:00:00Z"  (ISO-8601)
-    """
-    now = datetime.now(timezone.utc)
-
-    if time_str.lower() == "now":
-        return now
-
-    match = re.match(r"(\d+)\s+(second|minute|hour|day|week)s?\s+ago", time_str)
-    if match:
-        amount = int(match.group(1))
-        unit = match.group(2).lower()
-        delta_map = {
-            "second": timedelta(seconds=amount),
-            "minute": timedelta(minutes=amount),
-            "hour": timedelta(hours=amount),
-            "day": timedelta(days=amount),
-            "week": timedelta(weeks=amount),
-        }
-        return now - delta_map[unit]
-
-    try:
-        if time_str.endswith("Z"):
-            time_str = time_str[:-1] + "+00:00"
-        return datetime.fromisoformat(time_str)
-    except ValueError:
-        logger.warning("Could not parse time: %s, using now", time_str)
-        return now
 
 
 def _fetch_logs_with_cache(
