@@ -75,7 +75,7 @@ def _fetch_logs_with_cache(
     """
     Cache-first log fetching.
 
-    1. Check .cache/logs/<container>/<YYYY-MM-DD>.jsonl
+    1. Check .cache/logs/<container>/<YYYY-MM-DD>.parquet
     2. If cache covers the window, return cached logs
     3. Otherwise, fetch fresh from Docker API
 

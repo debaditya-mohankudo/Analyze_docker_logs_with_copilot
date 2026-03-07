@@ -58,12 +58,6 @@ Use this table to answer questions with minimal hops.
 |--------------------------------------------------------------------------------|-------------|--------------------------------------------------------------------------------------|
 | [WIKI_PROPOSAL_ROOT_CAUSE_ANALYZER.md](WIKI_PROPOSAL_ROOT_CAUSE_ANALYZER.md)   | IN PROGRESS | Rank containers by root-cause likelihood (tool #11); Issues A+B done, C/D/E pending  |
 
-## Upgrade Plans
-
-| Plan                                                           | Status     | Purpose                                                         |
-|----------------------------------------------------------------|------------|-----------------------------------------------------------------|
-| [WIKI_UPGRADE_PARQUET_CACHE.md](WIKI_UPGRADE_PARQUET_CACHE.md) | DONE       | Migrate log cache from JSONL to Parquet for faster Polars reads |
-
 ## Code Reviews
 
 | Review                                                                   | Date       | Module                   | Open issues                      |

@@ -145,7 +145,7 @@ def tool_analyze_patterns(
     """Fetch logs and run PatternDetector against one or all containers.
 
     Logs fetching strategy (cache-first):
-    1. Check .cache/logs/<container>/<YYYY-MM-DD>.jsonl (24-hour window)
+    1. Check .cache/logs/<container>/<YYYY-MM-DD>.parquet (24-hour window)
     2. If cache hit, use cached logs (instant)
     3. Otherwise, fetch fresh from Docker API
 

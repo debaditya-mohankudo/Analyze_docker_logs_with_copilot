@@ -57,13 +57,13 @@ class TestWriteCachedLogsForDate:
         parquet_file = isolated_cache / "web-app" / "2026-03-06.parquet"
         assert parquet_file.exists()
 
-    def test_no_jsonl_file_created(self, isolated_cache):
+    def test_only_parquet_file_created(self, isolated_cache):
         ts = _utc(2026, 3, 6, 10, 0, 0)
         logs = [_make_log_line(ts, "hello world")]
         cm.write_cached_logs_for_date("web-app", logs, ts.date())
 
-        jsonl_file = isolated_cache / "web-app" / "2026-03-06.jsonl"
-        assert not jsonl_file.exists()
+        other_formats = list((isolated_cache / "web-app").glob("2026-03-06.*"))
+        assert all(f.suffix == ".parquet" for f in other_formats)
 
     def test_parquet_schema(self, isolated_cache):
         ts = _utc(2026, 3, 6, 10, 0, 0)
