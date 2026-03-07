@@ -31,7 +31,6 @@ except ImportError as exc:  # pragma: no cover
 from .config import settings
 from .logger import logger
 from .tools import (
-    COMPOSE_FILE,
     PATTERN_CACHE_DIR,
     tool_list_containers,
     tool_analyze_patterns,

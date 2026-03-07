@@ -22,6 +22,7 @@ pytestmark = pytest.mark.unit
 @pytest.fixture(autouse=True)
 def _patch_tool_exceptions(monkeypatch):
     """Replace SDK exception classes with lightweight test doubles."""
+    import docker_log_analyzer.docker as _docker_mod
 
     class _FakeDockerException(Exception):
         pass
@@ -31,6 +32,8 @@ def _patch_tool_exceptions(monkeypatch):
 
     monkeypatch.setattr(tools, "DockerException", _FakeDockerException)
     monkeypatch.setattr(tools, "NoSuchContainer", _FakeNoSuchContainer)
+    monkeypatch.setattr(_docker_mod, "DockerException", _FakeDockerException)
+    monkeypatch.setattr(_docker_mod, "NoSuchContainer", _FakeNoSuchContainer)
 
 
 # ---------------------------------------------------------------------------
@@ -144,13 +147,13 @@ class TestPatternCacheHelpers:
 class TestDockerHelpers:
     def test_docker_client_success(self):
         fake = _mock_client()
-        with patch("docker_log_analyzer.tools.DockerClient", return_value=fake):
+        with patch("docker_log_analyzer.docker.DockerClient", return_value=fake):
             got = tools._docker_client()
         assert got is fake
 
     def test_docker_client_failure_raises_runtime_error(self):
         with patch(
-            "docker_log_analyzer.tools.DockerClient",
+            "docker_log_analyzer.docker.DockerClient",
             side_effect=tools.DockerException("down"),
         ):
             with pytest.raises(RuntimeError, match="Cannot connect to Docker daemon"):
@@ -158,7 +161,7 @@ class TestDockerHelpers:
 
     def test_compose_client_uses_compose_file(self):
         fake = _mock_client()
-        with patch("docker_log_analyzer.tools.DockerClient", return_value=fake) as dc:
+        with patch("docker_log_analyzer.docker.DockerClient", return_value=fake) as dc:
             tools._compose_client()
         assert "compose_files" in dc.call_args.kwargs
 
@@ -217,7 +220,7 @@ class TestTimeAndCacheHelpers:
     def test_fetch_logs_with_cache_hit(self):
         c = _FakeContainer("svc", logs_result="fresh")
         now = datetime.now(timezone.utc)
-        with patch("docker_log_analyzer.tools.read_cached_logs_for_window", return_value=["cached"]):
+        with patch("docker_log_analyzer.docker.read_cached_logs_for_window", return_value=["cached"]):
             logs, was_cached = tools._fetch_logs_with_cache(c, "svc", now, now)
         assert logs == ["cached"]
         assert was_cached is True
@@ -225,8 +228,8 @@ class TestTimeAndCacheHelpers:
     def test_fetch_logs_with_cache_miss(self):
         c = _FakeContainer("svc", logs_result="")
         now = datetime.now(timezone.utc)
-        with patch("docker_log_analyzer.tools.read_cached_logs_for_window", return_value=None), patch(
-            "docker_log_analyzer.tools._fetch_logs_window", return_value=["fresh"]
+        with patch("docker_log_analyzer.docker.read_cached_logs_for_window", return_value=None), patch(
+            "docker_log_analyzer.docker._fetch_logs_window", return_value=["fresh"]
         ):
             logs, was_cached = tools._fetch_logs_with_cache(c, "svc", now, now)
         assert logs == ["fresh"]
