@@ -13,9 +13,10 @@ Use this table to answer questions with minimal hops.
 | "How does X work architecturally?" | [WIKI_ARCHITECTURE.md](WIKI_ARCHITECTURE.md) | [../CLAUDE.md](../CLAUDE.md) | [WIKI_ARCHITECTURE.md](WIKI_ARCHITECTURE.md) |
 | "What does tool X do / what are its params?" | [WIKI_TOOLS.md](WIKI_TOOLS.md) | — | [WIKI_TOOLS.md](WIKI_TOOLS.md) |
 | "How do I set up / run this?" | [WIKI_OPERATIONS.md](WIKI_OPERATIONS.md) | [../README.md](../README.md) | [WIKI_OPERATIONS.md](WIKI_OPERATIONS.md) |
-| "What Copilot prompts can I use?" | [WIKI_OPERATIONS.md § Copilot Prompts](WIKI_OPERATIONS.md#copilot-prompts) | — | [WIKI_OPERATIONS.md](WIKI_OPERATIONS.md) |
+| "What Copilot prompts can I use?" | [WIKI_COPILOT_PROMPTS.md](WIKI_COPILOT_PROMPTS.md) | — | [WIKI_COPILOT_PROMPTS.md](WIKI_COPILOT_PROMPTS.md) |
 | "How does caching work?" | [WIKI_OPERATIONS.md § Log Cache](WIKI_OPERATIONS.md#log-cache-strategy) | [WIKI_ARCHITECTURE.md § Cache](WIKI_ARCHITECTURE.md#cache-system) | [WIKI_OPERATIONS.md](WIKI_OPERATIONS.md) |
 | "How is this tested? What's CI?" | [WIKI_QUALITY.md](WIKI_QUALITY.md) | — | [WIKI_QUALITY.md](WIKI_QUALITY.md) |
+| "What Copilot prompts can I use for triage?" | [WIKI_COPILOT_PROMPTS.md](WIKI_COPILOT_PROMPTS.md) | — | [WIKI_COPILOT_PROMPTS.md](WIKI_COPILOT_PROMPTS.md) |
 | "What are the architecture rules / constraints?" | [../CLAUDE.md](../CLAUDE.md) | [WIKI_ARCHITECTURE.md](WIKI_ARCHITECTURE.md) | [../CLAUDE.md](../CLAUDE.md) |
 | "How does dependency mapping work?" | [WIKI_TOOLS.md § map_service_dependencies](WIKI_TOOLS.md#10-map_service_dependencies) | [WIKI_ARCHITECTURE.md § Dependency Mapping](WIKI_ARCHITECTURE.md#dependency-mapping) | [WIKI_TOOLS.md](WIKI_TOOLS.md) |
 
@@ -26,9 +27,10 @@ Use this table to answer questions with minimal hops.
 | Topic | Owner |
 |-------|-------|
 | MCP tool contracts (params, returns, behavior) | [WIKI_TOOLS.md](WIKI_TOOLS.md) |
+| Copilot prompts and workflows | [WIKI_COPILOT_PROMPTS.md](WIKI_COPILOT_PROMPTS.md) |
 | Architecture rules and contributor constraints | [../CLAUDE.md](../CLAUDE.md) |
 | Module design, algorithms, signal confidence | [WIKI_ARCHITECTURE.md](WIKI_ARCHITECTURE.md) |
-| Setup, config, cache, remote Docker, Copilot prompts | [WIKI_OPERATIONS.md](WIKI_OPERATIONS.md) |
+| Setup, config, cache, remote Docker | [WIKI_OPERATIONS.md](WIKI_OPERATIONS.md) |
 | Test strategy, CI, coverage targets | [WIKI_QUALITY.md](WIKI_QUALITY.md) |
 
 ---
@@ -36,7 +38,7 @@ Use this table to answer questions with minimal hops.
 ## Start Here
 
 - **New contributor:** [WIKI_OPERATIONS.md § Quick Start](WIKI_OPERATIONS.md#quick-start) → [WIKI_TOOLS.md](WIKI_TOOLS.md)
-- **Using with Copilot:** [WIKI_OPERATIONS.md § Copilot Prompts](WIKI_OPERATIONS.md#copilot-prompts)
+- **Using with Copilot:** [WIKI_COPILOT_PROMPTS.md](WIKI_COPILOT_PROMPTS.md)
 - **Understanding all tools:** [WIKI_TOOLS.md](WIKI_TOOLS.md)
 - **Adding a new tool:** [WIKI_ARCHITECTURE.md § Adding New Tools](WIKI_ARCHITECTURE.md#adding-new-tools)
 - **Architecture constraints:** [../CLAUDE.md](../CLAUDE.md)
@@ -48,8 +50,9 @@ Use this table to answer questions with minimal hops.
 | Hub | Purpose |
 |-----|---------|
 | [WIKI_ARCHITECTURE.md](WIKI_ARCHITECTURE.md) | System design, modules, algorithms, confidence model |
-| [WIKI_TOOLS.md](WIKI_TOOLS.md) | All 10 MCP tools — parameters, return shapes, behavior |
-| [WIKI_OPERATIONS.md](WIKI_OPERATIONS.md) | Setup, configuration, cache, remote Docker, Copilot prompts |
+| [WIKI_TOOLS.md](WIKI_TOOLS.md) | All 12 MCP tools — parameters, return shapes, behavior |
+| [WIKI_COPILOT_PROMPTS.md](WIKI_COPILOT_PROMPTS.md) | Natural language prompts organized by workflow |
+| [WIKI_OPERATIONS.md](WIKI_OPERATIONS.md) | Setup, configuration, cache, remote Docker |
 | [WIKI_QUALITY.md](WIKI_QUALITY.md) | Test suite, CI, coverage, adding tests |
 
 ## Proposals

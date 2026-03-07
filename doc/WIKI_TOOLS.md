@@ -8,7 +8,7 @@ Canonical reference for all 12 MCP tools — parameters, return shapes, and beha
 
 - Use this page for "what does tool X do", "what parameters does X accept", "what does X return".
 - For algorithm internals, see [WIKI_ARCHITECTURE.md](WIKI_ARCHITECTURE.md).
-- For Copilot prompts that invoke these tools, see [WIKI_OPERATIONS.md § Copilot Prompts](WIKI_OPERATIONS.md#copilot-prompts).
+- For Copilot prompts that invoke these tools, see [WIKI_COPILOT_PROMPTS.md](WIKI_COPILOT_PROMPTS.md).
 
 ---
 

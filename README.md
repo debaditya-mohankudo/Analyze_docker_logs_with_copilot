@@ -31,27 +31,9 @@ uv run python -c "from docker_log_analyzer.mcp_server import run; print('OK')"
 
 ## Architecture
 
-```text
-VSCode Copilot Chat (Agent Mode)
-        │  calls tools via MCP stdio (.vscode/mcp.json)
-        ▼
-docker-log-analyzer-mcp  (Python MCP server)
-        │
-        ├── list_containers           → Docker SDK
-        ├── analyze_patterns          → Docker SDK + PatternDetector (regex)
-        ├── detect_error_spikes       → Docker SDK + Polars rolling-window
-        ├── correlate_containers      → Docker SDK + pairwise temporal scan
-        ├── detect_data_leaks         → Docker SDK + SecretDetector (regex + redaction)
-        ├── map_service_dependencies  → Docker SDK + DependencyMapper (regex graph)
-        ├── rank_root_causes          → dependency graph + cascade candidates + spike timing
-        ├── get_last_errors           → Docker SDK + ERROR_PATTERN_RE filter
-        ├── sync_docker_logs          → cache-first log sync (.cache/logs/)
-        ├── capture_and_analyze       → live capture + combined report
-        ├── start_test_containers     → docker compose (docker-compose.test.yml)
-        └── stop_test_containers      → docker compose down
-```
+VSCode Copilot Chat (Agent Mode) → MCP stdio → 12 stateless tool calls → Docker SDK → JSON.
 
-Each tool call is **stateless**: fetch logs from Docker SDK → analyse → return JSON.
+Full module map and algorithm details: **[doc/WIKI_ARCHITECTURE.md](doc/WIKI_ARCHITECTURE.md)**.
 
 ---
 
