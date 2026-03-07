@@ -1,7 +1,7 @@
 # Proposal: rank_root_causes Tool
 
 **Date:** 2026-03-07
-**Status:** Evaluation complete — conditionally approved
+**Status:** Partially implemented — Issues A and B done; Issues C, D, E pending (TODO comments in module)
 **Target module:** `docker_log_analyzer/root_cause_analyzer.py`
 **MCP tool:** `rank_root_causes` (would be tool #11)
 
@@ -47,7 +47,7 @@ Copilot calls:
 
 ### Issues Found in Proposed Implementation
 
-#### Issue A — Timestamp comparison with 0 default (BUG, CRITICAL)
+#### Issue A — Timestamp comparison with 0 default (BUG, CRITICAL) ✅ DONE
 
 ```python
 spike_time = {s["container"]: s["first_spike_ts"] for s in spikes}
@@ -72,7 +72,7 @@ if origin_ts and target_ts and origin_ts < target_ts:
     scores[origin] += WEIGHT_SPIKE_FIRST
 ```
 
-#### Issue B — Arbitrary magic weights (DESIGN, HIGH)
+#### Issue B — Arbitrary magic weights (DESIGN, HIGH) ✅ DONE
 
 The proposed weights `(2, 2, 3, -1)` have no documented rationale:
 
@@ -98,7 +98,7 @@ WEIGHT_DEPENDENCY = -1.0    # penalty per outbound dependency (followers, not le
 
 Consider normalization in a future iteration (e.g. min-max scaling to 0-10).
 
-#### Issue C — No evidence list (MISSING, MEDIUM)
+#### Issue C — No evidence list (MISSING, MEDIUM) — TODO in `root_cause_analyzer.py`
 
 The example output includes an `evidence` list per container:
 
@@ -125,7 +125,7 @@ evidence[origin].append(f"cascade correlation with {target} ({score:.2f})")
 evidence[origin].append(f"error spike occurred before {target}")
 ```
 
-#### Issue D — No handling of empty inputs (ROBUSTNESS, MEDIUM)
+#### Issue D — No handling of empty inputs (ROBUSTNESS, MEDIUM) — TODO in `root_cause_analyzer.py`
 
 If `graph`, `cascades`, or `spikes` is empty, the function returns an empty
 list. This is technically correct but unhelpful.
@@ -137,7 +137,7 @@ if not scores:
     return {"status": "success", "root_causes": [], "message": "No root cause signals found"}
 ```
 
-#### Issue E — Score can go negative (UX, LOW)
+#### Issue E — Score can go negative (UX, LOW) — TODO in `root_cause_analyzer.py`
 
 The dependency penalty (`-1 per outbound dep`) can make scores negative for
 leaf services. Negative scores are confusing in a ranking context.
@@ -283,9 +283,10 @@ follows the existing pattern (`spike_detector.py`, `correlator.py`,
 
 - [ ] `rank_root_causes()` returns sorted list with `container`, `score`, `evidence`
 - [ ] Empty inputs return empty list without raising
-- [ ] Spike timestamp comparison handles missing/None values
+- [x] Spike timestamp comparison handles missing/None values (Issue A — DONE)
 - [ ] Scores are floored at 0.0
 - [ ] Evidence list explains every score contribution
+- [x] Named weight constants with documented rationale (Issue B — DONE)
 - [ ] Unit tests: ≥10 tests covering scoring, timing, empty inputs, single container
 - [ ] Integration test: run against 4-service test stack, verify database ranks #1
 - [ ] MCP tool registered and returns structured JSON

@@ -39,6 +39,7 @@ docker_log_analyzer/
   dependency_mapper.py    # Log-based dependency graph inference (regex → adjacency dict)
   log_pattern_analyzer.py # PatternDetector: timestamp format, language, log levels
   secret_detector.py      # SecretDetector: 20 patterns, redaction, severity
+  root_cause_analyzer.py  # Score-based root cause ranking (fan-in, cascade, spike timing)
   cache_manager.py        # Atomic Parquet log cache (write + multi-day read)
   config.py               # Pydantic BaseSettings singleton (settings.*)
   logger.py               # LoggerWithRunID singleton (run_id in every log line)
@@ -83,6 +84,41 @@ docker_log_analyzer/
    - `high` = dep confidence in (high, medium) AND correlation_score ≥ 0.5
    - `medium` = dep confidence in (high, medium) AND correlation_score > 0
    - `low` = dep confidence low, or transitive edge
+
+### Root Cause Analysis (`root_cause_analyzer.py`)
+
+Pure function `rank_root_causes(graph, cascades, spikes) → list` — no Docker calls,
+no LLM. Takes pre-computed outputs from the three analysis modules and scores every
+container by root-cause likelihood.
+
+**Scoring contributions (additive):**
+
+| Signal | Weight constant | Rationale |
+|--------|----------------|-----------|
+| Fan-in: each service depending on C | `WEIGHT_DEPENDENT = 2.0` | High-dependency services are likely origins |
+| Cascade correlation: each cascade where C is origin | `WEIGHT_CASCADE = 3.0` (× correlation_score) | Directed error propagation is strong evidence |
+| Spike timing: C spiked before its dependent | `WEIGHT_SPIKE_FIRST = 4.0` | Temporal ordering is the strongest causal signal |
+| Fan-out penalty: each outbound dependency of C | `WEIGHT_DEPENDENCY = −1.0` | Services with many deps are followers, not leaders |
+
+**Algorithm steps:**
+
+1. **Fan-in** — invert the graph; for each container count how many others depend on it → `score += count × WEIGHT_DEPENDENT`
+2. **Cascade** — for each cascade candidate where C is `"from"` → `score += correlation_score × WEIGHT_CASCADE`
+3. **Spike timing** — build `{container → first_spike_ts}` from spikes (ISO-8601 strings, `None`-guarded); for each cascade pair where origin spiked before receiver → `score += WEIGHT_SPIKE_FIRST`
+4. **Fan-out penalty** — for each outbound dependency edge in graph → `score += WEIGHT_DEPENDENCY`
+5. Sort by score descending; return `[{"container": str, "score": float}]`
+
+**Key correctness fix (Issue A):** spike timestamps are ISO-8601 strings. Missing containers
+use `None` sentinel — comparison is skipped when either side is absent. The original proposal
+used `0` as default, which is a Python 3 type error when compared against a string.
+
+**Pending TODOs (see `root_cause_analyzer.py`):**
+
+- Issue C: evidence list per container (explains *why* each container scored high)
+- Issue D: structured response for empty inputs
+- Issue E: floor scores at 0.0 (fan-out penalty can produce negatives)
+
+---
 
 ### Cache System (`cache_manager.py` + `tools.py`)
 
