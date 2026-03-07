@@ -11,31 +11,18 @@ Algorithm:
 All analysis is local – no external API calls.
 """
 
-import re
-from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 from itertools import combinations
 
-DOCKER_TS_RE = re.compile(
-    r"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z)"
-)
+from .patterns import ERROR_PATTERN_RE, parse_timestamp
 
-ERROR_PATTERN_RE = re.compile(
-    r"\b(ERROR|CRITICAL|FATAL|Exception|Traceback|panic:|SEVERE)\b"
-    r"|HTTP [5]\d{2}",
-    re.IGNORECASE,
-)
 
 def _parse_ts(line: str) -> Optional[float]:
     """Return Unix timestamp (float) from Docker-prepended timestamp, or None."""
-    m = DOCKER_TS_RE.match(line.strip())
-    if not m:
+    dt = parse_timestamp(line)
+    if dt is None:
         return None
-    ts_str = m.group(1).rstrip("Z")
-    try:
-        return datetime.fromisoformat(ts_str).replace(tzinfo=timezone.utc).timestamp()
-    except ValueError:
-        return None
+    return dt.timestamp()
 
 
 def _extract_error_events(lines: List[str]) -> List[Tuple[float, str]]:

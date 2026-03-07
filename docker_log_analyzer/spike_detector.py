@@ -11,23 +11,11 @@ Algorithm:
 All analysis is stateless and local – no external API calls.
 """
 
-import re
-from datetime import datetime, timezone
 from typing import List, Optional
 
 import polars as pl
 
-# Docker SDK prepends RFC3339 timestamps when timestamps=True is used.
-# Example line: "2024-03-02T21:19:41.123456789Z [app] ERROR connection failed"
-DOCKER_TS_RE = re.compile(
-    r"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?)"
-)
-
-ERROR_PATTERN_RE = re.compile(
-    r"\b(ERROR|CRITICAL|FATAL|Exception|Traceback|panic:|SEVERE)\b"
-    r"|HTTP [5]\d{2}",
-    re.IGNORECASE,
-)
+from .patterns import DOCKER_TS_RE, ERROR_PATTERN_RE, parse_timestamp
 
 BASELINE_BUCKETS = 3  # rolling look-back window
 
@@ -37,15 +25,10 @@ def _parse_docker_timestamp(line: str) -> Optional[str]:
     Extract the minute-bucket string (YYYY-MM-DDTHH:MM) from a Docker log line.
     Returns None if no RFC3339 timestamp is found.
     """
-    m = DOCKER_TS_RE.match(line.strip())
-    if not m:
+    dt = parse_timestamp(line)
+    if dt is None:
         return None
-    ts_str = m.group(1).rstrip("Z")
-    try:
-        dt = datetime.fromisoformat(ts_str).replace(tzinfo=timezone.utc)
-        return dt.strftime("%Y-%m-%dT%H:%M")
-    except ValueError:
-        return None
+    return dt.strftime("%Y-%m-%dT%H:%M")
 
 
 def detect_spikes(
