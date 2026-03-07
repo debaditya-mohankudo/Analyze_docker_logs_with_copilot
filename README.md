@@ -8,18 +8,7 @@ A stateless, **LLM-free** Docker log analysis tool exposed as an [MCP](https://m
 
 ## What it does
 
-| Tool | Purpose |
-| ---- | ------- |
-| `list_containers` | List running Docker containers |
-| `analyze_patterns` | Detect timestamp format, language, log levels, health checks |
-| `detect_error_spikes` | Polars rolling-window error rate anomaly detection |
-| `correlate_containers` | Pairwise temporal error co-occurrence (score 0–1) |
-| `detect_data_leaks` | Scan for 20 secret patterns with redaction and remediation |
-| `map_service_dependencies` | Infer service dependency graph + cascade candidates from logs |
-| `sync_docker_logs` | Sync logs to cache for offline / instant analysis |
-| `capture_and_analyze` | Live capture + combined spike + correlation report |
-| `start_test_containers` | Start 4-service test stack |
-| `stop_test_containers` | Stop and remove test containers |
+12 MCP tools covering the full triage workflow — discovery, pattern analysis, spike detection, secret scanning, dependency mapping, root cause ranking, and log caching. Full reference: **[doc/WIKI_TOOLS.md](doc/WIKI_TOOLS.md)**.
 
 ---
 
@@ -55,6 +44,7 @@ docker-log-analyzer-mcp  (Python MCP server)
         ├── detect_data_leaks         → Docker SDK + SecretDetector (regex + redaction)
         ├── map_service_dependencies  → Docker SDK + DependencyMapper (regex graph)
         ├── rank_root_causes          → dependency graph + cascade candidates + spike timing
+        ├── get_last_errors           → Docker SDK + ERROR_PATTERN_RE filter
         ├── sync_docker_logs          → cache-first log sync (.cache/logs/)
         ├── capture_and_analyze       → live capture + combined report
         ├── start_test_containers     → docker compose (docker-compose.test.yml)
@@ -70,7 +60,7 @@ Each tool call is **stateless**: fetch logs from Docker SDK → analyse → retu
 | Page | Purpose |
 | ---- | ------- |
 | [doc/WIKI_HOME.md](doc/WIKI_HOME.md) | Navigation hub and agent routing table |
-| [doc/WIKI_TOOLS.md](doc/WIKI_TOOLS.md) | All 10 tools — parameters, return shapes, behavior |
+| [doc/WIKI_TOOLS.md](doc/WIKI_TOOLS.md) | All 12 tools — parameters, return shapes, behavior |
 | [doc/WIKI_OPERATIONS.md](doc/WIKI_OPERATIONS.md) | Setup, config, remote Docker, cache, Copilot prompts |
 | [doc/WIKI_ARCHITECTURE.md](doc/WIKI_ARCHITECTURE.md) | Module map, algorithms, design decisions |
 | [doc/WIKI_QUALITY.md](doc/WIKI_QUALITY.md) | Test suite, CI, coverage, adding tests |
@@ -88,7 +78,7 @@ uv run pytest tests/ -m "not integration"
 uv run pytest tests/
 ```
 
-220 tests (163 unit + 57 integration). See [doc/WIKI_QUALITY.md](doc/WIKI_QUALITY.md).
+319 unit tests + integration suite. See [doc/WIKI_QUALITY.md](doc/WIKI_QUALITY.md).
 
 ---
 
