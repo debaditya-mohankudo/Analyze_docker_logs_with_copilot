@@ -78,6 +78,26 @@ def rank_root_causes(
     #   negative. Negative scores are confusing in a ranking context.
     #   Fix: {"container": k, "score": round(max(v, 0.0), 3), ...}
     #   Reference: WIKI_PROPOSAL_ROOT_CAUSE_ANALYZER.md § Issue E
+
+    # TODO (Issue F – ENHANCE, MEDIUM): Incorporate error density (spike magnitude).
+    #   All spikes currently contribute equally to spike timing regardless of severity.
+    #   A container with 500 errors/min spiking first is stronger evidence than one
+    #   with 5 errors/min. Incorporate max_error_rate from detect_spikes() output:
+    #     from math import log1p
+    #     spike_magnitude = {s["container"]: s.get("max_error_rate", 1.0) for s in spikes}
+    #     if origin_ts and target_ts and origin_ts < target_ts:
+    #         scores[origin] += WEIGHT_SPIKE_FIRST * log1p(spike_magnitude.get(origin, 1.0))
+    #   Use log1p to avoid a single large spike overwhelming all other signals.
+    #   Reference: WIKI_REVIEW_ROOT_CAUSE_ANALYZER.md § Issue 3
+
+    # TODO (Issue G – ROBUSTNESS, LOW): Guard against external (unresolved) hostnames
+    #   appearing as cascade origins. _resolve_target() in dependency_mapper passes
+    #   through raw hostnames when no container matches, which can propagate into
+    #   cascade["from"]. Add a known_containers guard before scoring cascade origins:
+    #     known_containers = set(graph.keys())
+    #     if known_containers and origin not in known_containers:
+    #         continue
+    #   Reference: WIKI_REVIEW_ROOT_CAUSE_ANALYZER.md § Issue 5
     """
     scores: Dict[str, float] = defaultdict(float)
 

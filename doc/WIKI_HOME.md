@@ -66,9 +66,10 @@ Use this table to answer questions with minimal hops.
 
 ## Code Reviews
 
-| Review                                                               | Date       | Module                 | Open issues                      |
-| -------------------------------------------------------------------- | ---------- | ---------------------- | -------------------------------- |
-| [WIKI_REVIEW_DEPENDENCY_MAPPER.md](WIKI_REVIEW_DEPENDENCY_MAPPER.md) | 2026-03-07 | `dependency_mapper.py` | 3 open (Mermaid, HTTP-from, k8s) |
+| Review                                                                   | Date       | Module                   | Open issues                      |
+| ------------------------------------------------------------------------ | ---------- | ------------------------ | -------------------------------- |
+| [WIKI_REVIEW_DEPENDENCY_MAPPER.md](WIKI_REVIEW_DEPENDENCY_MAPPER.md)     | 2026-03-07 | `dependency_mapper.py`   | 3 open (Mermaid, HTTP-from, k8s) |
+| [WIKI_REVIEW_ROOT_CAUSE_ANALYZER.md](WIKI_REVIEW_ROOT_CAUSE_ANALYZER.md) | 2026-03-07 | `root_cause_analyzer.py` | 2 open (Issues F, G)             |
 
 ---
 
