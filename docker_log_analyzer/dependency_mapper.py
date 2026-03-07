@@ -6,7 +6,9 @@ Algorithm:
      - HTTP/HTTPS URLs:          http(s)://hostname:port/...
      - DB connection strings:    postgres://, redis://, mongodb://, mysql://...
      - gRPC/dial calls:          "calling", "dialing", "connecting to <name>"
-     - Container name mentions:  bare name appearing in free-text log body
+     - DNS lookup failures:      "lookup <name>: no such host"
+     - TCP dial with port:       "dial tcp <name>:<port>"
+     - Container name mentions:  bare name delimited by separators in log body
   2. Build a directed dependency graph: {container → [{target, inferred_from, confidence, hit_count}]}
   3. Optionally add one level of transitive closure (A→B + B→C → A→C, labelled speculative).
   4. Join with correlator output to surface cascade candidates.
@@ -49,6 +51,12 @@ _GRPC_RE = re.compile(
     re.IGNORECASE,
 )
 
+# DNS lookup failures – e.g. "lookup redis: no such host"
+_DNS_RE = re.compile(r"\blookup\s+([a-zA-Z0-9_-]+)", re.IGNORECASE)
+
+# TCP dial with explicit port – e.g. "dial tcp redis:6379: connection refused"
+_TCP_RE = re.compile(r"\btcp\s+([a-zA-Z0-9_-]+):\d+", re.IGNORECASE)
+
 # Protocol → canonical label for inferred_from field
 _PROTOCOL_LABEL = {
     "postgres": "postgres_connection",
@@ -78,12 +86,16 @@ def _normalize_host(raw: str) -> str:
 
 
 def _resolve_target(target: str, known: Set[str]) -> str:
-    """Map a hostname to a known container name when possible."""
+    """Map a hostname to a known container name when possible.
+
+    Prefers exact match, then longest prefix match to avoid mis-mapping
+    overlapping names (e.g. auth vs auth-service vs auth-db).
+    """
     if target in known:
         return target
-    for name in known:
-        if target.startswith(name) or name.startswith(target):
-            return name
+    matches = [c for c in known if target.startswith(c) or c.startswith(target)]
+    if matches:
+        return max(matches, key=len)
     return target
 
 
@@ -129,11 +141,23 @@ def extract_dependencies(
         for m in _GRPC_RE.finditer(line):
             _add(m.group(1), "grpc_call", "medium")
 
-        # Container name mentions in log body (strip Docker timestamp prefix first)
+        # DNS lookup failures – e.g. "lookup redis: no such host"
+        for m in _DNS_RE.finditer(line):
+            _add(m.group(1), "dns_lookup", "medium")
+
+        # TCP connection with explicit port – e.g. "dial tcp redis:6379: connection refused"
+        for m in _TCP_RE.finditer(line):
+            _add(m.group(1), "tcp_dial", "high")
+
+        # Container name mentions in log body (strip Docker timestamp prefix first).
+        # Use explicit separator chars instead of \b to avoid matching substrings
+        # of longer identifiers (e.g. "api" inside "grapiql").
         body = re.sub(r"^\S+Z\s+", "", line)
         for name in known_containers:
             if len(name) >= 4 and re.search(
-                r"\b" + re.escape(name) + r"\b", body, re.IGNORECASE
+                r"(?:^|[\s:/,'\"])" + re.escape(name) + r"(?:[\s:/,'\"]|$)",
+                body,
+                re.IGNORECASE,
             ):
                 _add(name, "name_mention", "low")
 
@@ -197,12 +221,12 @@ def build_graph(
             graph[container] = edges
 
     if include_transitive:
-        _apply_transitive(graph)
+        _apply_transitive(graph, known)
 
     return graph
 
 
-def _apply_transitive(graph: Dict[str, List[dict]]) -> None:
+def _apply_transitive(graph: Dict[str, List[dict]], known: Set[str]) -> None:
     """
     Add one hop of transitive edges in-place.
 
@@ -219,14 +243,15 @@ def _apply_transitive(graph: Dict[str, List[dict]]) -> None:
         for edge in list(edges):
             hop = edge["target"]
             for second_hop in direct.get(hop, set()):
-                if second_hop != src and second_hop not in existing:
-                    graph[src].append({
-                        "target": second_hop,
-                        "inferred_from": "transitive",
-                        "confidence": "low",
-                        "hit_count": 0,
-                    })
-                    existing.add(second_hop)
+                if second_hop not in known or second_hop == src or second_hop in existing:
+                    continue
+                graph[src].append({
+                    "target": second_hop,
+                    "inferred_from": "transitive",
+                    "confidence": "low",
+                    "hit_count": 0,
+                })
+                existing.add(second_hop)
 
 
 # ── Cascade candidate finder ───────────────────────────────────────────────────
@@ -281,8 +306,9 @@ def find_cascade_candidates(
             if score == 0.0:
                 continue
 
-            # Canonical pair key to avoid duplicates
-            pair = (min(src, target), max(src, target))
+            # Directed pair key — (src, target) preserves cascade direction.
+            # (db→api) and (api→db) are distinct cascade paths and must not be merged.
+            pair = (src, target)
             if pair in seen_pairs:
                 continue
             seen_pairs.add(pair)

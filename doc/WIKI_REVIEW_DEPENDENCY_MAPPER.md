@@ -3,7 +3,7 @@
 **Date:** 2026-03-07
 **Module:** `docker_log_analyzer/dependency_mapper.py`
 **Reviewer:** External analysis
-**Status:** Pending triage — issues ranked by impact
+**Status:** 6 of 9 actionable issues implemented (2026-03-07)
 
 ---
 
@@ -318,18 +318,18 @@ Could live in `dependency_mapper.py` or a new `formatters.py`.
 
 ## Prioritised Action List
 
-| Priority | Issue | Type | Action |
+| Priority | Issue | Type | Status |
 |----------|-------|------|--------|
-| 1 | Issue 7 — cascade direction lost | BUG HIGH | Implement now |
-| 2 | Issue 2 — `_resolve_target` non-deterministic | BUG HIGH | Implement now |
-| 3 | Issue 1 — name-mention false positives | BUG HIGH | Implement now |
-| 4 | Issue 5 — per-line regex loop | PERF MED | Implement now (one-liner) |
-| 5 | Issue 6 — transitive edge to external hosts | BUG MED | Implement now (guard) |
-| 6 | Issue 8a/b — DNS + TCP signals | ENHANCE MED | Implement now |
-| 7 | Issue 9 — Mermaid export | FEATURE LOW | Next sprint |
-| 8 | Issue 8c — HTTP "from" signal | ENHANCE LOW | Implement with guard |
-| 9 | Issue 3 — Kubernetes FQDN stripping | ENHANCE LOW | Defer |
-| 10 | Issue 4 — localhost skip policy | DESIGN LOW | Reject |
+| 1 | Issue 7 — cascade direction lost | BUG HIGH | ✅ DONE (`pair = (src, target)`) |
+| 2 | Issue 2 — `_resolve_target` non-deterministic | BUG HIGH | ✅ DONE (longest-prefix match) |
+| 3 | Issue 1 — name-mention false positives | BUG HIGH | ✅ DONE (separator-char anchors) |
+| 4 | Issue 5 — per-line regex loop | PERF MED | ⚠️ SKIPPED — hit_count semantics require per-line processing; `seen` set inside `extract_dependencies` deduplicates intra-line; calling once per container would collapse all hit_counts to 1 |
+| 5 | Issue 6 — transitive edge to external hosts | BUG MED | ✅ DONE (`if second_hop not in known: continue`) |
+| 6 | Issue 8a/b — DNS + TCP signals | ENHANCE MED | ✅ DONE (`_DNS_RE`, `_TCP_RE` added) |
+| 7 | Issue 9 — Mermaid export | FEATURE LOW | Pending next sprint |
+| 8 | Issue 8c — HTTP "from" signal | ENHANCE LOW | Pending (implement with known-container guard) |
+| 9 | Issue 3 — Kubernetes FQDN stripping | ENHANCE LOW | Deferred |
+| 10 | Issue 4 — localhost skip policy | DESIGN LOW | Rejected |
 
 ---
 

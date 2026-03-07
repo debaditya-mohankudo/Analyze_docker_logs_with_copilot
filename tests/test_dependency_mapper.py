@@ -261,7 +261,19 @@ class TestFindCascadeCandidates:
         assert candidates[0]["to"] == "web"
 
     def test_no_duplicate_pairs(self):
-        # Both web→db and db←web edges present (bidirectional graph)
+        # Same directed pair (web→db) appearing twice in edges must produce only 1 candidate
+        graph = {
+            "web": [
+                {"target": "db", "inferred_from": "http_url", "confidence": "high", "hit_count": 3},
+                {"target": "db", "inferred_from": "http_url", "confidence": "high", "hit_count": 2},
+            ],
+        }
+        corr = self._make_corr("web", "db", 0.8)
+        candidates = find_cascade_candidates(graph, corr)
+        assert len(candidates) == 1
+
+    def test_bidirectional_edges_produce_two_directed_candidates(self):
+        # web→db and db→web are distinct directed cascade paths — both must be reported
         graph = {
             "web": [{"target": "db", "inferred_from": "http_url",
                      "confidence": "high", "hit_count": 3}],
@@ -270,7 +282,9 @@ class TestFindCascadeCandidates:
         }
         corr = self._make_corr("web", "db", 0.8)
         candidates = find_cascade_candidates(graph, corr)
-        assert len(candidates) == 1
+        assert len(candidates) == 2
+        froms = {c["from"] for c in candidates}
+        assert froms == {"db", "web"}  # both directions present
 
     def test_sorted_by_confidence_then_score(self):
         graph = {
