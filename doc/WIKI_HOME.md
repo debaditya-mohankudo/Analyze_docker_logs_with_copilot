@@ -58,6 +58,12 @@ Use this table to answer questions with minimal hops.
 |----------------------------------------------------------------|------------|-----------------------------------------------------------------|
 | [WIKI_UPGRADE_PARQUET_CACHE.md](WIKI_UPGRADE_PARQUET_CACHE.md) | DONE       | Migrate log cache from JSONL to Parquet for faster Polars reads |
 
+## Code Reviews
+
+| Review                                                               | Date       | Module                 | Open issues              |
+| -------------------------------------------------------------------- | ---------- | ---------------------- | ------------------------ |
+| [WIKI_REVIEW_DEPENDENCY_MAPPER.md](WIKI_REVIEW_DEPENDENCY_MAPPER.md) | 2026-03-07 | `dependency_mapper.py` | 7 (3 high, 3 med, 1 low) |
+
 ---
 
 ## Authoring Rules
