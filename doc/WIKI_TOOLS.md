@@ -1,6 +1,6 @@
 # Wiki Hub: MCP Tools Reference
 
-Canonical reference for all 10 MCP tools — parameters, return shapes, and behavior.
+Canonical reference for all 11 MCP tools — parameters, return shapes, and behavior.
 
 ---
 
@@ -26,6 +26,7 @@ Canonical reference for all 10 MCP tools — parameters, return shapes, and beha
 | 8 | [map_service_dependencies](#8-map_service_dependencies) | Log-based dependency graph + cascade candidates |
 | 9 | [start_test_containers](#9-start_test_containers) | Start 4-service test stack |
 | 10 | [stop_test_containers](#10-stop_test_containers) | Stop and remove test containers |
+| 11 | [rank_root_causes](#11-rank_root_causes) | Score containers by root-cause likelihood |
 
 ---
 
@@ -473,9 +474,76 @@ Stops and removes test containers.
 
 ---
 
-## Retrieval keywords
+## 11. rank_root_causes
 
-tool, MCP, parameters, returns, list_containers, analyze_patterns, detect_error_spikes, detect_data_leaks, correlate_containers, sync_docker_logs, capture_and_analyze, map_service_dependencies, start_test_containers, stop_test_containers, reference, contract, schema, tail, use_cache, confidence, hit_count, cascade, dependency, spike, correlation, secret, pattern
+**Status:** Implemented — 2026-03-07
+
+Ranks containers by root-cause likelihood by combining dependency fan-in, error cascade paths, and spike timing. Internally orchestrates spike detection, correlation, and dependency graph analysis in a single call.
+
+**Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `containers` | string[]? | — | Specific containers, or `null` for all running |
+| `tail` | int | 500 | Log lines per container |
+| `time_window_seconds` | int | 3600 | Analysis window in seconds |
+| `include_transitive` | bool | false | Include transitive edges in the dependency graph |
+| `use_cache` | bool | true | Check `.cache/logs/` before Docker API |
+
+**Returns:**
+```json
+{
+  "status": "success",
+  "root_causes": [
+    { "container": "test-database", "score": 9.0 },
+    { "container": "test-cache",    "score": 4.0 },
+    { "container": "test-web-app",  "score": 2.0 }
+  ],
+  "analysis_inputs": {
+    "containers_analyzed": 4,
+    "spikes_detected": 3,
+    "cascade_candidates": 5,
+    "dependency_edges": 8
+  },
+  "cache_hits": { "test-web-app": true, "test-database": false },
+  "parameters": {
+    "containers": null,
+    "tail": 500,
+    "time_window_seconds": 3600,
+    "include_transitive": false
+  }
+}
+```
+
+**Scoring algorithm (summary):**
+
+| Signal | Weight | Notes |
+|--------|--------|-------|
+| Fan-in (services depending on this container) | +2.0 per dependent | From dependency graph |
+| Cascade origin (correlation score × weight) | +3.0 × `correlation_score` | From cascade candidates |
+| Spiked before a dependent container | +4.0 | ISO-8601 string comparison |
+| Fan-out (outbound dependencies) | −1.0 per edge | Followers penalised, not leaders |
+
+Scores are rounded to 3 decimal places and sorted descending. Containers with no signals are not included in results.
+
+**Copilot workflow:**
+```
+User: "Find the root cause of my system failure."
+
+Copilot calls:
+1. detect_error_spikes      → confirm which containers have errors
+2. correlate_containers     → confirm temporal co-occurrence
+3. map_service_dependencies → understand error propagation paths
+4. rank_root_causes         → get scored ranking
+```
+
+**Notes:**
+- Scores are relative, not absolute — compare ranks within a result set
+- Containers only appear in results if they contributed to at least one score signal
+
+---
+
+tool, MCP, parameters, returns, list_containers, analyze_patterns, detect_error_spikes, detect_data_leaks, correlate_containers, sync_docker_logs, capture_and_analyze, map_service_dependencies, rank_root_causes, start_test_containers, stop_test_containers, reference, contract, schema, tail, use_cache, confidence, hit_count, cascade, dependency, spike, correlation, secret, pattern, root cause, scoring, fan-in, fan-out
 
 **[negative keywords / not-this-doc]**
 algorithm internals, module design, CI, coverage, test suite, setup, installation, Copilot prompts

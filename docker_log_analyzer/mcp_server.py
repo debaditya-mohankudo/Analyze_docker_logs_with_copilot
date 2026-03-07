@@ -1,7 +1,7 @@
 """
 MCP Server for Docker Log Pattern Analysis (non-LLM).
 
-Exposes 10 tools to VSCode Copilot Agent Mode via .vscode/mcp.json:
+Exposes 11 tools to VSCode Copilot Agent Mode via .vscode/mcp.json:
 
   list_containers           – discover running Docker containers
   analyze_patterns          – PatternDetector per container (timestamps, language, log levels)
@@ -9,6 +9,7 @@ Exposes 10 tools to VSCode Copilot Agent Mode via .vscode/mcp.json:
   correlate_containers      – pairwise cross-container temporal error correlation
   detect_data_leaks         – SecretDetector for API keys, credentials, PII, sensitive data
   map_service_dependencies  – infer service dependency graph from log patterns
+  rank_root_causes          – score containers by root-cause likelihood
   sync_docker_logs          – cache logs for offline / instant analysis
   capture_and_analyze       – live capture + spike + correlation report
   start_test_containers     – build & start test log-generator containers
@@ -42,6 +43,7 @@ from .tools import (
     tool_capture_and_analyze,
     tool_detect_data_leaks,
     tool_map_service_dependencies,
+    tool_rank_root_causes,
 )
 
 
@@ -243,6 +245,32 @@ async def map_service_dependencies(
     return tool_map_service_dependencies(
         containers=containers,
         tail=tail,
+        include_transitive=include_transitive,
+    )
+
+
+@mcp.tool()
+async def rank_root_causes(
+    containers: list[str] | None = None,
+    tail: int = 500,
+    time_window_seconds: int = 3600,
+    include_transitive: bool = False,
+) -> dict:
+    """Rank containers by root-cause likelihood using dependency fan-in, error cascade
+    paths, and spike timing. Internally runs spike detection, correlation, and dependency
+    graph analysis in a single call. Best used after `detect_error_spikes` or
+    `map_service_dependencies` confirm a system-wide failure.
+
+    Args:
+        containers: Specific containers to analyse. Omit for all running containers.
+        tail: Log lines to fetch per container (default 500).
+        time_window_seconds: Analysis window in seconds (default 3600).
+        include_transitive: Include transitive edges in the dependency graph (default false).
+    """
+    return tool_rank_root_causes(
+        containers=containers,
+        tail=tail,
+        time_window_seconds=time_window_seconds,
         include_transitive=include_transitive,
     )
 

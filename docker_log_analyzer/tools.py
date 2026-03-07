@@ -29,6 +29,7 @@ from .correlator import correlate
 from .dependency_mapper import build_graph, find_cascade_candidates
 from .log_pattern_analyzer import PatternDetector
 from .logger import logger
+from .root_cause_analyzer import rank_root_causes
 from .secret_detector import SecretDetector
 from .spike_detector import DOCKER_TS_RE, detect_spikes
 
@@ -840,6 +841,100 @@ def tool_map_service_dependencies(
         "cache_hits": cache_hits,
         "parameters": {
             "tail": tail,
+            "include_transitive": include_transitive,
+        },
+    }
+
+
+def tool_rank_root_causes(
+    containers: Optional[list[str]] = None,
+    tail: int = 500,
+    time_window_seconds: int = 3600,
+    include_transitive: bool = False,
+    use_cache: bool = True,
+) -> dict:
+    """Rank containers by root-cause likelihood using dependency graph, cascade candidates, and spike timing."""
+    try:
+        client = _docker_client()
+    except RuntimeError as exc:
+        return {"status": "error", "error": str(exc)}
+
+    if containers:
+        try:
+            targets = [client.container.inspect(name) for name in containers]
+        except NoSuchContainer as exc:
+            return {"status": "error", "error": f"Container not found: {exc}"}
+    else:
+        targets = client.container.list()
+
+    if not targets:
+        return {
+            "status": "success",
+            "root_causes": [],
+            "analysis_inputs": {
+                "containers_analyzed": 0,
+                "spikes_detected": 0,
+                "cascade_candidates": 0,
+                "dependency_edges": 0,
+            },
+            "cache_hits": {},
+            "parameters": {
+                "containers": containers,
+                "tail": tail,
+                "time_window_seconds": time_window_seconds,
+                "include_transitive": include_transitive,
+            },
+            "message": "No running containers.",
+        }
+
+    now = datetime.now(timezone.utc)
+    since = now - timedelta(seconds=time_window_seconds)
+
+    container_logs: dict[str, list[str]] = {}
+    cache_hits: dict[str, bool] = {}
+
+    for c in targets:
+        name = _container_name(c)
+        logs, was_cached = _fetch_logs_with_cache(c, name, since, now, use_cache=use_cache)
+        if logs:
+            container_logs[name] = logs
+            cache_hits[name] = was_cached
+
+    # Collect spikes per container
+    all_spikes: list[dict] = []
+    for c in targets:
+        name = _container_name(c)
+        if name not in container_logs:
+            continue
+        spikes = detect_spikes(container_logs[name], name)
+        all_spikes.extend(spikes)
+
+    # Build dependency graph and cascade candidates
+    graph = build_graph(container_logs, include_transitive=include_transitive)
+
+    cascade_candidates: list[dict] = []
+    if len(container_logs) >= 2:
+        correlations = correlate(container_logs, time_window_seconds=30)
+        cascade_candidates = find_cascade_candidates(graph, correlations)
+
+    root_causes = rank_root_causes(graph, cascade_candidates, all_spikes)
+
+    dependency_edges = sum(len(edges) for edges in graph.values())
+
+    return {
+        "status": "success",
+        "root_causes": root_causes,
+        "analysis_inputs": {
+            "containers_analyzed": len(container_logs),
+            "spikes_detected": len(all_spikes),
+            "cascade_candidates": len(cascade_candidates),
+            "dependency_edges": dependency_edges,
+        },
+        "cache_hits": cache_hits,
+        "parameters": {
+            "containers": containers,
+            "tail": tail,
+            "time_window_seconds": time_window_seconds,
             "include_transitive": include_transitive,
         },
     }
