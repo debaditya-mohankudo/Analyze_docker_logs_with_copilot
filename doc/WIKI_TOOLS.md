@@ -1,6 +1,6 @@
 # Wiki Hub: MCP Tools Reference
 
-Canonical reference for all 11 MCP tools — parameters, return shapes, and behavior.
+Canonical reference for all 12 MCP tools — parameters, return shapes, and behavior.
 
 ---
 
@@ -27,6 +27,7 @@ Canonical reference for all 11 MCP tools — parameters, return shapes, and beha
 | 9 | [start_test_containers](#9-start_test_containers) | Start 4-service test stack |
 | 10 | [stop_test_containers](#10-stop_test_containers) | Stop and remove test containers |
 | 11 | [rank_root_causes](#11-rank_root_causes) | Score containers by root-cause likelihood |
+| 12 | [get_last_errors](#12-get_last_errors) | Last N error/fatal lines from a single container |
 
 ---
 
@@ -543,7 +544,68 @@ Copilot calls:
 
 ---
 
-tool, MCP, parameters, returns, list_containers, analyze_patterns, detect_error_spikes, detect_data_leaks, correlate_containers, sync_docker_logs, capture_and_analyze, map_service_dependencies, rank_root_causes, start_test_containers, stop_test_containers, reference, contract, schema, tail, use_cache, confidence, hit_count, cascade, dependency, spike, correlation, secret, pattern, root cause, scoring, fan-in, fan-out
+---
+
+## 12. get_last_errors
+
+Fast triage tool — returns the last N error, fatal, or panic lines from a single container without running full spike or pattern analysis.
+
+**Parameters:**
+
+| Parameter | Type | Default | Description |
+| --------- | ---- | ------- | ----------- |
+| `container_name` | string | — | Target container name (required) |
+| `tail` | int | 200 | Recent log lines to scan |
+| `limit` | int | 10 | Maximum error entries to return |
+
+**Returns:**
+
+```json
+{
+  "status": "success",
+  "container": "test-cache",
+  "errors_found": 12,
+  "limit": 10,
+  "errors": [
+    {
+      "timestamp": "2026-03-07T16:04:51Z",
+      "level": "fatal",
+      "message": "2026-03-07T16:04:51Z level=fatal msg=\"panic: runtime error: index out of range [5] with length 3\""
+    },
+    {
+      "timestamp": "2026-03-07T16:05:23Z",
+      "level": "error",
+      "message": "2026-03-07T16:05:23Z level=error msg=\"Request timeout\" path=/api/data timeout=30s"
+    }
+  ]
+}
+```
+
+**Level classification:**
+
+| Detected keyword | Reported `level` |
+| ---------------- | ---------------- |
+| `fatal`, `panic` | `fatal` |
+| `critical` | `critical` |
+| `error`, `exception`, `traceback`, `severe` | `error` |
+
+**Error patterns matched:** ERROR, CRITICAL, FATAL, Exception, Traceback, panic, SEVERE, HTTP 5xx (same regex as `detect_error_spikes`).
+
+**`errors_found`** is the total count of matching lines in the scanned window; `errors` contains only the last `limit` of them in chronological order.
+
+**Use case:** Quickest way to answer "what broke in container X?" — single tool call, no duration or multi-container overhead.
+
+**Differentiation from other tools:**
+
+| Tool | Scope | When to use |
+| ---- | ----- | ----------- |
+| `get_last_errors` | Single container, last N lines | Immediate triage of one container |
+| `detect_error_spikes` | All containers, rolling window | Confirm error rate anomaly |
+| `rank_root_causes` | All containers, full analysis | Find which container caused the failure |
+
+---
+
+tool, MCP, parameters, returns, list_containers, analyze_patterns, detect_error_spikes, detect_data_leaks, correlate_containers, sync_docker_logs, capture_and_analyze, map_service_dependencies, rank_root_causes, get_last_errors, start_test_containers, stop_test_containers, reference, contract, schema, tail, use_cache, confidence, hit_count, cascade, dependency, spike, correlation, secret, pattern, root cause, scoring, fan-in, fan-out, last error, fatal, panic, triage
 
 **[negative keywords / not-this-doc]**
 algorithm internals, module design, CI, coverage, test suite, setup, installation, Copilot prompts

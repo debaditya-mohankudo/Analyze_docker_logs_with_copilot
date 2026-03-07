@@ -11,6 +11,7 @@ No background threads, no persistent in-memory state, no external API calls.
 import asyncio
 import hashlib
 import json
+import re
 from datetime import datetime, timezone, timedelta, date
 from pathlib import Path
 from typing import Optional
@@ -29,7 +30,8 @@ from .log_pattern_analyzer import PatternDetector
 from .logger import logger
 from .root_cause_analyzer import rank_root_causes
 from .secret_detector import SecretDetector
-from .spike_detector import DOCKER_TS_RE, detect_spikes
+from .patterns import DOCKER_TS_RE, ERROR_PATTERN_RE
+from .spike_detector import detect_spikes
 from .docker import (
     COMPOSE_FILE,
     _docker_client,
@@ -101,6 +103,24 @@ def _write_correlation_cache(cache_key: str, result: dict) -> None:
     tmp = path.with_suffix(".tmp")
     tmp.write_text(json.dumps(result))
     tmp.rename(path)
+
+
+# ── Error level detector ─────────────────────────────────────────────────────
+
+_LEVEL_RE = re.compile(r"\b(fatal|critical|error|panic|exception|traceback|severe)\b", re.IGNORECASE)
+
+
+def _detect_level(line: str) -> str:
+    """Classify an error log line as fatal, critical, or error."""
+    m = _LEVEL_RE.search(line)
+    if not m:
+        return "error"
+    word = m.group(1).lower()
+    if word in ("fatal", "panic"):
+        return "fatal"
+    if word == "critical":
+        return "critical"
+    return "error"
 
 
 # ── ISO-8601 time parser ────────────────────────────────────────────────────
@@ -845,4 +865,46 @@ def tool_rank_root_causes(
             "time_window_seconds": time_window_seconds,
             "include_transitive": include_transitive,
         },
+    }
+
+
+def tool_get_last_errors(
+    container_name: str,
+    tail: int = 200,
+    limit: int = 10,
+) -> dict:
+    """Return the last `limit` error/fatal lines from a single container's logs.
+
+    Scans the most recent `tail` log lines, filters by ERROR_PATTERN_RE, and
+    returns the last `limit` matches in chronological order with parsed timestamp
+    and classified severity level.
+    """
+    try:
+        client = _docker_client()
+    except RuntimeError as exc:
+        return {"status": "error", "error": str(exc)}
+
+    try:
+        c = client.container.inspect(container_name)
+    except NoSuchContainer:
+        return {"status": "error", "error": f"Container '{container_name}' not found."}
+
+    lines = _fetch_logs(c, tail=tail)
+    error_lines = [line for line in lines if ERROR_PATTERN_RE.search(line)]
+
+    entries = []
+    for line in error_lines[-limit:]:
+        m = DOCKER_TS_RE.match(line.strip())
+        entries.append({
+            "timestamp": m.group(1) if m else None,
+            "level": _detect_level(line),
+            "message": line,
+        })
+
+    return {
+        "status": "success",
+        "container": container_name,
+        "errors_found": len(error_lines),
+        "limit": limit,
+        "errors": entries,
     }

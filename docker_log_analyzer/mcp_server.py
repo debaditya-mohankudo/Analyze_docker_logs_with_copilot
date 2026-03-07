@@ -12,6 +12,7 @@ Exposes 11 tools to VSCode Copilot Agent Mode via .vscode/mcp.json:
   rank_root_causes          – score containers by root-cause likelihood
   sync_docker_logs          – cache logs for offline / instant analysis
   capture_and_analyze       – live capture + spike + correlation report
+  get_last_errors           – last N error/fatal lines from a single container
   start_test_containers     – build & start test log-generator containers
   stop_test_containers      – stop and remove test log-generator containers
 
@@ -43,6 +44,7 @@ from .tools import (
     tool_detect_data_leaks,
     tool_map_service_dependencies,
     tool_rank_root_causes,
+    tool_get_last_errors,
 )
 
 
@@ -271,6 +273,28 @@ async def rank_root_causes(
         tail=tail,
         time_window_seconds=time_window_seconds,
         include_transitive=include_transitive,
+    )
+
+
+@mcp.tool()
+async def get_last_errors(
+    container_name: str,
+    tail: int = 200,
+    limit: int = 10,
+) -> dict:
+    """Return the last N error, fatal, or panic lines from a single container's logs.
+    Fast triage tool: answers "what was the last error in <container>?" without
+    requiring full spike or pattern analysis.
+
+    Args:
+        container_name: Target container name (required).
+        tail: Number of recent log lines to scan (default 200).
+        limit: Maximum number of error entries to return (default 10).
+    """
+    return tool_get_last_errors(
+        container_name=container_name,
+        tail=tail,
+        limit=limit,
     )
 
 
