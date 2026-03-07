@@ -52,6 +52,12 @@ Use this table to answer questions with minimal hops.
 | [WIKI_OPERATIONS.md](WIKI_OPERATIONS.md) | Setup, configuration, cache, remote Docker, Copilot prompts |
 | [WIKI_QUALITY.md](WIKI_QUALITY.md) | Test suite, CI, coverage, adding tests |
 
+## Proposals
+
+| Proposal                                                                       | Status     | Purpose                                                    |
+|--------------------------------------------------------------------------------|------------|------------------------------------------------------------|
+| [WIKI_PROPOSAL_ROOT_CAUSE_ANALYZER.md](WIKI_PROPOSAL_ROOT_CAUSE_ANALYZER.md)  | EVALUATED  | Rank containers by root-cause likelihood (tool #11)        |
+
 ## Upgrade Plans
 
 | Plan                                                           | Status     | Purpose                                                         |
