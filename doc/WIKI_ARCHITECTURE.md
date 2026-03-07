@@ -117,6 +117,10 @@ used `0` as default, which is a Python 3 type error when compared against a stri
 - Issue C: evidence list per container (explains *why* each container scored high)
 - Issue D: structured response for empty inputs
 - Issue E: floor scores at 0.0 (fan-out penalty can produce negatives)
+- Issue F: weight spike timing by error density (`max_error_rate` from spike output)
+- Issue G: guard against unresolved external hostnames appearing as cascade origins
+
+Full scoring design review: [WIKI_REVIEW_ROOT_CAUSE_ANALYZER.md](WIKI_REVIEW_ROOT_CAUSE_ANALYZER.md)
 
 ---
 

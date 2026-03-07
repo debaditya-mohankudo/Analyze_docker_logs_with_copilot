@@ -296,6 +296,8 @@ follows the existing pattern (`spike_detector.py`, `correlator.py`,
 
 ## See also
 
+- [WIKI_REVIEW_ROOT_CAUSE_ANALYZER.md](WIKI_REVIEW_ROOT_CAUSE_ANALYZER.md) — scoring algorithm review (Issues F, G pending)
+- [WIKI_ARCHITECTURE.md § Root Cause Analysis](WIKI_ARCHITECTURE.md#root-cause-analysis-root_cause_analyzerpy)
 - [WIKI_ARCHITECTURE.md § Dependency Mapping](WIKI_ARCHITECTURE.md#dependency-mapping)
 - [WIKI_TOOLS.md § map_service_dependencies](WIKI_TOOLS.md#8-map_service_dependencies)
 - [WIKI_REVIEW_DEPENDENCY_MAPPER.md](WIKI_REVIEW_DEPENDENCY_MAPPER.md)
