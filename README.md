@@ -94,7 +94,7 @@ uv run pytest tests/
 
 ## Security
 
-- Docker socket mounted read-only (`:ro`)
+- Connects to Docker daemon read-only (no container modification)
 - No API keys required
 - All analysis runs locally — no data leaves the machine
 
