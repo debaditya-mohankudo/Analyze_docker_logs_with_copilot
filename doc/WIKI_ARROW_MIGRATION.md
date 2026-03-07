@@ -98,8 +98,9 @@ Migrate if **any** of the following becomes true:
 
 - A new tool needs timezone conversion between multiple zones (e.g. correlating logs
   from containers in different TZs)
-- `_parse_time_arg()` needs to support natural language beyond `"X unit ago"`
-  (e.g. `"yesterday"`, `"last Monday"`) — at which point `dateparser` is the better fit anyway
+- A new natural language time parsing need arises — at which point `dateparser` is the better
+  fit anyway (`_parse_time_arg` was removed 2026-03-07; replaced by 5-line `_parse_iso()`
+  since Copilot agent resolves natural language upstream)
 - Polars is removed in favour of a datetime-native dataframe library
 - The project adds a scheduling or calendar feature
 
@@ -109,7 +110,8 @@ Migrate if **any** of the following becomes true:
 
 | Date | Decision | Reason |
 |---|---|---|
-| 2026-03-07 | Deferred | Polars + python-on-whales boundaries require `.datetime` unwrapping that negates ergonomic gains; `_parse_time_arg()` can't be simplified; no second consumer of arrow in the project |
+| 2026-03-07 | Deferred | Polars + python-on-whales boundaries require `.datetime` unwrapping that negates ergonomic gains; no second consumer of arrow in the project |
+| 2026-03-07 | `_parse_time_arg` removed | Replaced with `_parse_iso()` (5 lines, stdlib only). Validated live against test containers — no regression. Copilot agent resolves natural language before calling tools. |
 
 ---
 

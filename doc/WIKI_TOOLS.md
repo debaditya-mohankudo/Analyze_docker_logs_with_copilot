@@ -254,8 +254,8 @@ Explicitly syncs Docker logs to `.cache/logs/` for a time window. Enables fast o
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `container_names` | string[]? | — | Specific containers, or `null` for all running |
-| `since` | string | `"24 hours ago"` | Window start: `"2 hours ago"`, `"7 days ago"`, ISO-8601 |
-| `until` | string | `"now"` | Window end: `"now"` or ISO-8601 |
+| `since` | string? | 24 hours ago | Window start as ISO-8601 UTC, e.g. `"2026-03-04T10:00:00Z"`. Omit to default to 24h ago. |
+| `until` | string? | now | Window end as ISO-8601 UTC. Omit to default to now. |
 | `force_refresh` | bool | false | Delete existing cache and re-sync |
 
 **Returns:**
@@ -277,11 +277,11 @@ Explicitly syncs Docker logs to `.cache/logs/` for a time window. Enables fast o
 }
 ```
 
-**Time argument formats:** `"2 hours ago"`, `"30 minutes ago"`, `"7 days ago"`, `"2026-03-04T10:30:00Z"`, `"now"`
+**Time format:** ISO-8601 UTC only (e.g. `"2026-03-04T10:30:00Z"`). The Copilot agent resolves natural language expressions like "4 hours ago" to ISO-8601 before calling this tool.
 
 **Workflow:**
 ```bash
-uv run docker-log-analyzer-mcp sync_docker_logs --since "4 hours ago"
+uv run docker-log-analyzer-mcp sync_docker_logs --since "2026-03-07T10:00:00Z"
 # All subsequent tool calls use cache (instant):
 uv run docker-log-analyzer-mcp analyze_patterns
 uv run docker-log-analyzer-mcp detect_error_spikes
