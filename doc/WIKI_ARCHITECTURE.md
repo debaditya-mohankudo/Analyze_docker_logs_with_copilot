@@ -75,11 +75,11 @@ docker_log_analyzer/
 
 ### Dependency Mapping (`dependency_mapper.py`)
 
-1. Per container, per log line: apply four regex patterns (see confidence table below)
+1. Per container, per log line: apply six regex patterns (see confidence table below)
 2. Accumulate `(target, inferred_from, confidence) → hit_count` per-line for accurate counts
-3. Resolve bare hostnames to known container names; skip self-loops
+3. Resolve bare hostnames to known container names via longest-prefix match; skip self-loops
 4. Optional: one-hop transitive closure (`include_transitive=True`) labelled `inferred_from="transitive"`, `confidence="low"`, `hit_count=0`
-5. Join graph with `correlate()` output → cascade candidates with confidence level:
+5. Join graph with `correlate()` output → directed cascade candidates (no symmetric dedup — `db→api` and `api→db` are distinct paths) with confidence level:
    - `high` = dep confidence in (high, medium) AND correlation_score ≥ 0.5
    - `medium` = dep confidence in (high, medium) AND correlation_score > 0
    - `low` = dep confidence low, or transitive edge
@@ -111,8 +111,10 @@ docker_log_analyzer/
 |-------------|----------------|-----------|
 | HTTP/HTTPS URL | `http://payment-service:8080/api` | high |
 | DB connection string | `postgres://db:5432`, `redis://cache:6379` | high |
+| TCP dial with port | `dial tcp redis:6379: connection refused` | high |
 | gRPC / dial call | `dialing order-service`, `connecting to auth` | medium |
-| Container name mention | bare name in log body (min 4 chars, word boundary) | low |
+| DNS lookup failure | `lookup redis: no such host` | medium |
+| Container name mention | bare name delimited by separators (≥4 chars) | low |
 | Transitive edge | A→B + B→C → A→C (computed, not observed) | low |
 
 ### Skipped hosts

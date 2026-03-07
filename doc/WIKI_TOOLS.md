@@ -396,8 +396,10 @@ Infers a directed service dependency graph from log patterns. Surfaces cascade c
 |--------|---------|-----------|
 | HTTP/HTTPS URL | `http://payment-service:8080/api/charge` | high |
 | DB connection string | `postgres://db:5432`, `redis://cache:6379` | high |
+| TCP dial with port | `dial tcp redis:6379: connection refused` | high |
 | gRPC / dial call | `dialing order-service:50051` | medium |
-| Container name mention | bare name in free-text (≥4 chars) | low |
+| DNS lookup failure | `lookup redis: no such host` | medium |
+| Container name mention | bare name delimited by separators (≥4 chars) | low |
 | Transitive edge | A→B + B→C (computed) | low |
 
 **Cascade candidate confidence:**
@@ -419,7 +421,9 @@ Infers a directed service dependency graph from log patterns. Surfaces cascade c
 **Notes:**
 - `hit_count` accumulates across log lines (one count per line that contains the signal)
 - Self-loops (container depending on itself) are excluded
-- Transitive edges are labelled `inferred_from="transitive"` and `hit_count=0`
+- Transitive edges are labelled `inferred_from="transitive"` and `hit_count=0`; guarded to known containers only
+- Cascade candidates preserve direction — `db→api` and `api→db` are distinct entries
+- Container name resolution uses longest-prefix match (e.g. `auth-service` wins over `auth`)
 - Skips: `localhost`, `127.0.0.1`, `0.0.0.0`, `::1`
 
 ---

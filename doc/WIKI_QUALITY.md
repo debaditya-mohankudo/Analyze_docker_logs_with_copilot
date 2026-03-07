@@ -16,9 +16,9 @@ Use this hub for test strategy, CI configuration, coverage targets, and adding n
 
 | Metric | Value |
 |--------|-------|
-| Unit tests | 275 (no Docker required) |
+| Unit tests | 276 (no Docker required) |
 | Integration tests | 67 (Docker + test containers) |
-| Total | 342 |
+| Total | 343 |
 | CI execution (unit only) | ~0.8 s parallel via pytest-xdist |
 | Coverage (core modules) | 90–100% |
 
@@ -50,7 +50,7 @@ uv run pytest tests/test_dependency_mapper.py -v
 | `test_correlation_cache.py` | 14 | unit | Cache key stability, TTL expiry, TTL=0 disable, cache miss/hit flow, use_cache=false bypass |
 | `test_pattern_detector.py` | 24 | unit | Timestamp formats (ISO/syslog/epoch/Apache), language detection, log levels, health checks |
 | `test_secret_detector.py` | 45 | unit | 20 secret patterns, redaction, severity filtering, remediation, Docker timestamp regex |
-| `test_dependency_mapper.py` | 35 | unit | HTTP/HTTPS/DB/gRPC/name-mention extraction, graph builder, cascade candidates, hit_count, transitive |
+| `test_dependency_mapper.py` | 36 | unit | HTTP/HTTPS/DB/gRPC/DNS/TCP/name-mention extraction, graph builder, cascade direction, hit_count, transitive |
 | `test_tools_unit.py` | 49 | unit | tools.py helper functions, Docker/cache/time parsing helpers, sync/async tool error branches, lifecycle and sync paths |
 | `test_cache_manager.py` | 25 | unit | Parquet write/read, schema validation, window filtering, multi-day, corrupt file, atomic write cleanup, metadata, clear cache |
 | `test_mcp_integration.py` | 43 | integration | All 10 MCP tool functions, live Docker, field presence, value ranges, error cases |
