@@ -24,6 +24,10 @@ ENV/
 # Safety net: root-level pattern exports
 container_patterns*.json
 
+# Test coverage
+.coverage
+htmlcov/
+
 # Logs
 *.log
 
