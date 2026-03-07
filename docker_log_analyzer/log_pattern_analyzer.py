@@ -11,6 +11,7 @@ Saves results to container_patterns.json for buffer manager optimization.
 """
 
 import json
+import os
 import re
 import time
 from collections import defaultdict, Counter
@@ -318,9 +319,10 @@ class LogPatternAnalyzer:
         
         return self.container_patterns
     
-    def export_to_json(self, filepath: str = "container_patterns.json") -> bool:
+    def export_to_json(self, filepath: str = ".cache/patterns/container_patterns.json") -> bool:
         """Export detected patterns to JSON file."""
         try:
+            os.makedirs(os.path.dirname(filepath), exist_ok=True)
             patterns_dict = {}
             
             for container_name, pattern in self.container_patterns.items():
@@ -351,7 +353,7 @@ class LogPatternAnalyzer:
                     "analysis_time_seconds": round(pattern.analysis_time, 3)
                 }
             
-            # Write to project root
+            # Write to .cache/patterns/
             with open(filepath, 'w') as f:
                 json.dump(patterns_dict, f, indent=2)
             

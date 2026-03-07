@@ -21,6 +21,9 @@ ENV/
 # Pattern analysis cache
 .cache/
 
+# Safety net: root-level pattern exports
+container_patterns*.json
+
 # Logs
 *.log
 
