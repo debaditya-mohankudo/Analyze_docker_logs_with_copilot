@@ -33,13 +33,16 @@ Authoritative source for all constraints: [../CLAUDE.md](../CLAUDE.md)
 
 ```text
 docker_log_analyzer/
-  mcp_server.py           # Tool registration, _fetch_logs_with_cache(), ToolRegistry
+  mcp_server.py           # Tool registration and FastMCP wiring (11 tools)
+  tools.py                # Tool implementations (tool_* functions, pattern/correlation cache)
+  docker.py               # Docker helpers: client, log fetching, _fetch_logs_with_cache()
   spike_detector.py       # Polars rolling-window spike detection (1-min buckets)
   correlator.py           # Pairwise temporal error correlation (score 0–1)
   dependency_mapper.py    # Log-based dependency graph inference (regex → adjacency dict)
   log_pattern_analyzer.py # PatternDetector: timestamp format, language, log levels
   secret_detector.py      # SecretDetector: 20 patterns, redaction, severity
   root_cause_analyzer.py  # Score-based root cause ranking (fan-in, cascade, spike timing)
+  patterns.py             # Shared compiled regexes (DOCKER_TS_RE, ERROR_PATTERN_RE)
   cache_manager.py        # Atomic Parquet log cache (write + multi-day read)
   config.py               # Pydantic BaseSettings singleton (settings.*)
   logger.py               # LoggerWithRunID singleton (run_id in every log line)
@@ -50,7 +53,7 @@ docker_log_analyzer/
 ## MCP Server Internals
 
 - **ToolRegistry pattern** — `_registry.register(name, handler, schema)` called in `run()`; each tool has an explicit `_wrap_<name>()` function (no lambdas; meaningful names in stack traces).
-- **`_fetch_logs_with_cache(container, tail, use_cache)`** — shared helper used by all log-reading tools; returns `(lines, cache_hit)`.
+- **`_fetch_logs_with_cache(container, name, since, until, use_cache)`** — lives in `docker.py`; shared by all log-reading tools; returns `(lines, was_cached)`.
 - **No tool-to-tool calls** — `correlate_containers` and `map_service_dependencies` both call `correlate()` directly from `correlator.py`. MCP tool calls are never chained internally.
 - **Error handling** — all tools return `{"status": "error", "error": "..."}` on failure; server never crashes.
 

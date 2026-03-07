@@ -54,6 +54,7 @@ docker-log-analyzer-mcp  (Python MCP server)
         ├── correlate_containers      → Docker SDK + pairwise temporal scan
         ├── detect_data_leaks         → Docker SDK + SecretDetector (regex + redaction)
         ├── map_service_dependencies  → Docker SDK + DependencyMapper (regex graph)
+        ├── rank_root_causes          → dependency graph + cascade candidates + spike timing
         ├── sync_docker_logs          → cache-first log sync (.cache/logs/)
         ├── capture_and_analyze       → live capture + combined report
         ├── start_test_containers     → docker compose (docker-compose.test.yml)
