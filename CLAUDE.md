@@ -29,7 +29,7 @@ No long-lived connections.
 All state must come from:
 - Docker logs
 - Configuration
-- Explicit cache directory (.cache/patterns)
+- Explicit cache directory (.cache/)
 
 ### 1.2 Deterministic & Local
 
@@ -55,17 +55,23 @@ Each tool must:
 VSCode Copilot (Agent Mode)
         │
         ▼
-MCP stdio server (mcp_server.py)
+MCP stdio server (mcp_server.py)   ← @mcp.tool() registrations
         │
-        ├── spike_detector.py
-        ├── correlator.py
-        ├── log_pattern_analyzer.py
-        ├── secret_detector.py
-        ├── config.py
-        └── logger.py
+        └── tools.py               ← tool_*() implementations
+              ├── docker.py             log fetching + cache
+              ├── spike_detector.py     rolling-window spike detection
+              ├── correlator.py         pairwise temporal correlation
+              ├── dependency_mapper.py  service graph inference
+              ├── root_cause_analyzer.py  fan-in + cascade scoring
+              ├── log_pattern_analyzer.py  timestamp/language/level detection
+              ├── secret_detector.py    20-pattern secret/PII scanner
+              ├── cache_manager.py      Parquet log cache (.cache/logs/)
+              ├── patterns.py           shared compiled regexes
+              ├── config.py             Pydantic BaseSettings singleton
+              └── logger.py             LoggerWithRunID singleton
 ```
 
-All tools are registered in mcp_server.py.
+Tool implementations live in `tools.py`. `mcp_server.py` contains only `@mcp.tool()` wiring.
 
 -------------------------------------------------------------------------------
 ## 3. PERFORMANCE RULES
@@ -112,8 +118,8 @@ Cache rules:
 - Keyed by container name only
 - Stored under `.cache/patterns/`
 - Must include:
-    - cache_hit
-    - cached_at (ISO-8601 UTC)
+    - logs_cache_hit
+    - analyzed_at (ISO-8601 UTC)
 - Independent from log cache
 
 If log format detection logic changes,
@@ -234,12 +240,13 @@ Detection must:
 
 When adding a new tool:
 
-1. Define tool function in mcp_server.py
-2. Keep it stateless
-3. Add unit tests (if logic-heavy)
-4. Add integration test if Docker-dependent
-5. Update README
-6. Update this CLAUDE.md if architectural impact
+1. Implement `tool_<name>(...)` in `tools.py`
+2. Register with `@mcp.tool()` in `mcp_server.py`
+3. Keep it stateless
+4. Add unit tests (if logic-heavy)
+5. Add integration test if Docker-dependent
+6. Update README
+7. Update this CLAUDE.md if architectural impact
 
 -------------------------------------------------------------------------------
 ## 11. WHAT NOT TO DO
