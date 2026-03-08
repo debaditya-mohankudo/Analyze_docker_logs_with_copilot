@@ -85,6 +85,11 @@ class TestLanguageDetection:
         assert lang == "php"
         assert confidence > 0
 
+    def test_detects_nginx(self, nginx_logs):
+        lang, confidence = PatternDetector.detect_language(nginx_logs)
+        assert lang == "nginx"
+        assert confidence > 0
+
     def test_unknown_language(self):
         logs = ["plain log line", "another plain line", "no patterns here"]
         lang, confidence = PatternDetector.detect_language(logs)

@@ -45,7 +45,7 @@ class ContainerPattern:
     """Represents discovered patterns for a single container."""
     container_name: str
     container_id: str
-    language: str  # "python", "java", "php", "go", "nodejs", etc.
+    language: str  # "python", "java", "php", "go", "nodejs", "nginx", etc.
     language_confidence: float
     timestamp_format: TimestampPattern
     log_levels: Dict[str, int]  # distribution of log levels
@@ -155,6 +155,19 @@ class PatternDetector:
             r"Error: ",
             r"node_modules",
             r"npm ERR!",
+        ],
+        "nginx": [
+            r"nginx/\d+\.\d+",
+            r"\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2} \[(error|warn|crit|alert|emerg)\]",
+            r"connect\(\) failed.*upstream",
+            r"upstream timed out",
+            r"no live upstreams while connecting to upstream",
+            r"upstream prematurely closed connection",
+            r"upstream sent invalid header",
+            r"SSL_do_handshake\(\) failed",
+            r"client intended to send too large body",
+            r"open\(\) .* failed \(\d+: No such file or directory\)",
+            r"FastCGI sent in stderr",
         ],
     }
     

@@ -253,6 +253,19 @@ NODEJS_LOGS = [
     "2024-03-02T21:10:03Z debug: Cache hit for session abc123",
 ]
 
+NGINX_LOGS = [
+    "2024/03/02 21:10:00 [notice] 1#1: nginx/1.25.3",
+    "2024/03/02 21:10:01 [error] 1#1: *42 connect() failed (111: Connection refused) while connecting to upstream, client: 10.0.0.1, upstream: http://app:8080/api",
+    "2024/03/02 21:10:02 [error] 1#1: *43 upstream timed out (110: Connection timed out) while reading response header from upstream",
+    "2024/03/02 21:10:03 [error] 1#1: *44 no live upstreams while connecting to upstream, client: 10.0.0.2, upstream: app_pool",
+    "2024/03/02 21:10:04 [warn]  1#1: *45 upstream prematurely closed connection while reading response header from upstream",
+    "2024/03/02 21:10:05 [error] 1#1: *46 upstream sent invalid header while reading response header from upstream",
+    "2024/03/02 21:10:06 [error] 1#1: *47 SSL_do_handshake() failed (SSL: error:14094416) while SSL handshaking to upstream",
+    "2024/03/02 21:10:07 [warn]  1#1: *48 client intended to send too large body: 15728640 bytes",
+    '2024/03/02 21:10:08 [error] 1#1: *49 open() "/var/www/html/missing.html" failed (2: No such file or directory)',
+    "2024/03/02 21:10:09 [error] 1#1: *50 FastCGI sent in stderr: PHP Fatal error: Uncaught TypeError in /var/www/html/index.php:12",
+]
+
 SYSLOG_LINES = [
     "Mar  2 21:10:00 myhost app[1234]: INFO service started",
     "Mar  2 21:10:01 myhost app[1234]: ERROR connection failed",
@@ -292,3 +305,8 @@ def nodejs_logs():
 @pytest.fixture
 def php_logs():
     return PHP_LOGS
+
+
+@pytest.fixture
+def nginx_logs():
+    return NGINX_LOGS

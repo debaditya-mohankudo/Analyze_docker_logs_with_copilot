@@ -90,7 +90,7 @@ Analyzes log patterns to detect timestamp format, programming language, log leve
 
 **Detection capabilities:**
 - **Timestamps:** ISO-8601, syslog, epoch (Unix), Apache HTTP
-- **Languages:** Python, Java, Go, Node.js, PHP, generic/unknown
+- **Languages:** Python, Java, Go, Node.js, PHP, Nginx, generic/unknown
 - **Log levels:** INFO, DEBUG, WARNING, ERROR, CRITICAL, SEVERE, FATAL
 - **Health checks:** Repeating patterns (e.g., `/health`, `/ping`, `/readiness`)
 
