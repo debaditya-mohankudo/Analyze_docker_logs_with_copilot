@@ -183,6 +183,46 @@ JAVA_LOGS = [
     "2024-03-02T21:10:02Z ERROR   at com.example.Service.process(Service.java:42)",
     "2024-03-02T21:10:02Z ERROR Caused by: java.net.ConnectException: Connection refused",
     "2024-03-02T21:10:03Z DEBUG [pool-1] c.example.Worker - Worker idle",
+    # Spring-specific errors
+    "2024-03-02T21:10:04Z ERROR [main] o.s.boot.SpringApplication - APPLICATION FAILED TO START",
+    "2024-03-02T21:10:04Z ERROR [main] o.s.context.AnnotationConfigApplicationContext - Error starting ApplicationContext",
+    "2024-03-02T21:10:05Z ERROR [main] o.s.b.SpringApplication - org.springframework.beans.factory.BeanCreationException: Error creating bean 'dataSource'",
+    "2024-03-02T21:10:05Z ERROR [main] o.s.b.SpringApplication - Caused by: org.springframework.beans.factory.NoSuchBeanDefinitionException: No bean named 'userRepo'",
+    "2024-03-02T21:10:06Z ERROR [main] o.s.b.SpringApplication - Caused by: org.springframework.beans.factory.UnsatisfiedDependencyException",
+    "2024-03-02T21:10:07Z ERROR [http-nio] o.s.web.servlet.DispatcherServlet - Failed to complete request",
+    "2024-03-02T21:10:08Z ERROR [http-nio] o.s.w.s.m.HttpMessageNotReadableException: Required request body is missing",
+    "2024-03-02T21:10:09Z ERROR [http-nio] o.s.v.m.MethodArgumentNotValidException: Validation failed for argument",
+    "2024-03-02T21:10:10Z ERROR [http-nio] o.s.d.DataAccessException: could not execute statement",
+    "2024-03-02T21:10:11Z ERROR [http-nio] org.hibernate.HibernateException: identifier of an instance was altered",
+    "2024-03-02T21:10:12Z ERROR [http-nio] org.springframework.security.AuthenticationException: Bad credentials",
+    # Cassandra / DataStax driver errors
+    "2024-03-02T21:10:13Z ERROR [main] c.example.App - com.datastax.oss.driver.api.core.NoHostAvailableException: No node was available",
+    "2024-03-02T21:10:14Z ERROR [main] c.example.App - com.datastax.oss.driver.api.core.AllNodesFailedException: Could not reach any contact point",
+    "2024-03-02T21:10:15Z ERROR [main] c.example.App - com.datastax.driver.core.exceptions.ReadTimeoutException: Cassandra timeout during read query",
+    "2024-03-02T21:10:16Z ERROR [main] c.example.App - com.datastax.driver.core.exceptions.WriteTimeoutException: Cassandra timeout during write query",
+    "2024-03-02T21:10:17Z ERROR [main] c.example.App - com.datastax.driver.core.exceptions.UnavailableException: Not enough replicas available",
+    "2024-03-02T21:10:18Z ERROR [main] c.example.App - com.datastax.driver.core.exceptions.InvalidQueryException: unconfigured table users",
+]
+
+PHP_LOGS = [
+    "[02-Mar-2024 21:10:00 UTC] PHP Fatal error: Uncaught PDOException: SQLSTATE[HY000] [2002] Can't connect to MySQL server on 'db:3306' in /var/www/html/db.php:15",
+    "[02-Mar-2024 21:10:01 UTC] PHP Warning: mysqli_connect_error(): Access denied for user 'app'@'%' (using password: YES) MySQL",
+    "[02-Mar-2024 21:10:02 UTC] PHP Fatal error: SQLSTATE[42S02]: Table 'app.users' doesn't exist in /var/www/html/model.php:38",
+    "[02-Mar-2024 21:10:03 UTC] PHP Warning: MySQL server has gone away in /var/www/html/db.php:82",
+    "[02-Mar-2024 21:10:04 UTC] PHP Warning: Lost connection to MySQL server during query in /var/www/html/db.php:99",
+    "[02-Mar-2024 21:10:05 UTC] PHP Fatal error: SQLSTATE[23000]: Duplicate entry '42' for key 'PRIMARY' in /var/www/html/repo.php:55",
+    "[02-Mar-2024 21:10:06 UTC] PHP Warning: Deadlock found when trying to get lock; try restarting transaction in /var/www/html/repo.php:71",
+    "[02-Mar-2024 21:10:07 UTC] PHP Fatal error: Too many connections in /var/www/html/db.php:12",
+    "[02-Mar-2024 21:10:08 UTC] PHP Notice: On line 42 in file /var/www/html/index.php",
+    # Slim Framework errors
+    "[02-Mar-2024 21:10:09 UTC] PHP Fatal error: Uncaught Slim\\Exception\\HttpNotFoundException: Not found in /var/www/html/vendor/slim/slim/Slim/Routing/RouteRunner.php:62",
+    "[02-Mar-2024 21:10:10 UTC] PHP Fatal error: Uncaught Slim\\Exception\\HttpMethodNotAllowedException: Method not allowed in /var/www/html/app/routes.php:28",
+    "[02-Mar-2024 21:10:11 UTC] PHP Fatal error: Uncaught Slim\\Exception\\HttpUnauthorizedException: Unauthorized in /var/www/html/app/middleware/AuthMiddleware.php:45",
+    "[02-Mar-2024 21:10:12 UTC] PHP Fatal error: Uncaught Slim\\Exception\\HttpInternalServerErrorException in /var/www/html/app/handlers.php:33",
+    "[02-Mar-2024 21:10:13 UTC] PHP Fatal error: Uncaught Psr\\Container\\ContainerExceptionInterface: Service not found in /var/www/html/app/dependencies.php:19",
+    "[02-Mar-2024 21:10:14 UTC] PHP Fatal error: FastRoute\\BadRouteException: Cannot register two routes matching '/users/{id}' in /var/www/html/vendor/nikic/fast-route/src/RouteCollector.php:88",
+    "[02-Mar-2024 21:10:15 UTC] PHP Warning: Slim\\Middleware\\BodyParsingMiddleware: Unable to parse JSON body in /var/www/html/vendor/slim/slim/Slim/Middleware/BodyParsingMiddleware.php:104",
+    "[02-Mar-2024 21:10:16 UTC] PHP Fatal error: Slim\\Factory\\AppFactory::create() called before container was set in /var/www/html/app/bootstrap.php:12",
 ]
 
 GO_LOGS = [
@@ -235,3 +275,8 @@ def go_logs():
 @pytest.fixture
 def nodejs_logs():
     return NODEJS_LOGS
+
+
+@pytest.fixture
+def php_logs():
+    return PHP_LOGS

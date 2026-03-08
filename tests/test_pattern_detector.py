@@ -80,6 +80,11 @@ class TestLanguageDetection:
         assert lang == "nodejs"
         assert confidence > 0
 
+    def test_detects_php(self, php_logs):
+        lang, confidence = PatternDetector.detect_language(php_logs)
+        assert lang == "php"
+        assert confidence > 0
+
     def test_unknown_language(self):
         logs = ["plain log line", "another plain line", "no patterns here"]
         lang, confidence = PatternDetector.detect_language(logs)
