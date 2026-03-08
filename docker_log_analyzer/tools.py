@@ -218,6 +218,7 @@ def tool_analyze_patterns(
                 break
 
         language, lang_confidence = detector.detect_language(lines)
+        framework = detector.detect_framework(language, lines)
         log_levels = detector.extract_log_levels(lines)
         health_check = detector.detect_health_checks(lines)
         common_errors = detector.extract_error_patterns(lines)
@@ -229,6 +230,7 @@ def tool_analyze_patterns(
             "timestamp_sample": ts_sample[:60],
             "language": language,
             "language_confidence": round(lang_confidence, 3),
+            "framework": framework,
             "log_levels": log_levels,
             "health_check": {
                 "detected": health_check is not None,

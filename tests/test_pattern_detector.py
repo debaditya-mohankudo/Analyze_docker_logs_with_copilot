@@ -112,6 +112,49 @@ class TestLanguageDetection:
         assert confidence == 0.0
 
 
+# ── Framework detection ───────────────────────────────────────────────────────
+
+class TestFrameworkDetection:
+
+    def test_detects_spring(self, java_logs):
+        fw = PatternDetector.detect_framework("java", java_logs)
+        assert fw == "spring"
+
+    def test_detects_quarkus(self):
+        logs = [
+            "2024-03-02T21:10:00Z INFO  io.quarkus.runtime.Quarkus - Quarkus 3.8.0 started",
+            "2024-03-02T21:10:01Z ERROR io.quarkus.runtime.QuarkusApplication - startup failed",
+        ]
+        fw = PatternDetector.detect_framework("java", logs)
+        assert fw == "quarkus"
+
+    def test_detects_micronaut(self):
+        logs = [
+            "2024-03-02T21:10:00Z INFO  io.micronaut.context.DefaultBeanContext - Startup completed",
+            "2024-03-02T21:10:01Z ERROR io.micronaut.http.server.RouteExecutor - Error executing route",
+        ]
+        fw = PatternDetector.detect_framework("java", logs)
+        assert fw == "micronaut"
+
+    def test_detects_vertx(self):
+        logs = [
+            "2024-03-02T21:10:00Z INFO  io.vertx.core.impl.launcher.commands.VertxIsolatedDeployer - Succeeded",
+            "2024-03-02T21:10:01Z ERROR io.vertx.core.net.impl.ConnectionBase - Connection reset",
+        ]
+        fw = PatternDetector.detect_framework("java", logs)
+        assert fw == "vertx"
+
+    def test_non_java_returns_none(self, python_logs):
+        assert PatternDetector.detect_framework("python", python_logs) is None
+
+    def test_unknown_language_returns_none(self):
+        assert PatternDetector.detect_framework("unknown", []) is None
+
+    def test_no_framework_signals_returns_none(self):
+        logs = ["2024-03-02T21:10:00Z ERROR at java.lang.NullPointerException"]
+        assert PatternDetector.detect_framework("java", logs) is None
+
+
 # ── Health check detection ────────────────────────────────────────────────────
 
 class TestHealthCheckDetection:

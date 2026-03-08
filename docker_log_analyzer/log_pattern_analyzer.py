@@ -175,6 +175,49 @@ class PatternDetector:
         ],
     }
     
+    # Web framework detection (applied after language is confirmed)
+    FRAMEWORK_PATTERNS: Dict[str, Dict[str, List[str]]] = {
+        "java": {
+            "spring": [
+                r"org\.springframework\.",
+                r"SpringApplication",
+                r"DispatcherServlet",
+                r"BeanCreationException|UnsatisfiedDependencyException",
+                r"APPLICATION FAILED TO START",
+            ],
+            "quarkus": [
+                r"io\.quarkus\.",
+                r"Quarkus",
+                r"quarkus-",
+                r"io\.quarkus\.runtime",
+            ],
+            "micronaut": [
+                r"io\.micronaut\.",
+                r"Micronaut",
+                r"io\.micronaut\.context",
+            ],
+            "vertx": [
+                r"io\.vertx\.",
+                r"Vert\.x",
+                r"io\.vertx\.core",
+            ],
+            "helidon": [
+                r"io\.helidon\.",
+                r"Helidon",
+            ],
+            "wildfly": [
+                r"org\.jboss\.",
+                r"WildFly",
+                r"javax\.ejb\.",
+                r"org\.wildfly\.",
+            ],
+            "dropwizard": [
+                r"io\.dropwizard\.",
+                r"Dropwizard",
+            ],
+        },
+    }
+
     # Health check patterns (repeating, low-noise logs)
     HEALTH_CHECK_PATTERNS = [
         r"health check (passed|ok|successful)",
@@ -223,7 +266,30 @@ class PatternDetector:
         confidence = min(best_score / max(len(log_lines), 1), 1.0)
         
         return (best_lang, confidence)
-    
+
+    @staticmethod
+    def detect_framework(language: str, log_lines: List[str]) -> Optional[str]:
+        """Detect web framework for a given language.
+
+        Currently supports Java frameworks: Spring, Quarkus, Micronaut,
+        Vert.x, Helidon, WildFly, Dropwizard.
+        Returns the framework name or None if undetected.
+        """
+        lang_frameworks = PatternDetector.FRAMEWORK_PATTERNS.get(language)
+        if not lang_frameworks:
+            return None
+
+        scores: Dict[str, int] = defaultdict(int)
+        for log_line in log_lines:
+            for framework, patterns in lang_frameworks.items():
+                for pattern in patterns:
+                    if re.search(pattern, log_line, re.IGNORECASE):
+                        scores[framework] += 1
+
+        if not scores:
+            return None
+        return max(scores, key=lambda f: scores[f])
+
     @staticmethod
     def detect_health_checks(log_lines: List[str]) -> Optional[HealthCheckPattern]:
         """
