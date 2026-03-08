@@ -58,7 +58,7 @@ Lists all running Docker containers visible to the daemon.
 
 ## 2. analyze_patterns
 
-Analyzes log patterns to detect timestamp format, programming language, log levels, health checks, and top errors.
+Analyzes log patterns to detect timestamp format, programming language, web framework, log levels, health checks, and top errors.
 
 **Parameters:**
 
@@ -74,13 +74,13 @@ Analyzes log patterns to detect timestamp format, programming language, log leve
 {
   "results": {
     "test-web-app": {
-      "timestamp_format": "ISO-8601",
-      "timestamp_confidence": 0.95,
-      "language": "Python",
+      "timestamp_format": "iso8601",
+      "language": "java",
       "language_confidence": 0.92,
-      "log_levels": { "INFO": 450, "ERROR": 40, "WARNING": 10 },
-      "health_checks": { "pattern": "GET /health", "frequency_per_minute": 2.0 },
-      "top_errors": ["ConnectionError: Failed to connect to database"],
+      "framework": "spring",
+      "log_levels": { "INFO": 450, "ERROR": 40, "WARN": 10 },
+      "health_check": { "detected": true, "pattern": "GET /health", "frequency_per_minute": 2.0 },
+      "common_errors": [{ "pattern": "Connection refused", "count": 5 }],
       "logs_cache_hit": true,
       "analyzed_at": "2026-03-04T10:30:00Z"
     }
@@ -89,9 +89,14 @@ Analyzes log patterns to detect timestamp format, programming language, log leve
 ```
 
 **Detection capabilities:**
-- **Timestamps:** ISO-8601, syslog, epoch (Unix), Apache HTTP
+
+- **Timestamps:** ISO-8601, syslog, epoch (Unix), Apache HTTP, Nginx (`YYYY/MM/DD HH:MM:SS`)
 - **Languages:** Python, Java, Go, Node.js, PHP, Nginx, generic/unknown
-- **Log levels:** INFO, DEBUG, WARNING, ERROR, CRITICAL, SEVERE, FATAL
+- **Java frameworks** (`"framework"` field): Spring, Quarkus, Micronaut, Vert.x, Helidon, WildFly, Dropwizard — `null` if undetected
+- **Log levels:** standard (`INFO`, `DEBUG`, `WARN`, `ERROR`, `CRITICAL`, `FATAL`, `TRACE`, `SEVERE`) + Nginx bracketed (`[error]`, `[warn]`, `[crit]`, `[alert]`, `[emerg]`, `[notice]`)
+- **Java patterns:** Spring (DI, MVC, Security, Boot startup), Cassandra/DataStax (v3 + v4), Apache Kafka client
+- **PHP patterns:** Slim Framework (HTTP exceptions, routing, middleware, FastRoute), MySQL/PDO errors, php-rdkafka Kafka errors
+- **Nginx patterns:** upstream failures, SSL handshake, FastCGI stderr, oversized body, missing file
 - **Health checks:** Repeating patterns (e.g., `/health`, `/ping`, `/readiness`)
 
 **Cache behavior:**
