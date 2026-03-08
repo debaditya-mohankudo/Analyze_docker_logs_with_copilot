@@ -9,7 +9,7 @@ import pytest
 from docker_log_analyzer.log_pattern_analyzer import PatternDetector
 from tests.conftest import (
     PYTHON_LOGS, JAVA_LOGS, GO_LOGS, NODEJS_LOGS,
-    SYSLOG_LINES, EPOCH_LINES, APACHE_LINES,
+    SYSLOG_LINES, EPOCH_LINES, APACHE_LINES, NGINX_LOGS,
 )
 
 
@@ -44,6 +44,12 @@ class TestTimestampFormat:
         assert result is not None
         fmt, _, _ = result
         assert fmt == "apache"
+
+    def test_detects_nginx(self):
+        result = PatternDetector.detect_timestamp_format(NGINX_LOGS[0])
+        assert result is not None
+        fmt, _, _ = result
+        assert fmt == "nginx"
 
     def test_unknown_format_returns_none(self):
         result = PatternDetector.detect_timestamp_format("just a plain message")
@@ -181,6 +187,11 @@ class TestLogLevelExtraction:
         levels = PatternDetector.extract_log_levels(logs)
         assert "CRITICAL" in levels
 
+    def test_detects_nginx_bracketed_levels(self, nginx_logs):
+        levels = PatternDetector.extract_log_levels(nginx_logs)
+        assert "ERROR" in levels
+        assert "CRIT" in levels or "WARN" in levels or "NOTICE" in levels
+
     def test_total_matches_error_lines(self, python_logs):
         levels = PatternDetector.extract_log_levels(python_logs)
         total = sum(levels.values())
@@ -215,3 +226,8 @@ class TestErrorPatternExtraction:
     def test_no_error_lines_returns_empty(self):
         logs = ["2024-03-02T21:10:00Z INFO all fine"]
         assert PatternDetector.extract_error_patterns(logs) == []
+
+    def test_extracts_nginx_upstream_errors(self, nginx_logs):
+        patterns = PatternDetector.extract_error_patterns(nginx_logs)
+        texts = [p for p, _ in patterns]
+        assert any("connect() failed" in t or "upstream timed out" in t or "no live upstreams" in t for t in texts)

@@ -76,6 +76,10 @@ class PatternDetector:
             r"^\d{2}/[A-Za-z]{3}/\d{4}:\d{2}:\d{2}:\d{2}",
             "Apache format (02/Mar/2024:21:19:41)"
         ),
+        "nginx": (
+            r"^\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}",
+            "Nginx format (2024/03/02 21:19:41)"
+        ),
     }
     
     # Language detection patterns
@@ -253,12 +257,12 @@ class PatternDetector:
     def extract_log_levels(log_lines: List[str]) -> Dict[str, int]:
         """Count distribution of log levels."""
         levels = Counter()
-        level_pattern = r"\b(DEBUG|INFO|WARNING|WARN|ERROR|CRITICAL|FATAL|TRACE|SEVERE)\b"
+        level_pattern = r"\b(DEBUG|INFO|WARNING|WARN|ERROR|CRITICAL|FATAL|TRACE|SEVERE|CRIT|ALERT|EMERG)\b|\[(error|warn|crit|alert|emerg|notice|info|debug)\]"
         
         for log_line in log_lines:
             match = re.search(level_pattern, log_line, re.IGNORECASE)
             if match:
-                levels[match.group(1).upper()] += 1
+                levels[(match.group(1) or match.group(2)).upper()] += 1
         
         return dict(levels)
     
@@ -270,10 +274,11 @@ class PatternDetector:
             r"(Connection|Timeout|Failed|Error|Exception): [^:]*",
             r"(Database|API|Network|Service) error",
             r"Status code: \d{3}",
+            r"(connect\(\) failed|upstream timed out|no live upstreams|SSL_do_handshake\(\) failed)[^,\n]*",
         ]
         
         for log_line in log_lines:
-            if re.search(r"ERROR|CRITICAL|FATAL|Exception", log_line, re.IGNORECASE):
+            if re.search(r"ERROR|CRITICAL|FATAL|Exception|\[(error|crit|alert|emerg)\]", log_line, re.IGNORECASE):
                 for pattern in error_patterns:
                     match = re.search(pattern, log_line)
                     if match:
