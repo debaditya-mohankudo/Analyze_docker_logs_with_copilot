@@ -202,6 +202,12 @@ JAVA_LOGS = [
     "2024-03-02T21:10:16Z ERROR [main] c.example.App - com.datastax.driver.core.exceptions.WriteTimeoutException: Cassandra timeout during write query",
     "2024-03-02T21:10:17Z ERROR [main] c.example.App - com.datastax.driver.core.exceptions.UnavailableException: Not enough replicas available",
     "2024-03-02T21:10:18Z ERROR [main] c.example.App - com.datastax.driver.core.exceptions.InvalidQueryException: unconfigured table users",
+    # Kafka errors
+    "2024-03-02T21:10:19Z ERROR [main] o.a.k.c.p.KafkaProducer - org.apache.kafka.common.errors.TimeoutException: Topic orders not present in metadata",
+    "2024-03-02T21:10:20Z ERROR [main] c.example.App - org.apache.kafka.common.errors.SerializationException: Error deserializing key/value for partition orders-0",
+    "2024-03-02T21:10:21Z ERROR [main] c.example.App - org.apache.kafka.clients.consumer.CommitFailedException: Commit cannot be completed due to group rebalance",
+    "2024-03-02T21:10:22Z WARN  [main] o.a.k.c.NetworkClient - Broker: Leader not available for partition orders-2",
+    "2024-03-02T21:10:23Z ERROR [main] c.example.App - org.apache.kafka.common.errors.RecordTooLargeException: Message exceeds max message size",
 ]
 
 PHP_LOGS = [
@@ -223,6 +229,12 @@ PHP_LOGS = [
     "[02-Mar-2024 21:10:14 UTC] PHP Fatal error: FastRoute\\BadRouteException: Cannot register two routes matching '/users/{id}' in /var/www/html/vendor/nikic/fast-route/src/RouteCollector.php:88",
     "[02-Mar-2024 21:10:15 UTC] PHP Warning: Slim\\Middleware\\BodyParsingMiddleware: Unable to parse JSON body in /var/www/html/vendor/slim/slim/Slim/Middleware/BodyParsingMiddleware.php:104",
     "[02-Mar-2024 21:10:16 UTC] PHP Fatal error: Slim\\Factory\\AppFactory::create() called before container was set in /var/www/html/app/bootstrap.php:12",
+    # Kafka (php-rdkafka) errors
+    "[02-Mar-2024 21:10:17 UTC] PHP Fatal error: Uncaught RdKafka\\Exception: Local: Broker transport failure in /var/www/html/kafka/producer.php:34",
+    "[02-Mar-2024 21:10:18 UTC] PHP Warning: rdkafka: Local: Queue full — producer queue is full, message dropped in /var/www/html/kafka/producer.php:58",
+    "[02-Mar-2024 21:10:19 UTC] PHP Fatal error: Uncaught RdKafka\\KafkaErrorException: Broker: Unknown topic or partition in /var/www/html/kafka/consumer.php:72",
+    "[02-Mar-2024 21:10:20 UTC] PHP Warning: rdkafka: Local: Message timed out — delivery timeout exceeded in /var/www/html/kafka/producer.php:91",
+    "[02-Mar-2024 21:10:21 UTC] PHP Fatal error: rdkafka consumer error UNKNOWN_TOPIC_OR_PART on topic orders in /var/www/html/kafka/consumer.php:45",
 ]
 
 GO_LOGS = [

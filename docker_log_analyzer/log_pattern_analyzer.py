@@ -108,6 +108,12 @@ class PatternDetector:
             r"NoHostAvailableException|AllNodesFailedException",
             r"ReadTimeoutException|WriteTimeoutException|UnavailableException",
             r"QueryExecutionException|InvalidQueryException|DriverException",
+            # Kafka (Apache Kafka Java client)
+            r"org\.apache\.kafka\.",
+            r"KafkaException|ProducerFencedException|CommitFailedException",
+            r"RecordTooLargeException|SerializationException|WakeupException",
+            r"RebalanceInProgressException|OutOfOrderSequenceException",
+            r"Broker: (Leader not available|Unknown topic or partition|Request timed out)",
         ],
         "php": [
             r"PHP\s*(Fatal|Warning|Notice)",
@@ -120,6 +126,12 @@ class PatternDetector:
             r"Slim\\Middleware\\",
             r"FastRoute\\",
             r"Psr\\Container\\ContainerExceptionInterface",
+            # Kafka (php-rdkafka extension)
+            r"RdKafka\\(Exception|KafkaErrorException)",
+            r"rdkafka",
+            r"Local: (Queue full|Message timed out|Broker transport failure)",
+            r"Broker: (Leader not available|Unknown topic or partition)",
+            r"UNKNOWN_TOPIC_OR_PART|OFFSET_OUT_OF_RANGE|GROUP_COORDINATOR_NOT_AVAILABLE",
             # MySQL errors
             r"PDOException|mysqli?_connect_error|mysqli?_error",
             r"SQLSTATE\[",
