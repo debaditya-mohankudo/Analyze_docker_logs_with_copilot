@@ -16,9 +16,9 @@ Use this hub for test strategy, CI configuration, coverage targets, and adding n
 
 | Metric | Value |
 |--------|-------|
-| Unit tests | 276 (no Docker required) |
+| Unit tests | 319 (no Docker required) |
 | Integration tests | 67 (Docker + test containers) |
-| Total | 343 |
+| Total | 386 |
 | CI execution (unit only) | ~0.8 s parallel via pytest-xdist |
 | Coverage (core modules) | 90–100% |
 
@@ -48,12 +48,15 @@ uv run pytest tests/test_dependency_mapper.py -v
 | `test_spike_detector.py` | 16 | unit | Rolling-window spike detection, Docker timestamp parsing, edge cases |
 | `test_correlator.py` | 17 | unit | Correlation scoring, event extraction, empty/single container |
 | `test_correlation_cache.py` | 14 | unit | Cache key stability, TTL expiry, TTL=0 disable, cache miss/hit flow, use_cache=false bypass |
-| `test_pattern_detector.py` | 24 | unit | Timestamp formats (ISO/syslog/epoch/Apache), language detection, log levels, health checks |
+| `test_pattern_detector.py` | 33 | unit | Timestamp formats (ISO/syslog/epoch/Apache), language detection, log levels, health checks |
 | `test_secret_detector.py` | 45 | unit | 20 secret patterns, redaction, severity filtering, remediation, Docker timestamp regex |
 | `test_dependency_mapper.py` | 36 | unit | HTTP/HTTPS/DB/gRPC/DNS/TCP/name-mention extraction, graph builder, cascade direction, hit_count, transitive |
+| `test_root_cause_analyzer.py` | 27 | unit | Fan-in scoring, cascade scoring, spike timing bonus, combined signals, zero-score exclusion |
 | `test_tools_unit.py` | 49 | unit | tools.py helper functions, Docker/cache/time parsing helpers, sync/async tool error branches, lifecycle and sync paths |
 | `test_cache_manager.py` | 25 | unit | Parquet write/read, schema validation, window filtering, multi-day, corrupt file, atomic write cleanup, metadata, clear cache |
-| `test_mcp_integration.py` | 43 | integration | All 10 MCP tool functions, live Docker, field presence, value ranges, error cases |
+| `test_docker.py` | 16 | unit | `_docker_client`, `_fetch_logs`, `_fetch_logs_window`, `_fetch_logs_with_cache` helpers |
+| `test_patterns.py` | 24 | unit | DOCKER_TS_RE and ERROR_PATTERN_RE regex: matches, non-matches, edge cases |
+| `test_mcp_integration.py` | 53 | integration | All 12 MCP tools, live Docker, field presence, value ranges, error cases |
 | `test_remote_docker_integration.py` | 14 | integration | Remote Docker via SSH/TCP, graceful fallback when unavailable (12 auto-skip) |
 
 ---
@@ -145,7 +148,7 @@ Defined in [`tests/conftest.py`](../tests/conftest.py):
 
 1. Add a `class Test<ToolName>` to `tests/test_mcp_integration.py`
 2. Mark with `@pytest.mark.integration`
-3. Import the tool function: `from docker_log_analyzer.mcp_server import tool_<name>`
+3. Import the tool function: `from docker_log_analyzer.tools import tool_<name>`
 4. Use `docker_client` session fixture (auto-skips if Docker unavailable)
 5. Test: success status, required keys present, types correct, error case (invalid container)
 

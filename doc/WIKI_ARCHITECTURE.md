@@ -33,7 +33,7 @@ Authoritative source for all constraints: [../CLAUDE.md](../CLAUDE.md)
 
 ```text
 docker_log_analyzer/
-  mcp_server.py           # Tool registration and FastMCP wiring (11 tools)
+  mcp_server.py           # Tool registration and FastMCP wiring (12 tools)
   tools.py                # Tool implementations (tool_* functions, pattern/correlation cache)
   docker.py               # Docker helpers: client, log fetching, _fetch_logs_with_cache()
   spike_detector.py       # Polars rolling-window spike detection (1-min buckets)
@@ -52,7 +52,7 @@ docker_log_analyzer/
 
 ## MCP Server Internals
 
-- **ToolRegistry pattern** — `_registry.register(name, handler, schema)` called in `run()`; each tool has an explicit `_wrap_<name>()` function (no lambdas; meaningful names in stack traces).
+- **`@mcp.tool()` decorator** — each tool is an `async def` in `mcp_server.py` decorated with `@mcp.tool()`; it delegates immediately to the corresponding `tool_*()` function in `tools.py`. No registry object, no wrapper functions.
 - **`_fetch_logs_with_cache(container, name, since, until, use_cache)`** — lives in `docker.py`; shared by all log-reading tools; returns `(lines, was_cached)`.
 - **No tool-to-tool calls** — `analyze_correlations` and `map_service_dependencies` both call `correlate()` directly from `correlator.py`. MCP tool calls are never chained internally.
 - **Error handling** — all tools return `{"status": "error", "error": "..."}` on failure; server never crashes.
@@ -172,19 +172,26 @@ Full scoring design review: [WIKI_REVIEW_ROOT_CAUSE_ANALYZER.md](WIKI_REVIEW_ROO
 
 ## Adding New Tools
 
-1. Implement `tool_<name>(...)` in `mcp_server.py`
-2. Add `_wrap_<name>(**kwargs)` wrapper function
-3. Register via `_registry.register(name, _wrap_<name>, schema)` in `run()`
-4. Use `_fetch_logs_with_cache()` for any log-reading operation
-5. Return `{"status": "success", ...}` or `{"status": "error", "error": "..."}`
-6. Add unit tests in `tests/test_<module>.py` + integration tests in `test_mcp_integration.py`
-7. Update [WIKI_TOOLS.md](WIKI_TOOLS.md), [../README.md](../README.md), [../CLAUDE.md](../CLAUDE.md)
+1. Implement `tool_<name>(...)` in `tools.py`
+2. Import it in `mcp_server.py` and register with `@mcp.tool()`:
+
+   ```python
+   @mcp.tool()
+   async def <name>(...) -> dict:
+       """Docstring shown to the agent."""
+       return tool_<name>(...)
+   ```
+
+3. Use `_fetch_logs_with_cache()` for any log-reading operation
+4. Return `{"status": "success", ...}` or `{"status": "error", "error": "..."}`
+5. Add unit tests in `tests/test_<module>.py` + integration tests in `test_mcp_integration.py`
+6. Update [WIKI_TOOLS.md](WIKI_TOOLS.md), [../README.md](../README.md), [../CLAUDE.md](../CLAUDE.md)
 
 ---
 
 ## Retrieval keywords
 
-architecture, design, module, stateless, cache, polars, correlator, spike_detector, dependency_mapper, secret_detector, log_pattern_analyzer, mcp_server, tool registry, wrap, algorithm, signal, confidence, transitive, hit_count, rolling_mean, MAX_CO_OCCURRENCES, atomic write, parquet, pyarrow, zstd, BaseSettings, run_id
+architecture, design, module, stateless, cache, polars, correlator, spike_detector, dependency_mapper, secret_detector, log_pattern_analyzer, mcp_server, fastmcp, decorator, algorithm, signal, confidence, transitive, hit_count, rolling_mean, MAX_CO_OCCURRENCES, atomic write, parquet, zstd, BaseSettings, run_id
 
 **[negative keywords / not-this-doc]**
 setup, install, configure, environment variable, copilot prompt, test suite, CI, coverage, unit tests, remote docker, SSH
