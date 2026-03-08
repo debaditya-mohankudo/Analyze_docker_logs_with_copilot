@@ -8,7 +8,7 @@ version: '3.8'
 #
 # Each container emits a different log format and language pattern so you can
 # exercise all 4 MCP tools (list_containers, analyze_patterns,
-# detect_error_spikes, correlate_containers) from VSCode Copilot Agent Mode.
+# analyze_error_spikes, analyze_correlations) from VSCode Copilot Agent Mode.
 #
 # Spike schedule: web-app and database share SPIKE_INTERVAL=90s so their
 # errors spike at the same time → high correlation score.

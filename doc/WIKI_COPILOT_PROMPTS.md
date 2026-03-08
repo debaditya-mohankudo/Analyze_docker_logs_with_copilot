@@ -44,7 +44,7 @@ For tool parameter details, see [WIKI_TOOLS.md](WIKI_TOOLS.md).
 - "Are there any error rate anomalies in my containers right now?"
 - "Which containers had the worst error spikes in the last few minutes?"
 
-**Tools used:** `detect_error_spikes`
+**Tools used:** `analyze_error_spikes`
 
 ---
 
@@ -55,7 +55,7 @@ For tool parameter details, see [WIKI_TOOLS.md](WIKI_TOOLS.md).
 - "Which containers are failing together? Use a 30-second co-occurrence window."
 - "Is test-gateway causing failures in test-web-app and test-database?"
 
-**Tools used:** `correlate_containers`
+**Tools used:** `analyze_correlations`
 
 ---
 
@@ -78,9 +78,9 @@ For tool parameter details, see [WIKI_TOOLS.md](WIKI_TOOLS.md).
 - "Rank my containers by how likely they are to be the source of this incident."
 - "Score all containers by root-cause likelihood — something is wrong but I don't know where."
 
-**Tools used:** `rank_root_causes`
+**Tools used:** `analyze_root_causes`
 
-> Copilot may chain: `detect_error_spikes` → `correlate_containers` → `map_service_dependencies` → `rank_root_causes` for a full investigation.
+> Copilot may chain: `analyze_error_spikes` → `analyze_correlations` → `map_service_dependencies` → `analyze_root_causes` for a full investigation.
 
 ---
 
@@ -111,7 +111,7 @@ For tool parameter details, see [WIKI_TOOLS.md](WIKI_TOOLS.md).
 - "Capture all container logs for 90 seconds, then tell me what happened."
 - "Monitor only test-gateway and test-cache for 1 minute with a spike threshold of 1.5."
 
-**Tools used:** `capture_and_analyze`
+**Tools used:** `capture_logs`
 
 ---
 
@@ -122,7 +122,7 @@ For tool parameter details, see [WIKI_TOOLS.md](WIKI_TOOLS.md).
 - "Check if test-web-app and test-database are failing at the same time."
 - "Something is broken — start from scratch and give me a full system health report."
 
-**Tools used:** `list_containers` → `get_last_errors` → `detect_error_spikes` → `correlate_containers` → `rank_root_causes`
+**Tools used:** `list_containers` → `get_last_errors` → `analyze_error_spikes` → `analyze_correlations` → `analyze_root_causes`
 
 ---
 
@@ -138,7 +138,7 @@ For tool parameter details, see [WIKI_TOOLS.md](WIKI_TOOLS.md).
 
 ## Retrieval keywords
 
-copilot, prompt, natural language, agent mode, vscode, workflow, triage, investigation, discovery, spike, correlation, dependency, root cause, secret, cache, capture, test containers, get_last_errors, rank_root_causes, analyze_patterns, detect_error_spikes
+copilot, prompt, natural language, agent mode, vscode, workflow, triage, investigation, discovery, spike, correlation, dependency, root cause, secret, cache, capture, test containers, get_last_errors, analyze_root_causes, analyze_patterns, analyze_error_spikes
 
 **[negative keywords / not-this-doc]**
 parameters, return shapes, algorithm internals, module design, CI, coverage, configuration, environment variables

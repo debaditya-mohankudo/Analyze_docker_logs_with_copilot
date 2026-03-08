@@ -54,7 +54,7 @@ docker_log_analyzer/
 
 - **ToolRegistry pattern** — `_registry.register(name, handler, schema)` called in `run()`; each tool has an explicit `_wrap_<name>()` function (no lambdas; meaningful names in stack traces).
 - **`_fetch_logs_with_cache(container, name, since, until, use_cache)`** — lives in `docker.py`; shared by all log-reading tools; returns `(lines, was_cached)`.
-- **No tool-to-tool calls** — `correlate_containers` and `map_service_dependencies` both call `correlate()` directly from `correlator.py`. MCP tool calls are never chained internally.
+- **No tool-to-tool calls** — `analyze_correlations` and `map_service_dependencies` both call `correlate()` directly from `correlator.py`. MCP tool calls are never chained internally.
 - **Error handling** — all tools return `{"status": "error", "error": "..."}` on failure; server never crashes.
 
 ---

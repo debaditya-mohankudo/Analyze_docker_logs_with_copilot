@@ -239,7 +239,7 @@ class TestTimeAndCacheHelpers:
 
 
 # ---------------------------------------------------------------------------
-# tool_list_containers / analyze_patterns / detect_error_spikes
+# tool_list_containers / analyze_patterns / analyze_error_spikes
 # ---------------------------------------------------------------------------
 
 
@@ -300,57 +300,57 @@ class TestCoreToolsSync:
         assert out["results"]["svc"]["logs_cache_hit"] is True
         write_cache.assert_called_once()
 
-    def test_tool_detect_error_spikes_not_found(self):
+    def test_tool_analyze_error_spikes_not_found(self):
         client = _mock_client(list_containers=[])
         with patch("docker_log_analyzer.tools._docker_client", return_value=client):
-            out = tools.tool_detect_error_spikes(container_name="missing")
+            out = tools.tool_analyze_error_spikes(container_name="missing")
         assert out["status"] == "error"
 
-    def test_tool_detect_error_spikes_warning_for_no_timestamps(self):
+    def test_tool_analyze_error_spikes_warning_for_no_timestamps(self):
         c = _FakeContainer("/svc")
         client = _mock_client(list_containers=[c], inspect_map={"svc": c})
         lines = ["no ts here", "still no ts"]
         with patch("docker_log_analyzer.tools._docker_client", return_value=client), patch(
             "docker_log_analyzer.tools._fetch_logs_with_cache", return_value=(lines, False)
         ), patch("docker_log_analyzer.tools.detect_spikes", return_value=[]):
-            out = tools.tool_detect_error_spikes()
+            out = tools.tool_analyze_error_spikes()
         assert out["status"] == "success"
         assert out["warnings"]
 
 
 # ---------------------------------------------------------------------------
-# tool_correlate_containers / lifecycle / sync
+# tool_analyze_correlations / lifecycle / sync
 # ---------------------------------------------------------------------------
 
 
 class TestCorrelateLifecycleAndSync:
-    def test_tool_correlate_containers_docker_error(self):
+    def test_tool_analyze_correlations_docker_error(self):
         with patch("docker_log_analyzer.tools._docker_client", side_effect=RuntimeError("x")):
-            out = tools.tool_correlate_containers()
+            out = tools.tool_analyze_correlations()
         assert out["status"] == "error"
 
-    def test_tool_correlate_containers_need_two(self):
+    def test_tool_analyze_correlations_need_two(self):
         client = _mock_client(list_containers=[_FakeContainer("/one")])
         with patch("docker_log_analyzer.tools._docker_client", return_value=client):
-            out = tools.tool_correlate_containers()
+            out = tools.tool_analyze_correlations()
         assert out["status"] == "success"
         assert out["correlations"] == []
 
-    def test_tool_correlate_containers_cache_hit(self):
+    def test_tool_analyze_correlations_cache_hit(self):
         client = _mock_client(list_containers=[_FakeContainer("/a"), _FakeContainer("/b")])
         with patch("docker_log_analyzer.tools._docker_client", return_value=client), patch(
             "docker_log_analyzer.tools._read_correlation_cache", return_value={"status": "success", "correlations": []}
         ):
-            out = tools.tool_correlate_containers()
+            out = tools.tool_analyze_correlations()
         assert out["correlation_cache_hit"] is True
 
-    def test_tool_correlate_containers_filters_names(self):
+    def test_tool_analyze_correlations_filters_names(self):
         client = _mock_client(list_containers=[_FakeContainer("/a"), _FakeContainer("/b")])
         with patch("docker_log_analyzer.tools._docker_client", return_value=client):
-            out = tools.tool_correlate_containers(container_names=["only-this"])
+            out = tools.tool_analyze_correlations(container_names=["only-this"])
         assert out["correlations"] == []
 
-    def test_tool_correlate_containers_populates_cache_hits_for_nonempty_logs(self):
+    def test_tool_analyze_correlations_populates_cache_hits_for_nonempty_logs(self):
         a = _FakeContainer("/a")
         b = _FakeContainer("/b")
         client = _mock_client(list_containers=[a, b])
@@ -365,7 +365,7 @@ class TestCorrelateLifecycleAndSync:
         ), patch("docker_log_analyzer.tools._fetch_logs_with_cache", side_effect=_fetch), patch(
             "docker_log_analyzer.tools.correlate", return_value=[]
         ), patch("docker_log_analyzer.tools._write_correlation_cache"):
-            out = tools.tool_correlate_containers()
+            out = tools.tool_analyze_correlations()
         assert out["cache_hits"] == {"a": True}
 
     def test_start_test_containers_missing_compose(self, tmp_path):
@@ -439,19 +439,19 @@ class TestCorrelateLifecycleAndSync:
 
 
 class TestAsyncTools:
-    def test_capture_and_analyze_docker_error(self):
+    def test_capture_logs_docker_error(self):
         with patch("docker_log_analyzer.tools._docker_client", side_effect=RuntimeError("x")):
-            out = asyncio.run(tools.tool_capture_and_analyze(duration_seconds=0))
+            out = asyncio.run(tools.tool_capture_logs(duration_seconds=0))
         assert out["status"] == "error"
 
-    def test_capture_and_analyze_no_targets(self):
+    def test_capture_logs_no_targets(self):
         client = _mock_client(list_containers=[])
         with patch("docker_log_analyzer.tools._docker_client", return_value=client):
-            out = asyncio.run(tools.tool_capture_and_analyze(duration_seconds=0))
+            out = asyncio.run(tools.tool_capture_logs(duration_seconds=0))
         assert out["status"] == "success"
         assert "No running containers" in out["message"]
 
-    def test_capture_and_analyze_success_summary(self):
+    def test_capture_logs_success_summary(self):
         c = _FakeContainer("/svc")
         client = _mock_client(list_containers=[c], inspect_map={"svc": c})
         with patch("docker_log_analyzer.tools._docker_client", return_value=client), patch(
@@ -461,7 +461,7 @@ class TestAsyncTools:
         ), patch("docker_log_analyzer.tools.detect_spikes", return_value=[{"container": "svc"}]), patch(
             "docker_log_analyzer.tools.correlate", return_value=[]
         ):
-            out = asyncio.run(tools.tool_capture_and_analyze(duration_seconds=0))
+            out = asyncio.run(tools.tool_capture_logs(duration_seconds=0))
         assert out["status"] == "success"
         assert out["summary"]["total_log_lines"] == 1
         assert out["summary"]["spike_count"] == 1

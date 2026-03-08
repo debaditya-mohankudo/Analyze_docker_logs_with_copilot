@@ -14,8 +14,8 @@ import pytest
 from docker_log_analyzer.tools import (
     tool_list_containers,
     tool_analyze_patterns,
-    tool_detect_error_spikes,
-    tool_correlate_containers,
+    tool_analyze_error_spikes,
+    tool_analyze_correlations,
     tool_detect_data_leaks,
     tool_map_service_dependencies,
     tool_start_test_containers,
@@ -118,24 +118,24 @@ class TestAnalyzePatterns:
                 assert l >= s
 
 
-# ── detect_error_spikes ───────────────────────────────────────────────────────
+# ── analyze_error_spikes ───────────────────────────────────────────────────────
 
 class TestDetectErrorSpikes:
 
     def test_returns_success_status(self, docker_client):
-        result = tool_detect_error_spikes(tail=200, spike_threshold=1.5)
+        result = tool_analyze_error_spikes(tail=200, spike_threshold=1.5)
         assert result["status"] == "success"
 
     def test_spikes_is_list(self, docker_client):
-        result = tool_detect_error_spikes(tail=200, spike_threshold=1.5)
+        result = tool_analyze_error_spikes(tail=200, spike_threshold=1.5)
         assert isinstance(result["spikes"], list)
 
     def test_spike_count_matches_list(self, docker_client):
-        result = tool_detect_error_spikes(tail=200, spike_threshold=1.5)
+        result = tool_analyze_error_spikes(tail=200, spike_threshold=1.5)
         assert result["spike_count"] == len(result["spikes"])
 
     def test_spike_fields_present(self, docker_client):
-        result = tool_detect_error_spikes(tail=500, spike_threshold=1.5)
+        result = tool_analyze_error_spikes(tail=500, spike_threshold=1.5)
         for s in result["spikes"]:
             assert "container" in s
             assert "bucket_minute" in s
@@ -145,44 +145,44 @@ class TestDetectErrorSpikes:
 
     def test_spike_ratio_exceeds_threshold(self, docker_client):
         threshold = 1.5
-        result = tool_detect_error_spikes(tail=500, spike_threshold=threshold)
+        result = tool_analyze_error_spikes(tail=500, spike_threshold=threshold)
         for s in result["spikes"]:
             assert s["ratio"] > threshold
 
     def test_parameters_echoed_back(self, docker_client):
-        result = tool_detect_error_spikes(tail=300, window_minutes=3, spike_threshold=2.5)
+        result = tool_analyze_error_spikes(tail=300, window_minutes=3, spike_threshold=2.5)
         assert result["parameters"]["tail"] == 300
         assert result["parameters"]["window_minutes"] == 3
         assert result["parameters"]["spike_threshold"] == 2.5
 
     def test_warnings_is_list(self, docker_client):
-        result = tool_detect_error_spikes(tail=100)
+        result = tool_analyze_error_spikes(tail=100)
         assert isinstance(result["warnings"], list)
 
     def test_invalid_container_returns_error(self, docker_client):
-        result = tool_detect_error_spikes(container_name="nonexistent-xyz")
+        result = tool_analyze_error_spikes(container_name="nonexistent-xyz")
         assert result["status"] == "error"
 
     def test_high_threshold_reduces_spikes(self, docker_client):
-        low  = tool_detect_error_spikes(tail=500, spike_threshold=1.5)
-        high = tool_detect_error_spikes(tail=500, spike_threshold=100.0)
+        low  = tool_analyze_error_spikes(tail=500, spike_threshold=1.5)
+        high = tool_analyze_error_spikes(tail=500, spike_threshold=100.0)
         assert low["spike_count"] >= high["spike_count"]
 
 
-# ── correlate_containers ──────────────────────────────────────────────────────
+# ── analyze_correlations ──────────────────────────────────────────────────────
 
 class TestCorrelateContainers:
 
     def test_returns_success_status(self, docker_client):
-        result = tool_correlate_containers(time_window_seconds=30, tail=200)
+        result = tool_analyze_correlations(time_window_seconds=30, tail=200)
         assert result["status"] == "success"
 
     def test_correlations_is_list(self, docker_client):
-        result = tool_correlate_containers(time_window_seconds=30, tail=200)
+        result = tool_analyze_correlations(time_window_seconds=30, tail=200)
         assert isinstance(result["correlations"], list)
 
     def test_correlation_fields_present(self, docker_client):
-        result = tool_correlate_containers(time_window_seconds=30, tail=200)
+        result = tool_analyze_correlations(time_window_seconds=30, tail=200)
         for r in result["correlations"]:
             assert "container_a" in r
             assert "container_b" in r
@@ -192,28 +192,28 @@ class TestCorrelateContainers:
             assert "example_pairs" in r
 
     def test_score_in_range(self, docker_client):
-        result = tool_correlate_containers(time_window_seconds=30, tail=300)
+        result = tool_analyze_correlations(time_window_seconds=30, tail=300)
         for r in result["correlations"]:
             assert 0.0 <= r["correlation_score"] <= 1.0
 
     def test_sorted_by_score_descending(self, docker_client):
-        result = tool_correlate_containers(time_window_seconds=30, tail=300)
+        result = tool_analyze_correlations(time_window_seconds=30, tail=300)
         scores = [r["correlation_score"] for r in result["correlations"]]
         assert scores == sorted(scores, reverse=True)
 
     def test_parameters_echoed_back(self, docker_client):
-        result = tool_correlate_containers(time_window_seconds=45, tail=150)
+        result = tool_analyze_correlations(time_window_seconds=45, tail=150)
         assert result["parameters"]["time_window_seconds"] == 45
         assert result["parameters"]["tail"] == 150
 
     def test_example_pairs_at_most_three(self, docker_client):
-        result = tool_correlate_containers(time_window_seconds=60, tail=500)
+        result = tool_analyze_correlations(time_window_seconds=60, tail=500)
         for r in result["correlations"]:
             assert len(r["example_pairs"]) <= 3
 
     def test_wider_window_same_or_higher_score(self, docker_client):
-        narrow = tool_correlate_containers(time_window_seconds=5,  tail=300)
-        wide   = tool_correlate_containers(time_window_seconds=60, tail=300)
+        narrow = tool_analyze_correlations(time_window_seconds=5,  tail=300)
+        wide   = tool_analyze_correlations(time_window_seconds=60, tail=300)
         # At least one pair should have a higher or equal score with the wider window
         if narrow["correlations"] and wide["correlations"]:
             max_narrow = max(r["correlation_score"] for r in narrow["correlations"])

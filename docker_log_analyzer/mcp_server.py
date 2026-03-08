@@ -5,13 +5,13 @@ Exposes 11 tools to VSCode Copilot Agent Mode via .vscode/mcp.json:
 
   list_containers           – discover running Docker containers
   analyze_patterns          – PatternDetector per container (timestamps, language, log levels)
-  detect_error_spikes       – Polars rolling-window spike detection
-  correlate_containers      – pairwise cross-container temporal error correlation
+  analyze_error_spikes       – Polars rolling-window spike detection
+  analyze_correlations      – pairwise cross-container temporal error correlation
   detect_data_leaks         – SecretDetector for API keys, credentials, PII, sensitive data
   map_service_dependencies  – infer service dependency graph from log patterns
-  rank_root_causes          – score containers by root-cause likelihood
+  analyze_root_causes          – score containers by root-cause likelihood
   sync_docker_logs          – cache logs for offline / instant analysis
-  capture_and_analyze       – live capture + spike + correlation report
+  capture_logs       – live capture + spike + correlation report
   get_last_errors           – last N error/fatal lines from a single container
   start_test_containers     – build & start test log-generator containers
   stop_test_containers      – stop and remove test log-generator containers
@@ -35,15 +35,15 @@ from .tools import (
     PATTERN_CACHE_DIR,
     tool_list_containers,
     tool_analyze_patterns,
-    tool_detect_error_spikes,
-    tool_correlate_containers,
+    tool_analyze_error_spikes,
+    tool_analyze_correlations,
     tool_start_test_containers,
     tool_stop_test_containers,
     tool_sync_docker_logs,
-    tool_capture_and_analyze,
+    tool_capture_logs,
     tool_detect_data_leaks,
     tool_map_service_dependencies,
-    tool_rank_root_causes,
+    tool_analyze_root_causes,
     tool_get_last_errors,
 )
 
@@ -84,7 +84,7 @@ async def analyze_patterns(
 
 
 @mcp.tool()
-async def detect_error_spikes(
+async def analyze_error_spikes(
     container_name: str | None = None,
     tail: int = 1000,
     window_minutes: int = 5,
@@ -101,7 +101,7 @@ async def detect_error_spikes(
         spike_threshold: Ratio of current bucket to rolling baseline that triggers a
             spike (default 2.0 = 2× baseline).
     """
-    return tool_detect_error_spikes(
+    return tool_analyze_error_spikes(
         container_name=container_name,
         tail=tail,
         window_minutes=window_minutes,
@@ -110,7 +110,7 @@ async def detect_error_spikes(
 
 
 @mcp.tool()
-async def correlate_containers(
+async def analyze_correlations(
     container_names: list[str] | None = None,
     time_window_seconds: int = 30,
     tail: int = 500,
@@ -122,7 +122,7 @@ async def correlate_containers(
         time_window_seconds: Co-occurrence window in seconds (default 30).
         tail: Log lines to fetch per container (default 500).
     """
-    return tool_correlate_containers(
+    return tool_analyze_correlations(
         time_window_seconds=time_window_seconds,
         tail=tail,
         container_names=container_names,
@@ -175,7 +175,7 @@ async def sync_docker_logs(
 
 
 @mcp.tool()
-async def capture_and_analyze(
+async def capture_logs(
     container_names: list[str] | None = None,
     duration_seconds: int = 120,
     spike_threshold: float = 2.0,
@@ -193,7 +193,7 @@ async def capture_and_analyze(
         time_window_seconds: Co-occurrence window for cross-container correlation
             (default 30).
     """
-    return await tool_capture_and_analyze(
+    return await tool_capture_logs(
         container_names=container_names,
         duration_seconds=duration_seconds,
         spike_threshold=spike_threshold,
@@ -251,7 +251,7 @@ async def map_service_dependencies(
 
 
 @mcp.tool()
-async def rank_root_causes(
+async def analyze_root_causes(
     containers: list[str] | None = None,
     tail: int = 500,
     time_window_seconds: int = 3600,
@@ -259,7 +259,7 @@ async def rank_root_causes(
 ) -> dict:
     """Rank containers by root-cause likelihood using dependency fan-in, error cascade
     paths, and spike timing. Internally runs spike detection, correlation, and dependency
-    graph analysis in a single call. Best used after `detect_error_spikes` or
+    graph analysis in a single call. Best used after `analyze_error_spikes` or
     `map_service_dependencies` confirm a system-wide failure.
 
     Args:
@@ -268,7 +268,7 @@ async def rank_root_causes(
         time_window_seconds: Analysis window in seconds (default 3600).
         include_transitive: Include transitive edges in the dependency graph (default false).
     """
-    return tool_rank_root_causes(
+    return tool_analyze_root_causes(
         containers=containers,
         tail=tail,
         time_window_seconds=time_window_seconds,

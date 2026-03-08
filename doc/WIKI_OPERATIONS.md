@@ -110,7 +110,7 @@ All settings are validated at startup via Pydantic BaseSettings. See [../docker_
 All log-reading tools use a **cache-first strategy**:
 
 ```
-Tool call (e.g., detect_error_spikes)
+Tool call (e.g., analyze_error_spikes)
   ↓
 Check .cache/logs/<container>/YYYY-MM-DD.parquet
   ↓
@@ -127,12 +127,12 @@ uv run docker-log-analyzer-mcp sync_docker_logs --since "4 hours ago"
 
 # All tools now read from cache (instant):
 uv run docker-log-analyzer-mcp analyze_patterns
-uv run docker-log-analyzer-mcp detect_error_spikes
+uv run docker-log-analyzer-mcp analyze_error_spikes
 uv run docker-log-analyzer-mcp map_service_dependencies
 
 # Works even with containers stopped:
 docker compose down
-uv run docker-log-analyzer-mcp correlate_containers   # still works via cache
+uv run docker-log-analyzer-mcp analyze_correlations   # still works via cache
 ```
 
 ### Cache structure
@@ -148,7 +148,7 @@ uv run docker-log-analyzer-mcp correlate_containers   # still works via cache
 .cache/patterns/
   └── test-web-app.json             (analyze_patterns result, separate from log cache)
 .cache/correlations/
-  └── <md5>.json                    (correlate_containers result, keyed by container set + params)
+  └── <md5>.json                    (analyze_correlations result, keyed by container set + params)
 ```
 
 ### Clear cache

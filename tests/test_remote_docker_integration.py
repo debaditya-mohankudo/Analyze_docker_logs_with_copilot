@@ -125,17 +125,17 @@ class TestRemoteDockerViaSSH:
 
     @pytest.mark.integration
     @pytest.mark.serial
-    def test_detect_error_spikes_via_ssh_localhost(self, setup_integration_containers):
+    def test_analyze_error_spikes_via_ssh_localhost(self, setup_integration_containers):
         """Should detect error spikes via SSH connection.
 
-        This verifies detect_error_spikes tool works with remote Docker.
+        This verifies analyze_error_spikes tool works with remote Docker.
         Note: This requires SSH daemon configured. Test skips if SSH unavailable.
         """
         with patch.dict(os.environ, {"DOCKER_HOST": "ssh://localhost"}, clear=False):
             try:
-                from docker_log_analyzer.tools import tool_detect_error_spikes
+                from docker_log_analyzer.tools import tool_analyze_error_spikes
 
-                result = tool_detect_error_spikes(
+                result = tool_analyze_error_spikes(
                     container_name="test-web-app",
                     tail=500,
                     spike_threshold=2.0,
@@ -152,17 +152,17 @@ class TestRemoteDockerViaSSH:
 
     @pytest.mark.integration
     @pytest.mark.serial
-    def test_correlate_containers_via_ssh_localhost(self, setup_integration_containers):
+    def test_analyze_correlations_via_ssh_localhost(self, setup_integration_containers):
         """Should correlate containers via SSH connection.
 
-        This verifies correlate_containers tool works with remote Docker.
+        This verifies analyze_correlations tool works with remote Docker.
         Note: This requires SSH daemon configured. Test skips if SSH unavailable.
         """
         with patch.dict(os.environ, {"DOCKER_HOST": "ssh://localhost"}, clear=False):
             try:
-                from docker_log_analyzer.tools import tool_correlate_containers
+                from docker_log_analyzer.tools import tool_analyze_correlations
 
-                result = tool_correlate_containers(
+                result = tool_analyze_correlations(
                     time_window_seconds=60,
                     tail=500,
                     use_cache=False,

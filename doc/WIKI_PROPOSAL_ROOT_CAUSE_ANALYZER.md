@@ -25,8 +25,8 @@ of a system-wide failure.
 User: "My system is failing. Find the root cause container."
 
 Copilot calls:
-1. detect_error_spikes     → spikes
-2. correlate_containers    → correlations
+1. analyze_error_spikes     → spikes
+2. analyze_correlations    → correlations
 3. map_service_dependencies → graph + cascades
 4. rank_root_causes        → ranked root causes
 ```
@@ -235,7 +235,7 @@ Output: [{"container": str, "score": float, "evidence": [str, ...]}]
 | File | Change |
 |------|--------|
 | `docker_log_analyzer/root_cause_analyzer.py` | New module: `rank_root_causes()` pure function |
-| `docker_log_analyzer/tools.py` | New `tool_rank_root_causes()` — calls spike/correlate/graph internally |
+| `docker_log_analyzer/tools.py` | New `tool_analyze_root_causes()` — calls spike/correlate/graph internally |
 | `docker_log_analyzer/mcp_server.py` | Register tool #11 |
 | `tests/test_root_cause_analyzer.py` | Unit tests for scoring, evidence, edge cases |
 | `doc/WIKI_TOOLS.md` | Add tool #11 documentation |
@@ -248,7 +248,7 @@ Output: [{"container": str, "score": float, "evidence": [str, ...]}]
 
 ### Should the tool call sub-tools internally?
 
-**Yes.** The MCP tool wrapper (`tool_rank_root_causes`) should orchestrate:
+**Yes.** The MCP tool wrapper (`tool_analyze_root_causes`) should orchestrate:
 1. Fetch logs (with cache)
 2. Run `detect_spikes()`
 3. Run `correlate()`

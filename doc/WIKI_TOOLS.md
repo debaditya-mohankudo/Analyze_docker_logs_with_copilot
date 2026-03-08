@@ -18,15 +18,15 @@ Canonical reference for all 12 MCP tools — parameters, return shapes, and beha
 |---|------|---------|
 | 1 | [list_containers](#1-list_containers) | List running Docker containers |
 | 2 | [analyze_patterns](#2-analyze_patterns) | Timestamp format, language, log levels, health checks |
-| 3 | [detect_error_spikes](#3-detect_error_spikes) | Rolling-window error rate anomaly detection |
+| 3 | [analyze_error_spikes](#3-analyze_error_spikes) | Rolling-window error rate anomaly detection |
 | 4 | [detect_data_leaks](#4-detect_data_leaks) | Scan logs for secrets, credentials, PII |
-| 5 | [correlate_containers](#5-correlate_containers) | Pairwise temporal error co-occurrence scoring |
+| 5 | [analyze_correlations](#5-analyze_correlations) | Pairwise temporal error co-occurrence scoring |
 | 6 | [sync_docker_logs](#6-sync_docker_logs) | Sync logs to cache for offline / fast analysis |
-| 7 | [capture_and_analyze](#7-capture_and_analyze) | Live capture + combined spike + correlation report |
+| 7 | [capture_logs](#7-capture_logs) | Live capture + combined spike + correlation report |
 | 8 | [map_service_dependencies](#8-map_service_dependencies) | Log-based dependency graph + cascade candidates |
 | 9 | [start_test_containers](#9-start_test_containers) | Start 4-service test stack |
 | 10 | [stop_test_containers](#10-stop_test_containers) | Stop and remove test containers |
-| 11 | [rank_root_causes](#11-rank_root_causes) | Score containers by root-cause likelihood |
+| 11 | [analyze_root_causes](#11-analyze_root_causes) | Score containers by root-cause likelihood |
 | 12 | [get_last_errors](#12-get_last_errors) | Last N error/fatal lines from a single container |
 
 ---
@@ -102,7 +102,7 @@ Analyzes log patterns to detect timestamp format, programming language, log leve
 
 ---
 
-## 3. detect_error_spikes
+## 3. analyze_error_spikes
 
 Detects error rate anomalies using Polars rolling-window analysis. Compares current error rate against a 3-bucket rolling baseline.
 
@@ -202,7 +202,7 @@ Scans logs for sensitive data using 20 regex patterns.
 
 ---
 
-## 5. correlate_containers
+## 5. analyze_correlations
 
 Detects correlated errors across containers within a configurable time window.
 
@@ -285,15 +285,15 @@ Explicitly syncs Docker logs to `.cache/logs/` for a time window. Enables fast o
 uv run docker-log-analyzer-mcp sync_docker_logs --since "2026-03-07T10:00:00Z"
 # All subsequent tool calls use cache (instant):
 uv run docker-log-analyzer-mcp analyze_patterns
-uv run docker-log-analyzer-mcp detect_error_spikes
+uv run docker-log-analyzer-mcp analyze_error_spikes
 # Works with containers stopped:
 docker compose down
-uv run docker-log-analyzer-mcp correlate_containers  # still works
+uv run docker-log-analyzer-mcp analyze_correlations  # still works
 ```
 
 ---
 
-## 7. capture_and_analyze
+## 7. capture_logs
 
 Live capture for N seconds, then combined report: error spikes + cross-container correlation + per-container breakdown.
 
@@ -412,11 +412,11 @@ Infers a directed service dependency graph from log patterns. Surfaces cascade c
 | dep confidence high/medium AND correlation_score > 0 | medium |
 | dep confidence low, or transitive edge | low |
 
-**Differentiation from `correlate_containers`:**
+**Differentiation from `analyze_correlations`:**
 
 | Tool | What it answers |
 |------|----------------|
-| `correlate_containers` | Did errors in A and B happen at the same time? (temporal) |
+| `analyze_correlations` | Did errors in A and B happen at the same time? (temporal) |
 | `map_service_dependencies` | Does A's logs show it calls B? (structural) |
 | Combined (via cascade_candidates) | A depends on B, errors correlate at r=0.82 — B likely causes A errors |
 
@@ -475,7 +475,7 @@ Stops and removes test containers.
 
 ---
 
-## 11. rank_root_causes
+## 11. analyze_root_causes
 
 **Status:** Implemented — 2026-03-07
 
@@ -532,10 +532,10 @@ Scores are rounded to 3 decimal places and sorted descending. Containers with no
 User: "Find the root cause of my system failure."
 
 Copilot calls:
-1. detect_error_spikes      → confirm which containers have errors
-2. correlate_containers     → confirm temporal co-occurrence
+1. analyze_error_spikes      → confirm which containers have errors
+2. analyze_correlations     → confirm temporal co-occurrence
 3. map_service_dependencies → understand error propagation paths
-4. rank_root_causes         → get scored ranking
+4. analyze_root_causes         → get scored ranking
 ```
 
 **Notes:**
@@ -589,7 +589,7 @@ Fast triage tool — returns the last N error, fatal, or panic lines from a sing
 | `critical` | `critical` |
 | `error`, `exception`, `traceback`, `severe` | `error` |
 
-**Error patterns matched:** ERROR, CRITICAL, FATAL, Exception, Traceback, panic, SEVERE, HTTP 5xx (same regex as `detect_error_spikes`).
+**Error patterns matched:** ERROR, CRITICAL, FATAL, Exception, Traceback, panic, SEVERE, HTTP 5xx (same regex as `analyze_error_spikes`).
 
 **`errors_found`** is the total count of matching lines in the scanned window; `errors` contains only the last `limit` of them in chronological order.
 
@@ -600,12 +600,12 @@ Fast triage tool — returns the last N error, fatal, or panic lines from a sing
 | Tool | Scope | When to use |
 | ---- | ----- | ----------- |
 | `get_last_errors` | Single container, last N lines | Immediate triage of one container |
-| `detect_error_spikes` | All containers, rolling window | Confirm error rate anomaly |
-| `rank_root_causes` | All containers, full analysis | Find which container caused the failure |
+| `analyze_error_spikes` | All containers, rolling window | Confirm error rate anomaly |
+| `analyze_root_causes` | All containers, full analysis | Find which container caused the failure |
 
 ---
 
-tool, MCP, parameters, returns, list_containers, analyze_patterns, detect_error_spikes, detect_data_leaks, correlate_containers, sync_docker_logs, capture_and_analyze, map_service_dependencies, rank_root_causes, get_last_errors, start_test_containers, stop_test_containers, reference, contract, schema, tail, use_cache, confidence, hit_count, cascade, dependency, spike, correlation, secret, pattern, root cause, scoring, fan-in, fan-out, last error, fatal, panic, triage
+tool, MCP, parameters, returns, list_containers, analyze_patterns, analyze_error_spikes, detect_data_leaks, analyze_correlations, sync_docker_logs, capture_logs, map_service_dependencies, analyze_root_causes, get_last_errors, start_test_containers, stop_test_containers, reference, contract, schema, tail, use_cache, confidence, hit_count, cascade, dependency, spike, correlation, secret, pattern, root cause, scoring, fan-in, fan-out, last error, fatal, panic, triage
 
 **[negative keywords / not-this-doc]**
 algorithm internals, module design, CI, coverage, test suite, setup, installation, Copilot prompts

@@ -248,7 +248,7 @@ def tool_analyze_patterns(
     return {"status": "success", "results": results}
 
 
-def tool_detect_error_spikes(
+def tool_analyze_error_spikes(
     container_name: Optional[str] = None,
     tail: int = 1000,
     window_minutes: int = 5,
@@ -308,7 +308,7 @@ def tool_detect_error_spikes(
     }
 
 
-def tool_correlate_containers(
+def tool_analyze_correlations(
     time_window_seconds: int = 30,
     tail: int = 500,
     use_cache: bool = True,
@@ -382,7 +382,7 @@ def tool_start_test_containers(rebuild: bool = False) -> dict:
             "output": "Containers started successfully.",
             "message": (
                 "Test containers started. Use list_containers to see them, "
-                "or analyze_patterns / detect_error_spikes once logs accumulate."
+                "or analyze_patterns / analyze_error_spikes once logs accumulate."
             ),
             "compose_file": str(COMPOSE_FILE),
         }
@@ -493,7 +493,7 @@ def tool_sync_docker_logs(
     }
 
 
-async def tool_capture_and_analyze(
+async def tool_capture_logs(
     container_names: Optional[list[str]] = None,
     duration_seconds: int = 120,
     spike_threshold: float = 2.0,
@@ -526,7 +526,7 @@ async def tool_capture_and_analyze(
 
     start_time = datetime.now(timezone.utc)
     logger.info(
-        "capture_and_analyze: watching %d containers for %ds",
+        "capture_logs: watching %d containers for %ds",
         len(targets), duration_seconds,
     )
 
@@ -774,7 +774,7 @@ def tool_map_service_dependencies(
     }
 
 
-def tool_rank_root_causes(
+def tool_analyze_root_causes(
     containers: Optional[list[str]] = None,
     tail: int = 500,
     time_window_seconds: int = 3600,

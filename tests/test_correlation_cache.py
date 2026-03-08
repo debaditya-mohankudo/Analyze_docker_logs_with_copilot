@@ -110,7 +110,7 @@ class TestCorrelationCacheReadWrite:
         assert result is None
 
 
-# ── tool_correlate_containers cache integration ───────────────────────────────
+# ── tool_analyze_correlations cache integration ───────────────────────────────
 
 class TestCorrelateContainersCacheIntegration:
 
@@ -126,7 +126,7 @@ class TestCorrelateContainersCacheIntegration:
         return client
 
     def test_cache_miss_sets_correlation_cache_hit_false(self, tmp_path):
-        from docker_log_analyzer.tools import tool_correlate_containers
+        from docker_log_analyzer.tools import tool_analyze_correlations
 
         mock_client = self._make_mock_client(["svc-a", "svc-b"])
 
@@ -135,14 +135,14 @@ class TestCorrelateContainersCacheIntegration:
              patch("docker_log_analyzer.tools.CORRELATION_CACHE_DIR", tmp_path), \
              patch("docker_log_analyzer.tools._read_correlation_cache", return_value=None) as mock_read, \
              patch("docker_log_analyzer.tools._write_correlation_cache") as mock_write:
-            result = tool_correlate_containers(use_cache=True)
+            result = tool_analyze_correlations(use_cache=True)
 
         assert result["correlation_cache_hit"] is False
         mock_read.assert_called_once()
         mock_write.assert_called_once()
 
     def test_cache_hit_sets_correlation_cache_hit_true(self, tmp_path):
-        from docker_log_analyzer.tools import tool_correlate_containers
+        from docker_log_analyzer.tools import tool_analyze_correlations
 
         mock_client = self._make_mock_client(["svc-a", "svc-b"])
         cached_result = {
@@ -157,7 +157,7 @@ class TestCorrelateContainersCacheIntegration:
         with patch("docker_log_analyzer.tools._docker_client", return_value=mock_client), \
              patch("docker_log_analyzer.tools._read_correlation_cache", return_value=cached_result) as mock_read, \
              patch("docker_log_analyzer.tools._write_correlation_cache") as mock_write:
-            result = tool_correlate_containers(use_cache=True)
+            result = tool_analyze_correlations(use_cache=True)
 
         assert result["correlation_cache_hit"] is True
         assert result["correlations"][0]["correlation_score"] == 0.9
@@ -165,7 +165,7 @@ class TestCorrelateContainersCacheIntegration:
         mock_write.assert_not_called()
 
     def test_use_cache_false_skips_cache_read(self):
-        from docker_log_analyzer.tools import tool_correlate_containers
+        from docker_log_analyzer.tools import tool_analyze_correlations
 
         mock_client = self._make_mock_client(["svc-a", "svc-b"])
 
@@ -173,6 +173,6 @@ class TestCorrelateContainersCacheIntegration:
              patch("docker_log_analyzer.tools._fetch_logs_with_cache", return_value=([], False)), \
              patch("docker_log_analyzer.tools._read_correlation_cache") as mock_read, \
              patch("docker_log_analyzer.tools._write_correlation_cache"):
-            tool_correlate_containers(use_cache=False)
+            tool_analyze_correlations(use_cache=False)
 
         mock_read.assert_not_called()

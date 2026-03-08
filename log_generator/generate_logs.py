@@ -4,7 +4,7 @@ Test log generator for Docker Log Analyzer.
 
 Emits continuous random logs in configurable formats with periodic error spikes.
 Designed to exercise all 4 MCP tools: list_containers, analyze_patterns,
-detect_error_spikes, and correlate_containers.
+analyze_error_spikes, and analyze_correlations.
 
 Environment Variables:
   LOG_FORMAT       iso8601 | syslog | epoch | apache | mixed   (default: mixed)
