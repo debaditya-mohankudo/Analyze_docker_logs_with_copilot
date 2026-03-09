@@ -37,6 +37,7 @@ Use this table to answer questions with minimal hops.
 
 ## Start Here
 
+- **New user:** [WIKI_OPERATIONS.md § Quick Start](WIKI_OPERATIONS.md#quick-start) → [WIKI_COPILOT_PROMPTS.md](WIKI_COPILOT_PROMPTS.md)
 - **New contributor:** [WIKI_OPERATIONS.md § Quick Start](WIKI_OPERATIONS.md#quick-start) → [WIKI_TOOLS.md](WIKI_TOOLS.md)
 - **Using with Copilot:** [WIKI_COPILOT_PROMPTS.md](WIKI_COPILOT_PROMPTS.md)
 - **Understanding all tools:** [WIKI_TOOLS.md](WIKI_TOOLS.md)
