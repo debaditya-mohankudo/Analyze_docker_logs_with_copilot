@@ -12,7 +12,7 @@ Use this table to answer questions with minimal hops.
 |---|---|---|---|
 | "How does X work architecturally?" | [WIKI_ARCHITECTURE.md](WIKI_ARCHITECTURE.md) | [../CLAUDE.md](../CLAUDE.md) | [WIKI_ARCHITECTURE.md](WIKI_ARCHITECTURE.md) |
 | "What does tool X do / what are its params?" | [WIKI_TOOLS.md](WIKI_TOOLS.md) | — | [WIKI_TOOLS.md](WIKI_TOOLS.md) |
-| "How do I set up / run this?" | [WIKI_OPERATIONS.md](WIKI_OPERATIONS.md) | [../README.md](../README.md) | [WIKI_OPERATIONS.md](WIKI_OPERATIONS.md) |
+| "How do I set up / run this?" | [WIKI_OPERATIONS.md § Quick Start](WIKI_OPERATIONS.md#quick-start) | [../README.md](../README.md) | [WIKI_OPERATIONS.md § Quick Start](WIKI_OPERATIONS.md#quick-start) |
 | "What Copilot prompts can I use?" | [WIKI_COPILOT_PROMPTS.md](WIKI_COPILOT_PROMPTS.md) | — | [WIKI_COPILOT_PROMPTS.md](WIKI_COPILOT_PROMPTS.md) |
 | "How does caching work?" | [WIKI_OPERATIONS.md § Log Cache](WIKI_OPERATIONS.md#log-cache-strategy) | [WIKI_ARCHITECTURE.md § Cache](WIKI_ARCHITECTURE.md#cache-system) | [WIKI_OPERATIONS.md](WIKI_OPERATIONS.md) |
 | "How is this tested? What's CI?" | [WIKI_QUALITY.md](WIKI_QUALITY.md) | — | [WIKI_QUALITY.md](WIKI_QUALITY.md) |
