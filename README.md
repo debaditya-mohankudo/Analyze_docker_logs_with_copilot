@@ -6,9 +6,60 @@ A stateless, **LLM-free** Docker log analysis tool exposed as an [MCP](https://m
 
 ---
 
-## What it does
+## What you can say in Copilot
 
-12 MCP tools covering the full triage workflow — discovery, pattern analysis, spike detection, secret scanning, dependency mapping, root cause ranking, and log caching. Full reference: **[doc/WIKI_TOOLS.md](doc/WIKI_TOOLS.md)**.
+Just type naturally in Copilot Chat (Agent mode). No tool names needed.
+
+### Triage an incident
+
+```text
+Something is broken — start from scratch and give me a full system health report.
+Which container is most likely causing the cascade of errors?
+Is test-gateway causing failures in test-web-app and test-database?
+```
+
+### Investigate a specific container
+
+```text
+What was the last error in test-cache?
+Show me the last 5 fatal errors from test-web-app.
+Analyze the log patterns for the test-database container.
+What log format and programming language is test-web-app using?
+```
+
+### Detect anomalies
+
+```text
+Are there any error rate anomalies in my containers right now?
+Which containers had the worst error spikes in the last few minutes?
+Correlate container errors using a 60-second time window.
+Which containers are failing together?
+```
+
+### Map dependencies
+
+```text
+Map the service dependencies across all my containers.
+Which containers depend on the database?
+Are there any likely error cascade paths between my services?
+```
+
+### Security scanning
+
+```text
+Scan all containers for sensitive data like API keys and credentials.
+Are there any passwords or credit card numbers in my container logs?
+```
+
+### Capture and cache
+
+```text
+Watch test-web-app and test-database for the next 2 minutes — I'm about to reproduce the bug.
+I'm about to stop the containers — sync their logs first so I can analyze offline.
+Sync logs from the last 4 hours for all containers.
+```
+
+Full prompt reference: **[doc/WIKI_COPILOT_PROMPTS.md](doc/WIKI_COPILOT_PROMPTS.md)** · Tool API details: **[doc/WIKI_TOOLS.md](doc/WIKI_TOOLS.md)**.
 
 ---
 
