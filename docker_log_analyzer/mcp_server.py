@@ -1,7 +1,7 @@
 """
 MCP Server for Docker Log Pattern Analysis (non-LLM).
 
-Exposes 11 tools to VSCode Copilot Agent Mode via .vscode/mcp.json:
+Exposes 13 tools to VSCode Copilot Agent Mode via .vscode/mcp.json:
 
   list_containers           – discover running Docker containers
   analyze_patterns          – PatternDetector per container (timestamps, language, log levels)
@@ -13,6 +13,7 @@ Exposes 11 tools to VSCode Copilot Agent Mode via .vscode/mcp.json:
   sync_docker_logs          – cache logs for offline / instant analysis
   capture_logs       – live capture + spike + correlation report
   get_last_errors           – last N error/fatal lines from a single container
+  plan_investigation        – generate a structured investigation plan from symptoms
   start_test_containers     – build & start test log-generator containers
   stop_test_containers      – stop and remove test log-generator containers
 
@@ -45,6 +46,7 @@ from .tools import (
     tool_map_service_dependencies,
     tool_analyze_root_causes,
     tool_get_last_errors,
+    tool_plan_investigation,
 )
 
 
@@ -295,6 +297,33 @@ async def get_last_errors(
         container_name=container_name,
         tail=tail,
         limit=limit,
+    )
+
+
+@mcp.tool()
+async def plan_investigation(
+    symptoms: list[str],
+    containers: list[str] | None = None,
+    focus: str | None = None,
+) -> dict:
+    """Generate a structured, step-by-step DevOps investigation plan from observed symptoms.
+
+    Classifies symptoms into signal categories (crash, spike, cascade, security, pattern)
+    and maps them to an ordered sequence of MCP tool calls to execute. The full plan is
+    written to a Markdown file under .cache/plans/ — the response returns the file path,
+    not the plan text itself.
+
+    Args:
+        symptoms: Observed problem descriptions, e.g.
+            ["payment-service returning 500s", "high latency in checkout"].
+        containers: Container names to scope the investigation. Omit to cover all containers.
+        focus: Investigation focus — one of 'root_cause', 'security', 'performance',
+            or 'general' (default).
+    """
+    return tool_plan_investigation(
+        symptoms=symptoms,
+        containers=containers,
+        focus=focus,
     )
 
 

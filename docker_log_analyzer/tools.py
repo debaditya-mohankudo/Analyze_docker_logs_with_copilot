@@ -23,6 +23,7 @@ from .cache_manager import (
     write_cached_logs_for_date,
     get_cache_info,
 )
+from .investigation_planner import generate_plan
 from .config import settings
 from .correlator import correlate
 from .dependency_mapper import build_graph, find_cascade_candidates
@@ -910,3 +911,38 @@ def tool_get_last_errors(
         "limit": limit,
         "errors": entries,
     }
+
+
+def tool_plan_investigation(
+    symptoms: list[str],
+    containers: list[str] | None = None,
+    focus: str | None = None,
+) -> dict:
+    """
+    Generate a structured, step-by-step investigation plan from observed symptoms.
+
+    Classifies symptoms into signal categories (crash, spike, cascade, security,
+    pattern) and maps them to an ordered sequence of MCP tool calls to execute.
+    The plan is saved to a Markdown file under .cache/plans/ and the file path
+    is returned — nothing is echoed inline.
+
+    Parameters
+    ----------
+    symptoms    : Observed problem descriptions, e.g.
+                  ["payment-service returning 500s", "high latency in checkout"].
+    containers  : Container names to scope the investigation. Omit for all.
+    focus       : One of 'root_cause', 'security', 'performance', 'general'.
+                  Defaults to 'general'.
+
+    Returns
+    -------
+    JSON with:
+        status             – 'success' or 'error'
+        signals_detected   – inferred signal categories
+        focus              – effective focus used
+        containers_in_scope
+        step_count         – number of planned steps
+        plan               – list of {step, action, target, reason, parameters}
+        plan_file          – path to the saved Markdown plan
+    """
+    return generate_plan(symptoms=symptoms, containers=containers, focus=focus)
