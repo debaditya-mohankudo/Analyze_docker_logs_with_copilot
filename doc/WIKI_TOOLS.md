@@ -618,8 +618,10 @@ Fast triage tool — returns the last N error, fatal, or panic lines from a sing
 
 Deterministic, rule-based DevOps investigation planner. Classifies symptom
 descriptions into signal categories and generates an ordered investigation plan
-mapped to available MCP tools. Saves the full plan to a Markdown file under
-`.cache/plans/` — returns the file path, not the plan text.
+mapped to available MCP tools. Returns the structured plan (list of steps) in
+the JSON response **and** saves a human-readable Markdown version to
+`.cache/plans/`. Use `plan` for automated execution; open `plan_file` for the
+formatted table.
 
 **Parameters:**
 

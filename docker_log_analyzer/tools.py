@@ -925,8 +925,9 @@ def tool_plan_investigation(
 
     Classifies symptoms into signal categories (crash, spike, cascade, security,
     pattern) and maps them to an ordered sequence of MCP tool calls to execute.
-    The plan is saved to a Markdown file under .cache/plans/ and the file path
-    is returned — nothing is echoed inline.
+    The structured plan (list of steps) is returned in the JSON response AND
+    saved as a human-readable Markdown table to .cache/plans/. Open plan_file
+    for the formatted version; use the plan list to drive automated execution.
 
     Parameters
     ----------
