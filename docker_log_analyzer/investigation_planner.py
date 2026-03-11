@@ -166,6 +166,11 @@ def generate_plan(
             step_num += 1
 
     # -- 3. Get last errors ---------------------------------------------------
+    # Only emitted when containers are scoped: get_last_errors requires a
+    # container_name argument and cannot run against "all containers".
+    # In the broad (no-scope) flow, analyze_patterns + analyze_error_spikes
+    # cover all containers; the caller identifies the culprit from those
+    # results and then runs get_last_errors manually on that container.
     if "crash" in active_signals or "cascade" in active_signals or focus in ("general", "root_cause"):
         if targets:
             for c in targets:
@@ -177,15 +182,6 @@ def generate_plan(
                     parameters={"container_name": c, "limit": 20},
                 ))
                 step_num += 1
-        else:
-            steps.append(PlanStep(
-                step=step_num,
-                action="get_last_errors",
-                target=None,
-                reason="Extract recent error and fatal log lines to characterize the failure mode",
-                parameters={"limit": 20},
-            ))
-            step_num += 1
 
     # -- 4. Detect error spikes -----------------------------------------------
     if "spike" in active_signals or "crash" in active_signals or focus in ("general", "root_cause", "performance"):
