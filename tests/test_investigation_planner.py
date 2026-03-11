@@ -207,3 +207,46 @@ class TestGeneratePlanMarkdownFile:
     def test_no_symptoms_uses_crash_default(self, tmp_path):
         result = generate_plan([""], plans_dir=tmp_path)
         assert result["signals_detected"] == ["crash"]
+
+
+# --------------------------------------------------------------------------- #
+# get_last_errors step contract
+# --------------------------------------------------------------------------- #
+
+class TestGetLastErrorsStepContract:
+    """get_last_errors requires container_name; the plan must never emit it
+    without a valid container_name in parameters (regression for code-review
+    finding: broad flow emitted target=None with missing container_name)."""
+
+    def test_no_get_last_errors_when_no_containers(self, tmp_path):
+        """Broad (all-containers) flow must not emit a get_last_errors step."""
+        for focus in ("general", "root_cause", "performance", "security"):
+            result = generate_plan(
+                ["service throwing 500 errors with connection refused"],
+                focus=focus,
+                containers=None,
+                plans_dir=tmp_path,
+            )
+            actions = [s["action"] for s in result["plan"]]
+            assert "get_last_errors" not in actions, (
+                f"focus={focus!r}: get_last_errors emitted without containers — "
+                "container_name would be missing from parameters"
+            )
+
+    def test_get_last_errors_has_container_name_when_scoped(self, tmp_path):
+        """When containers are specified every get_last_errors step must carry
+        container_name in its parameters field."""
+        result = generate_plan(
+            ["500 errors and connection refused"],
+            focus="root_cause",
+            containers=["api", "db"],
+            plans_dir=tmp_path,
+        )
+        for step in result["plan"]:
+            if step["action"] == "get_last_errors":
+                assert "container_name" in (step.get("parameters") or {}), (
+                    f"Step {step['step']} get_last_errors missing container_name: {step}"
+                )
+                assert step.get("target") is not None, (
+                    f"Step {step['step']} get_last_errors has target=None"
+                )
