@@ -1038,4 +1038,3 @@ def tool_analyze_code_context(
         context_lines=ctx_lines,
         max_frames=max_f,
     )
->>>>>>> Stashed changes

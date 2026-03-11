@@ -61,6 +61,9 @@ class _FakePatternDetector:
     def detect_language(self, lines):
         return ("python", 0.8123)
 
+    def detect_framework(self, language, lines):
+        return None
+
     def extract_log_levels(self, lines):
         return {"INFO": 2, "ERROR": 1, "CRITICAL": 1}
 
