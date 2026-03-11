@@ -135,6 +135,41 @@ class TestGeneratePlanFocus:
         result = generate_plan(["crash"], focus="root_cause", plans_dir=tmp_path)
         assert result["focus"] == "root_cause"
 
+    def test_security_focus_with_unrelated_symptoms_excludes_spike_tools(self, tmp_path):
+        """focus='security' + latency symptoms must not activate spike/cascade tools.
+        Regression: fallback `or signals` caused unrelated signals to bleed in."""
+        result = generate_plan(["high latency and slow response"], focus="security", plans_dir=tmp_path)
+        actions = [s["action"] for s in result["plan"]]
+        assert "detect_data_leaks" in actions, "security focus must include detect_data_leaks"
+        assert "analyze_error_spikes" not in actions, "security focus must not activate spike tools"
+        assert "analyze_correlations" not in actions, "security focus must not activate correlation tools"
+        assert "map_service_dependencies" not in actions, "security focus must not activate dependency map"
+
+    def test_performance_focus_with_unrelated_symptoms_excludes_security_tools(self, tmp_path):
+        """focus='performance' + credential symptoms must not activate security tools."""
+        result = generate_plan(["API token exposed"], focus="performance", plans_dir=tmp_path)
+        actions = [s["action"] for s in result["plan"]]
+        assert "analyze_error_spikes" in actions, "performance focus must include spike detection"
+        assert "detect_data_leaks" not in actions, "performance focus must not activate secret scanner"
+
+    def test_focus_active_signals_are_subset_of_focus_set(self, tmp_path):
+        """signals_detected in result must always be a subset of the focus's allowed signals."""
+        focus_allowed = {
+            "root_cause": {"crash", "cascade", "spike"},
+            "security": {"security"},
+            "performance": {"spike"},
+        }
+        for focus, allowed in focus_allowed.items():
+            result = generate_plan(
+                ["500 error latency token exposed connection refused"],
+                focus=focus,
+                plans_dir=tmp_path,
+            )
+            detected = set(result["signals_detected"])
+            assert detected <= allowed, (
+                f"focus={focus!r}: signals_detected {detected} not a subset of {allowed}"
+            )
+
 
 # --------------------------------------------------------------------------- #
 # generate_plan – containers scoping

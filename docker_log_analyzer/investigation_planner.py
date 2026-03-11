@@ -129,7 +129,12 @@ def generate_plan(
         focus = "general"
 
     focus_set = _FOCUS_SIGNALS[focus]
-    active_signals = (signals & focus_set) or signals if focus_set else signals
+    if focus_set:
+        # Restrict to signals within the focus; if none match, honour the focus
+        # definition anyway so unrelated tools are never activated.
+        active_signals = (signals & focus_set) or focus_set
+    else:
+        active_signals = signals  # general: use all detected signals
 
     targets: list[str] = containers if containers else []
     step_num = 1
