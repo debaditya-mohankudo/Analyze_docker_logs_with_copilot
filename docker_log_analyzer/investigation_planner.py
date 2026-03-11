@@ -304,7 +304,7 @@ def _save_plan_md(
     plans_dir: Path | None,
 ) -> Path:
     now = datetime.now(timezone.utc)
-    timestamp = now.strftime("%Y%m%dT%H%M%SZ")
+    timestamp = now.strftime("%Y%m%dT%H%M%S%fZ")
 
     if plans_dir is None:
         # Resolve relative to repo root (.cache/plans/)

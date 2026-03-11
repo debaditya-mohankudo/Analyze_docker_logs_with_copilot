@@ -234,8 +234,9 @@ class TestGeneratePlanMarkdownFile:
         assert "security" in result["plan_file"]
 
     def test_multiple_plans_create_separate_files(self, tmp_path):
+        # Microsecond-resolution timestamps make this collision-resistant
+        # without sleep; no monkeypatching needed.
         r1 = generate_plan(["error 1"], plans_dir=tmp_path)
-        import time; time.sleep(1)  # ensure different timestamp
         r2 = generate_plan(["error 2"], plans_dir=tmp_path)
         assert r1["plan_file"] != r2["plan_file"]
 
