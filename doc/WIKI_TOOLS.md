@@ -1,6 +1,6 @@
 # Wiki Hub: MCP Tools Reference
 
-Canonical reference for all 12 MCP tools — parameters, return shapes, and behavior.
+Canonical reference for all 13 MCP tools — parameters, return shapes, and behavior.
 
 ---
 
@@ -28,6 +28,7 @@ Canonical reference for all 12 MCP tools — parameters, return shapes, and beha
 | 10 | [stop_test_containers](#10-stop_test_containers) | Stop and remove test containers |
 | 11 | [analyze_root_causes](#11-analyze_root_causes) | Score containers by root-cause likelihood |
 | 12 | [get_last_errors](#12-get_last_errors) | Last N error/fatal lines from a single container |
+| 13 | [plan_investigation](#13-plan_investigation) | Generate a structured investigation plan from symptoms |
 
 ---
 
@@ -610,7 +611,89 @@ Fast triage tool — returns the last N error, fatal, or panic lines from a sing
 
 ---
 
-tool, MCP, parameters, returns, list_containers, analyze_patterns, analyze_error_spikes, detect_data_leaks, analyze_correlations, sync_docker_logs, capture_logs, map_service_dependencies, analyze_root_causes, get_last_errors, start_test_containers, stop_test_containers, reference, contract, schema, tail, use_cache, confidence, hit_count, cascade, dependency, spike, correlation, secret, pattern, root cause, scoring, fan-in, fan-out, last error, fatal, panic, triage
+---
+
+## 13. plan_investigation
+
+Deterministic, rule-based DevOps investigation planner. Classifies symptom
+descriptions into signal categories and generates an ordered investigation plan
+mapped to available MCP tools. Saves the full plan to a Markdown file under
+`.cache/plans/` — returns the file path, not the plan text.
+
+**Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `symptoms` | string[] | required | Observed problem descriptions in plain English |
+| `containers` | string[]? | — | Limit scope to specific containers; omit for all |
+| `focus` | string? | `"general"` | One of `root_cause`, `security`, `performance`, `general` |
+
+**Focus modes:**
+
+| Focus | Signal categories used | When to use |
+|-------|----------------------|-------------|
+| `root_cause` | crash, cascade, spike | System-wide failure, cascading errors |
+| `security` | security | Suspected secret/credential exposure |
+| `performance` | spike | Latency, throughput, or resource pressure |
+| `general` | all detected | Unknown issue, broad sweep |
+
+**Returns:**
+
+```json
+{
+  "status": "success",
+  "signals_detected": ["cascade", "crash"],
+  "focus": "root_cause",
+  "containers_in_scope": ["payment-service", "api-gateway"],
+  "step_count": 7,
+  "plan": [
+    {
+      "step": 1,
+      "action": "list_containers",
+      "reason": "Discover which containers are running to scope the investigation"
+    },
+    {
+      "step": 2,
+      "action": "get_last_errors",
+      "target": "payment-service",
+      "reason": "Extract recent error and fatal log lines from payment-service to characterize the failure mode",
+      "parameters": { "container_name": "payment-service", "limit": 20 }
+    }
+  ],
+  "plan_file": ".cache/plans/20260311T120000Z_root_cause_payment-service_api-gateway.md"
+}
+```
+
+**Plan file:** A Markdown table of all steps (action, target, reason, parameters), symptom summary, and tool reference is written to `plan_file`. Open it to read the full plan.
+
+**Step priority order:**
+
+| Priority | Action | Triggered by |
+|----------|--------|-------------|
+| 1 | `list_containers` | Always |
+| 2 | `analyze_patterns` | crash, pattern, root_cause, general |
+| 3 | `get_last_errors` | crash, cascade, root_cause, general |
+| 4 | `analyze_error_spikes` | spike, crash, performance, root_cause, general |
+| 5 | `analyze_correlations` | cascade, spike, root_cause, general |
+| 6 | `map_service_dependencies` | cascade, root_cause, general |
+| 7 | `detect_data_leaks` | security focus |
+| 8 | `analyze_root_causes` | root_cause, general, cascade |
+
+**Signal detection keywords:**
+
+| Signal | Example keywords |
+|--------|----------------|
+| `crash` | error, 500, exception, traceback, panic, fatal, OOM |
+| `spike` | latency, slow, timeout, burst, high load, CPU, memory |
+| `cascade` | connection refused, downstream, upstream, circuit-breaker |
+| `security` | token, credential, API key, password, PII, 401, 403 |
+| `pattern` | log level, timestamp, health-check, format |
+
+**Implementation:** `docker_log_analyzer/investigation_planner.py` — see [WIKI_INVESTIGATION_PLANNER.md](WIKI_INVESTIGATION_PLANNER.md) for full reference.
+
+---
+
+tool, MCP, parameters, returns, list_containers, analyze_patterns, analyze_error_spikes, detect_data_leaks, analyze_correlations, sync_docker_logs, capture_logs, map_service_dependencies, analyze_root_causes, get_last_errors, plan_investigation, start_test_containers, stop_test_containers, reference, contract, schema, tail, use_cache, confidence, hit_count, cascade, dependency, spike, correlation, secret, pattern, root cause, scoring, fan-in, fan-out, last error, fatal, panic, triage, investigation, planner, symptoms, signals, focus
 
 **[negative keywords / not-this-doc]**
 algorithm internals, module design, CI, coverage, test suite, setup, installation, Copilot prompts
