@@ -1,6 +1,6 @@
 # Wiki Hub: MCP Tools Reference
 
-Canonical reference for all 13 MCP tools — parameters, return shapes, and behavior.
+Canonical reference for all 14 MCP tools — parameters, return shapes, and behavior.
 
 ---
 
@@ -29,6 +29,7 @@ Canonical reference for all 13 MCP tools — parameters, return shapes, and beha
 | 11 | [analyze_root_causes](#11-analyze_root_causes) | Score containers by root-cause likelihood |
 | 12 | [get_last_errors](#12-get_last_errors) | Last N error/fatal lines from a single container |
 | 13 | [plan_investigation](#13-plan_investigation) | Generate a structured investigation plan from symptoms |
+| 14 | [analyze_code_context](#14-analyze_code_context) | Parse stack traces + surface source code around error lines |
 
 ---
 
@@ -690,6 +691,97 @@ mapped to available MCP tools. Saves the full plan to a Markdown file under
 | `pattern` | log level, timestamp, health-check, format |
 
 **Implementation:** `docker_log_analyzer/investigation_planner.py` — see [WIKI_INVESTIGATION_PLANNER.md](WIKI_INVESTIGATION_PLANNER.md) for full reference.
+
+---
+
+## 14. analyze_code_context
+
+Bridges container error logs and local source code. Parses stack traces from
+recent error logs, resolves each frame's file path against a configured
+repository root, and returns the surrounding source lines for immediate
+code-level context.
+
+**Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `container_name` | string | required | Target container |
+| `tail` | int | 200 | Log lines to scan for stack traces |
+| `context_lines` | int? | config (10) | Source lines before/after the error line |
+| `max_frames` | int? | config (10) | Maximum stack frames to return |
+| `repo_path` | string? | — | Explicit repo root — overrides all config |
+| `language` | string? | auto | Force parser: `python`, `java`, `go`, `nodejs` |
+
+**Repository configuration (`.env`):**
+
+```env
+REPO_PATHS=["/home/user/myapp", "/srv/api"]
+CONTAINER_REPO_MAP={"api-service": "/home/user/api", "worker": "/home/user/worker"}
+CODE_CONTEXT_LINES=10
+MAX_STACK_FRAMES=10
+```
+
+**Repository resolution order:**
+
+1. `repo_path` parameter (highest priority)
+2. `CONTAINER_REPO_MAP` exact match
+3. `CONTAINER_REPO_MAP` prefix match
+4. First valid path in `REPO_PATHS`
+
+**Returns:**
+
+```json
+{
+  "status": "success",
+  "container": "payment-service",
+  "language": "python",
+  "repo_root": "/home/user/payment-service",
+  "frames_found": 2,
+  "frames": [
+    {
+      "language": "python",
+      "raw_frame": "  File \"app/payments.py\", line 87, in charge_card",
+      "function": "charge_card",
+      "file_in_log": "app/payments.py",
+      "line_no": 87,
+      "resolved_file": "/home/user/payment-service/app/payments.py",
+      "code_context": {
+        "file": "/home/user/payment-service/app/payments.py",
+        "error_line": 87,
+        "before": [[85, "    amount = request.json['amount']"], [86, "    card = ..."]],
+        "at": [87, "    result = stripe.Charge.create(amount=amount, customer=card.id)"],
+        "after": [[88, "    return jsonify({'status': 'ok'})"]]
+      }
+    }
+  ],
+  "unresolved_files": [],
+  "warnings": []
+}
+```
+
+**Status values:**
+
+| Status | Meaning |
+|--------|---------|
+| `success` | Frames found; code context present if repo configured |
+| `no_frames` | No stack traces detected in error logs |
+| `error` | Container not found or Docker unavailable |
+
+**Supported stack trace formats:**
+
+| Language | Example |
+|----------|---------|
+| Python | `File "app/server.py", line 42, in handle_request` |
+| Java | `at com.example.Service.process(Service.java:123)` |
+| Go | `/home/user/app/main.go:42 +0x1a3` |
+| Node.js | `at handleRequest (/app/server.js:42:10)` |
+
+**Use case:** After `get_last_errors` or `analyze_error_spikes` identifies the
+failing container, call this tool to immediately see the failing lines of code
+without leaving the Copilot chat. Also the final step in `plan_investigation`
+when containers are explicitly scoped.
+
+**Full reference:** [WIKI_CODE_REPO.md](WIKI_CODE_REPO.md)
 
 ---
 

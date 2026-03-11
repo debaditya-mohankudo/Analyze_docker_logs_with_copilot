@@ -16,9 +16,9 @@ Use this hub for test strategy, CI configuration, coverage targets, and adding n
 
 | Metric | Value |
 |--------|-------|
-| Unit tests | 319 (no Docker required) |
+| Unit tests | 368 (no Docker required) |
 | Integration tests | 67 (Docker + test containers) |
-| Total | 386 |
+| Total | 435 |
 | CI execution (unit only) | ~0.8 s parallel via pytest-xdist |
 | Coverage (core modules) | 90–100% |
 
@@ -56,6 +56,8 @@ uv run pytest tests/test_dependency_mapper.py -v
 | `test_cache_manager.py` | 25 | unit | Parquet write/read, schema validation, window filtering, multi-day, corrupt file, atomic write cleanup, metadata, clear cache |
 | `test_docker.py` | 16 | unit | `_docker_client`, `_fetch_logs`, `_fetch_logs_window`, `_fetch_logs_with_cache` helpers |
 | `test_patterns.py` | 24 | unit | DOCKER_TS_RE and ERROR_PATTERN_RE regex: matches, non-matches, edge cases |
+| `test_investigation_planner.py` | 26 | unit | Signal classification, plan structure, focus modes, container scoping, Markdown file output |
+| `test_coderepo.py` | 23 | unit | Stack trace parsers (Python/Java/Go/Node.js), repo resolution, file finding, code context extraction |
 | `test_mcp_integration.py` | 53 | integration | All 12 MCP tools, live Docker, field presence, value ranges, error cases |
 | `test_remote_docker_integration.py` | 14 | integration | Remote Docker via SSH/TCP, graceful fallback when unavailable (12 auto-skip) |
 

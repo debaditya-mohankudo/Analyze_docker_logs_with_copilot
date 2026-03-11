@@ -252,6 +252,23 @@ def generate_plan(
         ))
         step_num += 1
 
+    # -- 9. Code context deep-dive (always last when containers are scoped) ---
+    # Added when specific containers are known so the plan points directly at code.
+    if containers and ("crash" in active_signals or "cascade" in active_signals or focus in ("root_cause", "general")):
+        for c in containers:
+            steps.append(PlanStep(
+                step=step_num,
+                action="analyze_code_context",
+                target=c,
+                reason=(
+                    f"Parse stack traces from {c} error logs and surface the source code "
+                    f"around each error line — requires REPO_PATHS or CONTAINER_REPO_MAP "
+                    f"to be configured in .env"
+                ),
+                parameters={"container_name": c},
+            ))
+            step_num += 1
+
     # -- Save to Markdown file ------------------------------------------------
     plan_file = _save_plan_md(
         steps=steps,

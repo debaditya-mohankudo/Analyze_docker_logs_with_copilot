@@ -4,7 +4,7 @@ Uses Pydantic Settings with environment variable and .env file support.
 """
 
 import logging
-from typing import List
+from typing import Dict, List
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field, field_validator
@@ -62,6 +62,32 @@ class Settings(BaseSettings):
     correlation_cache_ttl_minutes: int = Field(
         default=30,
         description="TTL for correlation result cache in minutes (0 = disabled)",
+    )
+
+    # Code Repository Configuration
+    repo_paths: List[str] = Field(
+        default=[],
+        description=(
+            "List of local repository root paths to search for source files. "
+            "Used by analyze_code_context to resolve stack-trace file references. "
+            "Example: [\"/home/user/myapp\", \"/srv/services/api\"]"
+        ),
+    )
+    container_repo_map: Dict[str, str] = Field(
+        default={},
+        description=(
+            "Explicit mapping of container name → repository root path. "
+            "Takes precedence over repo_paths auto-detection. "
+            "Example: {\"api-service\": \"/home/user/api\", \"worker\": \"/home/user/worker\"}"
+        ),
+    )
+    code_context_lines: int = Field(
+        default=10,
+        description="Lines of source code to show before/after the error line in analyze_code_context",
+    )
+    max_stack_frames: int = Field(
+        default=10,
+        description="Maximum stack frames to extract per error event in analyze_code_context",
     )
 
     # Error Patterns for spike and correlation detection
