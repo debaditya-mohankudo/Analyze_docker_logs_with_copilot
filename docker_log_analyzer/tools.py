@@ -800,6 +800,13 @@ def tool_analyze_root_causes(
     else:
         targets = client.container.list()
 
+    params = {
+        "containers": containers,
+        "tail": tail,
+        "time_window_seconds": time_window_seconds,
+        "include_transitive": include_transitive,
+    }
+
     if not targets:
         return {
             "status": "success",
@@ -811,12 +818,7 @@ def tool_analyze_root_causes(
                 "dependency_edges": 0,
             },
             "cache_hits": {},
-            "parameters": {
-                "containers": containers,
-                "tail": tail,
-                "time_window_seconds": time_window_seconds,
-                "include_transitive": include_transitive,
-            },
+            "parameters": params,
             "message": "No running containers.",
         }
 
@@ -864,12 +866,7 @@ def tool_analyze_root_causes(
             "dependency_edges": dependency_edges,
         },
         "cache_hits": cache_hits,
-        "parameters": {
-            "containers": containers,
-            "tail": tail,
-            "time_window_seconds": time_window_seconds,
-            "include_transitive": include_transitive,
-        },
+        "parameters": params,
     }
 
 
