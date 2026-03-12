@@ -122,6 +122,8 @@ uv run pytest tests/
 - No API keys required
 - All analysis runs locally — no data leaves the machine
 
+Full details: **[doc/WIKI_SECURITY.md](doc/WIKI_SECURITY.md)** — secret detection patterns, redaction rules, path confinement guardrails.
+
 ## License
 
 MIT
