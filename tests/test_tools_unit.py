@@ -605,4 +605,97 @@ class TestToolAnalyzeCodeContextWrapper:
             out = tools.tool_analyze_code_context("api")  # language=None → auto-detect
         # If detected_lang were a tuple, coderepo.py:147 would raise AttributeError
         assert out["status"] in ("success", "no_frames")
+
+
+# ---------------------------------------------------------------------------
+# tool_analyze_root_causes — return-structure contract
+# ---------------------------------------------------------------------------
+
+# Required top-level keys for BOTH return paths (empty containers + normal).
+# If you need to add or rename a key, update this set AND the tool together —
+# the test is the canonical contract for what callers can rely on.
+_ROOT_CAUSES_REQUIRED_KEYS = frozenset({
+    "status",
+    "root_causes",
+    "analysis_inputs",
+    "cache_hits",
+    "parameters",
+})
+
+_ANALYSIS_INPUTS_REQUIRED_KEYS = frozenset({
+    "containers_analyzed",
+    "spikes_detected",
+    "cascade_candidates",
+    "dependency_edges",
+})
+
+_PARAMETERS_REQUIRED_KEYS = frozenset({
+    "containers",
+    "tail",
+    "time_window_seconds",
+    "include_transitive",
+})
+
+
+class TestToolAnalyzeRootCausesContract:
+    """
+    These tests guard the return-structure contract of tool_analyze_root_causes.
+    They do NOT test correctness of scoring — only that callers can rely on the
+    documented key set across every return path.
+    """
+
+    def _make_client_with_containers(self, containers):
+        client = MagicMock()
+        client.system.info.return_value = {"ok": True}
+        client.container.list.return_value = containers
+        client.container.inspect.side_effect = lambda name: next(
+            (c for c in containers if c.name.lstrip("/") == name), None
+        )
+        return client
+
+    def test_empty_containers_has_required_keys(self):
+        client = _mock_client(list_containers=[])
+        with patch("docker_log_analyzer.tools._docker_client", return_value=client):
+            out = tools.tool_analyze_root_causes()
+        assert _ROOT_CAUSES_REQUIRED_KEYS <= out.keys(), (
+            f"Missing keys: {_ROOT_CAUSES_REQUIRED_KEYS - out.keys()}"
+        )
+        assert _ANALYSIS_INPUTS_REQUIRED_KEYS <= out["analysis_inputs"].keys()
+        assert _PARAMETERS_REQUIRED_KEYS <= out["parameters"].keys()
+        assert out["status"] == "success"
+        assert out["root_causes"] == []
+
+    def test_normal_path_has_required_keys(self):
+        c = _FakeContainer("/svc-a", logs_result=b"2024-01-01T00:00:00Z ERROR boom\n")
+        client = _mock_client(list_containers=[c])
+        with patch("docker_log_analyzer.tools._docker_client", return_value=client):
+            out = tools.tool_analyze_root_causes()
+        assert _ROOT_CAUSES_REQUIRED_KEYS <= out.keys(), (
+            f"Missing keys: {_ROOT_CAUSES_REQUIRED_KEYS - out.keys()}"
+        )
+        assert _ANALYSIS_INPUTS_REQUIRED_KEYS <= out["analysis_inputs"].keys()
+        assert _PARAMETERS_REQUIRED_KEYS <= out["parameters"].keys()
+        assert out["status"] == "success"
+
+    def test_docker_error_returns_error_status(self):
+        with patch("docker_log_analyzer.tools._docker_client", side_effect=RuntimeError("down")):
+            out = tools.tool_analyze_root_causes()
+        assert out["status"] == "error"
+        assert "error" in out
+
+    def test_parameters_reflect_call_arguments(self):
+        c = _FakeContainer("/svc-a", logs_result=b"")
+        client = _mock_client(list_containers=[c], inspect_map={"svc-a": c})
+        with patch("docker_log_analyzer.tools._docker_client", return_value=client):
+            out = tools.tool_analyze_root_causes(
+                containers=["svc-a"],
+                tail=100,
+                time_window_seconds=300,
+                include_transitive=True,
+            )
+        p = out["parameters"]
+        assert p["containers"] == ["svc-a"]
+        assert p["tail"] == 100
+        assert p["time_window_seconds"] == 300
+        assert p["include_transitive"] is True
         assert isinstance(out.get("language", ""), str)

@@ -22,6 +22,9 @@ Key principles that have guided this codebase:
   reaching for abstractions.
 - **Readability counts** — a reader should understand intent at the definition site,
   not by tracing through dispatch logic.
+- **Enforce contracts with tests, not code complexity** — use test classes with
+  `frozenset` key assertions to guard return structures instead of TypedDict,
+  runtime assertions, or defensive wrappers.
 
 -------------------------------------------------------------------------------
 ## 1. CORE DESIGN PRINCIPLES
