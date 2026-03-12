@@ -218,6 +218,21 @@ class PatternDetector:
         },
     }
 
+    # Compiled alternation regexes — built once from LANGUAGE_PATTERNS / FRAMEWORK_PATTERNS
+    # at class-definition time so detect_language / detect_framework make one .search()
+    # call per language per line instead of one call per pattern per line.
+    _LANGUAGE_RE: Dict[str, re.Pattern] = {
+        lang: re.compile("|".join(f"(?:{p})" for p in pats), re.IGNORECASE)
+        for lang, pats in LANGUAGE_PATTERNS.items()
+    }
+    _FRAMEWORK_RE: Dict[str, Dict[str, re.Pattern]] = {
+        lang: {
+            fw: re.compile("|".join(f"(?:{p})" for p in pats), re.IGNORECASE)
+            for fw, pats in frameworks.items()
+        }
+        for lang, frameworks in FRAMEWORK_PATTERNS.items()
+    }
+
     # Health check patterns (repeating, low-noise logs)
     HEALTH_CHECK_PATTERNS = [
         r"health check (passed|ok|successful)",
@@ -249,22 +264,21 @@ class PatternDetector:
         Returns: (language, confidence)
         """
         scores = defaultdict(int)
-        
+
         for log_line in log_lines:
-            for language, patterns in PatternDetector.LANGUAGE_PATTERNS.items():
-                for pattern in patterns:
-                    if re.search(pattern, log_line, re.IGNORECASE):
-                        scores[language] += 1
-        
+            for language, combined_re in PatternDetector._LANGUAGE_RE.items():
+                if combined_re.search(log_line):
+                    scores[language] += 1
+
         if not scores:
             return ("unknown", 0.0)
-        
+
         best_lang = max(scores, key=scores.get)
         best_score = scores[best_lang]
-        
+
         # Normalize confidence (0-1)
         confidence = min(best_score / max(len(log_lines), 1), 1.0)
-        
+
         return (best_lang, confidence)
 
     @staticmethod
@@ -275,16 +289,15 @@ class PatternDetector:
         Vert.x, Helidon, WildFly, Dropwizard.
         Returns the framework name or None if undetected.
         """
-        lang_frameworks = PatternDetector.FRAMEWORK_PATTERNS.get(language)
+        lang_frameworks = PatternDetector._FRAMEWORK_RE.get(language)
         if not lang_frameworks:
             return None
 
         scores: Dict[str, int] = defaultdict(int)
         for log_line in log_lines:
-            for framework, patterns in lang_frameworks.items():
-                for pattern in patterns:
-                    if re.search(pattern, log_line, re.IGNORECASE):
-                        scores[framework] += 1
+            for framework, combined_re in lang_frameworks.items():
+                if combined_re.search(log_line):
+                    scores[framework] += 1
 
         if not scores:
             return None

@@ -195,6 +195,13 @@ class SecretDetector:
         
         # Pre-compile all patterns for performance
         self._compiled = {p.name: re.compile(p.pattern, re.IGNORECASE) for p in self.patterns}
+
+        # Combined pre-filter: one regex that matches if ANY pattern could fire.
+        # Used as a fast-path guard so clean lines skip all 20 individual finditer calls.
+        self._any_pattern_re = re.compile(
+            "|".join(f"(?:{p.pattern})" for p in self.patterns),
+            re.IGNORECASE,
+        )
     
     def scan_logs(
         self,
@@ -229,6 +236,10 @@ class SecretDetector:
             if docker_ts_match:
                 timestamp, message = docker_ts_match.groups()
             
+            # Fast-path: skip all individual patterns if no secret signature present.
+            if not self._any_pattern_re.search(message):
+                continue
+
             # Scan each pattern
             for pattern_obj in self.patterns:
                 if pattern_obj.severity not in allowed_severities:
