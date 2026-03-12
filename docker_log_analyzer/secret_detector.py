@@ -63,6 +63,7 @@ class SecretDetector:
                 name="AWS Secret Access Key",
                 severity="critical",
                 description="AWS secret key assignment",
+                recommendation="AWS credentials detected: rotate keys and check CloudTrail for abuse",
             ),
             # Private Keys (RSA, EC, OpenSSH)
             SecretPattern(
@@ -78,6 +79,7 @@ class SecretDetector:
                 name="GitHub Token",
                 severity="critical",
                 description="GitHub personal/OAuth/app token",
+                recommendation="GitHub token detected: revoke at github.com/settings/tokens and audit recent API activity",
             ),
             # Stripe Secret Keys (live)
             SecretPattern(
@@ -95,6 +97,7 @@ class SecretDetector:
                 name="Generic API Key",
                 severity="high",
                 description="API key assignment pattern",
+                recommendation="API key in logs: rotate the key and restrict its permissions",
             ),
             # Bearer Tokens (with optional refresh tokens)
             SecretPattern(
@@ -102,6 +105,7 @@ class SecretDetector:
                 name="Bearer Token",
                 severity="high",
                 description="OAuth bearer token",
+                recommendation="Bearer token in logs: invalidate the token and reissue",
             ),
             # Database Connection Strings (with protocol)
             SecretPattern(
@@ -117,6 +121,7 @@ class SecretDetector:
                 name="Slack Token",
                 severity="high",
                 description="Slack bot/app token",
+                recommendation="Slack token in logs: revoke at api.slack.com/apps and rotate bot credentials",
             ),
             # JWT Tokens (3 base64 parts separated by dots)
             SecretPattern(
@@ -124,6 +129,7 @@ class SecretDetector:
                 name="JWT Token",
                 severity="high",
                 description="JSON Web Token (JWT)",
+                recommendation="JWT in logs: rotate the signing secret and invalidate existing tokens",
             ),
             # Google API Keys
             SecretPattern(
@@ -139,6 +145,7 @@ class SecretDetector:
                 name="Stripe Publishable Key",
                 severity="high",
                 description="Stripe live publishable API key",
+                recommendation="Stripe publishable key in logs: rotate at dashboard.stripe.com (low risk but rotate if secret key also exposed)",
             ),
             # Azure Storage Account Keys
             SecretPattern(
@@ -154,6 +161,7 @@ class SecretDetector:
                 name="OAuth Client Secret",
                 severity="high",
                 description="OAuth client secret detected",
+                recommendation="OAuth client secret in logs: rotate in the identity provider and update all deployments",
             ),
 
             # === MEDIUM SEVERITY ===
@@ -163,6 +171,7 @@ class SecretDetector:
                 name="Password Assignment",
                 severity="medium",
                 description="Password variable assignment with quotes",
+                recommendation="Password in logs: change immediately and avoid logging credentials",
             ),
             # Email addresses (PII)
             SecretPattern(
@@ -170,6 +179,7 @@ class SecretDetector:
                 name="Email Address",
                 severity="medium",
                 description="Email address (PII)",
+                recommendation="Email address (PII) in logs: review GDPR/privacy compliance and redact from log output",
             ),
             # Credit card patterns (flexible spacing)
             SecretPattern(
@@ -177,6 +187,7 @@ class SecretDetector:
                 name="Credit Card Number",
                 severity="medium",
                 description="Credit/debit card number pattern",
+                recommendation="Credit card number in logs: report to compliance team and ensure PCI-DSS logging controls are in place",
             ),
             # Generic secret/token assignments
             SecretPattern(
@@ -184,6 +195,7 @@ class SecretDetector:
                 name="Secret Assignment",
                 severity="medium",
                 description="Generic secret/token variable",
+                recommendation="Secret/token in logs: rotate the value and remove from log output",
             ),
             # Base64-encoded secrets (key/token/secret assignments without quotes)
             SecretPattern(
@@ -191,6 +203,7 @@ class SecretDetector:
                 name="Base64 Encoded Secret",
                 severity="medium",
                 description="Possible base64-encoded secret value",
+                recommendation="Possible encoded secret in logs: verify and rotate if confirmed, remove from log output",
             ),
             # Session cookies
             SecretPattern(
@@ -198,6 +211,7 @@ class SecretDetector:
                 name="Session Cookie",
                 severity="medium",
                 description="Session token exposed in logs",
+                recommendation="Session token in logs: invalidate the session and review cookie logging configuration",
             ),
         ]
         
