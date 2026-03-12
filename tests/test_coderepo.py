@@ -246,6 +246,15 @@ class TestFindFileInRepo:
         result = find_file_in_repo(tmp_path, str(f))
         assert result == f
 
+    def test_absolute_path_outside_repo_is_rejected(self, tmp_path):
+        # A file that exists on the host but is outside repo_root must not be returned.
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        outside = tmp_path / "secret.txt"
+        outside.write_text("sensitive")
+        result = find_file_in_repo(repo, str(outside))
+        assert result is None
+
     def test_basename_search(self, tmp_path):
         (tmp_path / "pkg" / "server").mkdir(parents=True)
         f = tmp_path / "pkg" / "server" / "Service.java"
