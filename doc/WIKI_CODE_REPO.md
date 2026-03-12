@@ -13,11 +13,10 @@ No LLM. No network calls. All analysis is local file I/O + regex.
 ## What It Does
 
 1. Fetches the last `tail` log lines from the target container
-2. Filters to error/fatal lines
-3. Parses stack traces using language-specific regex (Python, Java, Go, Node.js)
-4. Resolves each frame's file path against a configured repository root
-5. Extracts `context_lines` of source code around each error location
-6. Returns structured frames with inline code context
+2. Parses stack traces using language-specific regex (Python, Java, Go, Node.js)
+3. Resolves each frame's file path against a configured repository root
+4. Extracts `context_lines` of source code around each error location
+5. Returns structured frames with inline code context
 
 ---
 
@@ -86,8 +85,8 @@ If no repo is configured, the tool still returns parsed frames but with
 | Go | `/home/user/app/main.go:42 +0x1a3` |
 | Node.js | `at handleRequest (/app/server.js:42:10)` |
 
-Language is auto-detected from `analyze_patterns` results. Use the `language`
-parameter to force a specific parser.
+Language is auto-detected by running `PatternDetector.detect_language()` directly
+on the fetched log lines. Use the `language` parameter to force a specific parser.
 
 ---
 
@@ -193,5 +192,5 @@ PLAN:
 - **Stateless** — no cross-call state; every call is a fresh fetch + parse
 - **No LLM** — pure regex parsing + file I/O; deterministic and reproducible offline
 - **Graceful degradation** — works without a repo configured (returns frames, warns about missing context)
-- **Language auto-detection** — delegates to `PatternDetector.detect_language()` from `log_pattern_analyzer.py`
+- **Language auto-detection** — `PatternDetector.detect_language()` is called on the fetched lines; no prior `analyze_patterns` call required
 - **Basename fallback** — Java's short file names (e.g. `Service.java`) are found via `rglob` when relative resolution fails
