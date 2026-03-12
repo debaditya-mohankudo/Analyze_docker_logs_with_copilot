@@ -88,9 +88,14 @@ class TestGeneratePlanStructure:
         numbers = [s["step"] for s in result["plan"]]
         assert numbers == list(range(1, len(numbers) + 1))
 
-    def test_first_step_always_list_containers(self, tmp_path):
+    def test_first_step_list_containers_when_no_scope(self, tmp_path):
         result = generate_plan(["something crashed"], plans_dir=tmp_path)
         assert result["plan"][0]["action"] == "list_containers"
+
+    def test_no_list_containers_when_scope_provided(self, tmp_path):
+        result = generate_plan(["something crashed"], containers=["api"], plans_dir=tmp_path)
+        actions = [s["action"] for s in result["plan"]]
+        assert "list_containers" not in actions
 
     def test_last_step_analyze_root_causes_for_general_focus(self, tmp_path):
         result = generate_plan(["some crash"], focus="general", plans_dir=tmp_path)
@@ -125,6 +130,18 @@ class TestGeneratePlanFocus:
     def test_root_cause_focus_includes_dependency_map(self, tmp_path):
         result = generate_plan(["service crash"], focus="root_cause", plans_dir=tmp_path)
         actions = [s["action"] for s in result["plan"]]
+        assert "map_service_dependencies" in actions
+
+    def test_single_container_scope_skips_correlation(self, tmp_path):
+        result = generate_plan(["service crash"], containers=["api"], focus="root_cause", plans_dir=tmp_path)
+        actions = [s["action"] for s in result["plan"]]
+        assert "analyze_correlations" not in actions
+        assert "map_service_dependencies" not in actions
+
+    def test_multi_container_scope_keeps_correlation(self, tmp_path):
+        result = generate_plan(["cascade failure"], containers=["api", "db"], focus="root_cause", plans_dir=tmp_path)
+        actions = [s["action"] for s in result["plan"]]
+        assert "analyze_correlations" in actions
         assert "map_service_dependencies" in actions
 
     def test_invalid_focus_falls_back_to_general(self, tmp_path):

@@ -958,7 +958,6 @@ def tool_analyze_code_context(
     max_frames: int | None = None,
     repo_path: str | None = None,
     language: str | None = None,
-    use_cache: bool = True,
 ) -> dict:
     """
     Parse stack traces from a container's recent error logs and surface the
@@ -987,7 +986,6 @@ def tool_analyze_code_context(
     repo_path      : Explicit path to the repository root. Overrides config.
     language       : Force a language parser: python, java, go, nodejs.
                      Auto-detected from analyze_patterns if omitted.
-    use_cache      : Use cached logs if available (default True).
 
     Returns
     -------
@@ -1012,14 +1010,13 @@ def tool_analyze_code_context(
     except NoSuchContainer:
         return {"status": "error", "error": f"Container '{container_name}' not found."}
 
-    lines = _fetch_logs_with_cache(c, tail=tail) if use_cache else _fetch_logs(c, tail=tail)
-    error_lines = [line for line in lines if ERROR_PATTERN_RE.search(line)]
+    lines = _fetch_logs(c, tail=tail)
 
     # Auto-detect language if not forced
     detected_lang = language or "unknown"
     if language is None:
-        detector_result = PatternDetector.detect_language(lines)
-        detected_lang = detector_result if detector_result else "unknown"
+        lang, _conf = PatternDetector.detect_language(lines)
+        detected_lang = lang if lang else "unknown"
 
     # Build repo map — explicit repo_path overrides everything
     container_repo_map: dict[str, str] = dict(settings.container_repo_map)
@@ -1031,7 +1028,7 @@ def tool_analyze_code_context(
     max_f = max_frames if max_frames is not None else settings.max_stack_frames
 
     return analyse_code_context(
-        log_lines=error_lines,
+        log_lines=lines,
         language=detected_lang,
         container_name=container_name,
         container_repo_map=container_repo_map,

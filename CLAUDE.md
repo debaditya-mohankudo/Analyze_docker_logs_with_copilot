@@ -129,9 +129,37 @@ contributors must manually clear `.cache/patterns/`.
 ## 4. TESTING STRATEGY
 -------------------------------------------------------------------------------
 
+### 4.0 Test Priority Order (CRITICAL)
+
+**Design-principle verification comes before feature testing.**
+
+Every new tool or module must have tests that confirm the core design
+principles hold BEFORE adding tests for functional correctness:
+
+1. **Stateless wiring** – verify the tool's Docker → fetch → analyse → return
+   path works end-to-end (no state leaks between calls).
+2. **Tool isolation** – confirm the tool can be called without any other tool
+   having been called first (no hidden dependencies).
+3. **Error contract** – confirm every failure mode returns structured JSON
+   (`{"status": "error", ...}`) and does not raise an exception.
+4. **Determinism** – same inputs must produce the same outputs.
+
+Only once these pass should feature-level tests (output shape, value ranges,
+field presence) be added.
+
+**Why this order matters:**
+Wiring bugs (wrong function signatures, mis-unpacked return values, wrong
+argument types) are invisible to pure-module tests. A test that mocks the
+Docker client and exercises `tool_<name>()` directly will catch these before
+they reach production. The `analyze_code_context` incident (broken
+`_fetch_logs_with_cache` call, tuple passed where string expected) slipped
+through because only pure-module tests existed for that path.
+
 ### Test Types:
 
 **Unit tests (CI-safe)**
+
+- Design-principle verification for every `tool_*()` wrapper (see §4.0)
 - spike_detector
 - correlator
 - pattern detector

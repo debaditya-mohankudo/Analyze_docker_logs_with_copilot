@@ -140,14 +140,15 @@ def generate_plan(
     step_num = 1
     steps: list[PlanStep] = []
 
-    # -- 1. Always discover running containers --------------------------------
-    steps.append(PlanStep(
-        step=step_num,
-        action="list_containers",
-        target=None,
-        reason="Discover which containers are running to scope the investigation",
-    ))
-    step_num += 1
+    # -- 1. Discover running containers (skip when scope is already explicit) --
+    if not containers:
+        steps.append(PlanStep(
+            step=step_num,
+            action="list_containers",
+            target=None,
+            reason="Discover which containers are running to scope the investigation",
+        ))
+        step_num += 1
 
     # -- 2. Pattern analysis --------------------------------------------------
     if "pattern" in active_signals or "crash" in active_signals or focus in ("general", "root_cause"):
@@ -209,8 +210,9 @@ def generate_plan(
             ))
             step_num += 1
 
-    # -- 5. Cross-container correlation ---------------------------------------
-    if "cascade" in active_signals or "spike" in active_signals or focus in ("root_cause", "general"):
+    # -- 5. Cross-container correlation (requires ≥2 containers) --------------
+    _multi = not containers or len(containers) != 1  # True when scope is broad or explicit ≥2
+    if _multi and ("cascade" in active_signals or "spike" in active_signals or focus in ("root_cause", "general")):
         steps.append(PlanStep(
             step=step_num,
             action="analyze_correlations",
@@ -220,8 +222,8 @@ def generate_plan(
         ))
         step_num += 1
 
-    # -- 6. Map service dependencies ------------------------------------------
-    if "cascade" in active_signals or focus in ("root_cause", "general"):
+    # -- 6. Map service dependencies (requires ≥2 containers) -----------------
+    if _multi and ("cascade" in active_signals or focus in ("root_cause", "general")):
         steps.append(PlanStep(
             step=step_num,
             action="map_service_dependencies",
