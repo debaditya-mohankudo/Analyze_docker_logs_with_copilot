@@ -20,6 +20,8 @@ from docker_log_analyzer.tools import (
     tool_map_service_dependencies,
     tool_start_test_containers,
     tool_stop_test_containers,
+    tool_analyze_code_context,
+    tool_plan_investigation,
 )
 
 
@@ -424,3 +426,74 @@ class TestMapServiceDependencies:
         result = tool_map_service_dependencies(containers=["nonexistent-xyz"])
         assert result["status"] == "error"
         assert "not found" in result["error"].lower()
+
+
+# ── analyze_code_context ──────────────────────────────────────────────────────
+
+class TestAnalyzeCodeContext:
+
+    def test_invalid_container_returns_error(self, docker_client):
+        result = tool_analyze_code_context("nonexistent-xyz")
+        assert result["status"] == "error"
+
+    def test_valid_container_returns_known_status(self, setup_integration_containers, docker_client):
+        # No repo is configured so we expect no_frames or success (never error for a valid container)
+        result = tool_analyze_code_context("test-web-app", tail=100)
+        assert result["status"] in ("success", "no_frames")
+
+    def test_response_contains_required_keys(self, setup_integration_containers, docker_client):
+        result = tool_analyze_code_context("test-web-app", tail=100)
+        assert "status" in result
+        assert "container" in result
+        assert "language" in result
+
+    def test_language_field_is_string(self, setup_integration_containers, docker_client):
+        # Regression: detect_language() returns (str, float); wrapper must unpack to str
+        result = tool_analyze_code_context("test-web-app", tail=100)
+        assert isinstance(result["language"], str)
+
+    def test_forced_language_accepted(self, setup_integration_containers, docker_client):
+        result = tool_analyze_code_context("test-web-app", tail=50, language="python")
+        assert result["status"] in ("success", "no_frames")
+        assert result["language"] == "python"
+
+
+# ── plan_investigation ────────────────────────────────────────────────────────
+
+class TestPlanInvestigation:
+
+    def test_returns_success_status(self, docker_client):
+        result = tool_plan_investigation(symptoms=["high error rate"])
+        assert result["status"] == "success"
+
+    def test_required_keys_present(self, docker_client):
+        result = tool_plan_investigation(symptoms=["service crash"])
+        for key in ("status", "signals_detected", "focus", "containers_in_scope", "step_count", "plan", "plan_file"):
+            assert key in result
+
+    def test_plan_is_non_empty_list(self, docker_client):
+        result = tool_plan_investigation(symptoms=["500 errors in gateway"])
+        assert isinstance(result["plan"], list)
+        assert len(result["plan"]) > 0
+
+    def test_step_numbers_sequential(self, docker_client):
+        result = tool_plan_investigation(symptoms=["latency spike"])
+        numbers = [s["step"] for s in result["plan"]]
+        assert numbers == list(range(1, len(numbers) + 1))
+
+    def test_explicit_container_scope_skips_list_containers(self, setup_integration_containers, docker_client):
+        result = tool_plan_investigation(symptoms=["crash"], containers=["test-web-app"])
+        actions = [s["action"] for s in result["plan"]]
+        assert "list_containers" not in actions
+
+    def test_single_container_scope_skips_correlation(self, setup_integration_containers, docker_client):
+        result = tool_plan_investigation(symptoms=["crash"], containers=["test-web-app"], focus="root_cause")
+        actions = [s["action"] for s in result["plan"]]
+        assert "analyze_correlations" not in actions
+        assert "map_service_dependencies" not in actions
+
+    def test_plan_file_is_created(self, docker_client):
+        import os
+        result = tool_plan_investigation(symptoms=["memory leak"])
+        assert "plan_file" in result
+        assert os.path.isfile(result["plan_file"])

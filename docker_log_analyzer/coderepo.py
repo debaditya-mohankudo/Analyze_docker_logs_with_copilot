@@ -206,12 +206,18 @@ def find_file_in_repo(repo_root: Path, frame_path: str) -> Path | None:
     - Basename-only paths (Java: "Service.java")
     - Paths with internal repo prefix stripped by Docker builds
     """
-    # Absolute path already inside repo
+    # Absolute path — only accept if it resolves within repo_root.
+    # Early-return in all cases: an absolute frame_path must never fall
+    # through to the relative checks below (Path("/repo") / "/abs" = "/abs").
     candidate = Path(frame_path)
     if candidate.is_absolute():
-        if candidate.is_file():
-            return candidate
-        # Try stripping leading separators and re-rooting under repo
+        try:
+            candidate.relative_to(repo_root)  # raises ValueError if outside
+            if candidate.is_file():
+                return candidate
+        except ValueError:
+            pass
+        # Strip anchor and re-root under repo (handles Docker build paths)
         try:
             rel = candidate.relative_to(candidate.anchor)
             rooted = repo_root / rel
@@ -219,6 +225,7 @@ def find_file_in_repo(repo_root: Path, frame_path: str) -> Path | None:
                 return rooted
         except ValueError:
             pass
+        return None  # absolute path not resolvable within repo_root
 
     # Relative path directly from repo root
     rooted = repo_root / frame_path
