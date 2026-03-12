@@ -220,6 +220,29 @@ SecretDetector rules:
 - Must include remediation suggestions
 - Never echo full credential value
 
+### 6.1 Repository Path Confinement (CRITICAL)
+
+`find_file_in_repo` (coderepo.py) MUST enforce that every resolved file path
+is contained within the configured repository root. Failure to do so allows
+stack-frame paths from container logs (e.g. `/etc/passwd`,
+`/home/user/.ssh/id_rsa`) to be read and returned to the caller.
+
+Rules:
+
+- Before accepting an **absolute** frame path, call
+  `candidate.relative_to(repo_root)` — reject (return `None`) if it raises
+  `ValueError`.
+- After the absolute-path block, always `return None` on no-match.
+  Do **not** fall through to the relative-path logic: Python's `/` operator
+  discards the left side when the right operand is absolute
+  (`Path("/repo") / "/etc/passwd"` → `Path("/etc/passwd")`).
+- The re-rooting branch (strip anchor, prepend `repo_root`) is the only
+  permitted way to map an absolute container path to a host file, and only
+  because it always joins *under* `repo_root`.
+
+Every change to `find_file_in_repo` must include a test that passes an
+absolute path **outside** `repo_root` and asserts `None` is returned.
+
 -------------------------------------------------------------------------------
 ## 7. DOCKER INTERACTION RULES
 -------------------------------------------------------------------------------
