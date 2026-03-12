@@ -20,17 +20,18 @@ from typing import Optional
 @dataclass
 class SecretPattern:
     """Represents a detectable secret pattern."""
-    
+
     pattern: str  # Regex pattern
     name: str  # Human-readable name
     severity: str  # "critical", "high", "medium", "low"
     description: str
+    recommendation: str = ""  # Remediation advice — empty means use severity-level fallback
 
 
 @dataclass
 class Finding:
     """Found secret in logs."""
-    
+
     severity: str
     pattern_name: str
     line_number: int
@@ -38,6 +39,7 @@ class Finding:
     context_before: str
     context_after: str
     matched_text_redacted: str  # Never return full secret
+    recommendation: str = ""  # Populated from SecretPattern.recommendation at scan time
 
 
 class SecretDetector:
@@ -53,6 +55,7 @@ class SecretDetector:
                 name="AWS Access Key ID",
                 severity="critical",
                 description="AWS API key format AKIA* (20 chars total)",
+                recommendation="AWS credentials detected: rotate keys and check CloudTrail for abuse",
             ),
             # AWS Secret Keys
             SecretPattern(
@@ -67,6 +70,7 @@ class SecretDetector:
                 name="Private Key Header",
                 severity="critical",
                 description="Private key file content detected",
+                recommendation="Private key file content in logs: revoke key and regenerate",
             ),
             # GitHub Tokens (40+ chars for PAT)
             SecretPattern(
@@ -81,6 +85,7 @@ class SecretDetector:
                 name="Stripe Secret Key",
                 severity="critical",
                 description="Stripe live secret API key",
+                recommendation="Stripe secret key detected: rotate immediately at dashboard.stripe.com",
             ),
 
             # === HIGH SEVERITY ===
@@ -104,6 +109,7 @@ class SecretDetector:
                 name="Database URL with Credentials",
                 severity="high",
                 description="Database connection string with username/password",
+                recommendation="Database credentials in logs: change password and review access logs",
             ),
             # Slack/Discord Tokens
             SecretPattern(
@@ -125,6 +131,7 @@ class SecretDetector:
                 name="Google API Key",
                 severity="high",
                 description="Google Cloud API key",
+                recommendation="Google API key detected: revoke and regenerate in Google Cloud Console",
             ),
             # Stripe Publishable Keys (live)
             SecretPattern(
@@ -139,6 +146,7 @@ class SecretDetector:
                 name="Azure Storage Account Key",
                 severity="high",
                 description="Azure storage account key in connection string",
+                recommendation="Azure storage key detected: regenerate key in Azure Portal",
             ),
             # OAuth Client Secrets
             SecretPattern(
@@ -269,6 +277,7 @@ class SecretDetector:
                             context_before=context_before.strip(),
                             context_after=context_after.strip(),
                             matched_text_redacted=redacted,
+                            recommendation=pattern_obj.recommendation,
                         )
                     )
         
@@ -302,35 +311,27 @@ class SecretDetector:
     
     def get_recommendations(self, findings: list[Finding]) -> list[str]:
         """Generate remediation recommendations based on findings."""
+        if not findings:
+            return []
+
         recommendations = []
         summary = self.get_findings_summary(findings)
-        
+
         if summary["by_severity"].get("critical", 0) > 0:
             recommendations.append("🚨 CRITICAL: Rotate credentials immediately (found in logs)")
-        
-        if summary["by_pattern"].get("AWS Access Key ID", 0) > 0:
-            recommendations.append("AWS credentials detected: rotate keys and check CloudTrail for abuse")
-        
-        if summary["by_pattern"].get("Private Key Header", 0) > 0:
-            recommendations.append("Private key file content in logs: revoke key and regenerate")
-        
-        if summary["by_pattern"].get("Database URL with Credentials", 0) > 0:
-            recommendations.append("Database credentials in logs: change password and review access logs")
 
-        if summary["by_pattern"].get("Stripe Secret Key", 0) > 0:
-            recommendations.append("Stripe secret key detected: rotate immediately at dashboard.stripe.com")
-
-        if summary["by_pattern"].get("Google API Key", 0) > 0:
-            recommendations.append("Google API key detected: revoke and regenerate in Google Cloud Console")
-
-        if summary["by_pattern"].get("Azure Storage Account Key", 0) > 0:
-            recommendations.append("Azure storage key detected: regenerate key in Azure Portal")
+        # Per-pattern recommendations — de-duplicated, order preserved
+        seen: set[str] = set()
+        for finding in findings:
+            if finding.recommendation and finding.recommendation not in seen:
+                recommendations.append(finding.recommendation)
+                seen.add(finding.recommendation)
 
         if summary["by_severity"].get("high", 0) > 0 or summary["by_severity"].get("critical", 0) > 0:
             recommendations.append("Review logging configuration to prevent credential leakage")
             recommendations.append("Consider using environment variables or secret managers instead of logs")
-        
+
         if summary["by_severity"].get("medium", 0) > 0:
             recommendations.append("PII/emails detected in logs: review GDPR/privacy compliance")
-        
+
         return recommendations
