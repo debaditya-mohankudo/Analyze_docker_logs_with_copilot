@@ -126,6 +126,17 @@ def extract_dependencies(
             seen.add(key)
             found.append((target, source, confidence))
 
+    # Build a single combined regex for container name-mention detection.
+    # One findall() per line replaces N re.search() calls per line.
+    qualifying = [n for n in known_containers if len(n) >= 4]
+    name_re: re.Pattern | None = None
+    if qualifying:
+        alts = "|".join(re.escape(n) for n in qualifying)
+        name_re = re.compile(
+            r"(?:^|[\s:/,'\"])(" + alts + r")(?:[\s:/,'\"]|$)",
+            re.IGNORECASE,
+        )
+
     for line in lines:
         # HTTP/HTTPS URLs
         for m in _HTTP_RE.finditer(line):
@@ -152,14 +163,10 @@ def extract_dependencies(
         # Container name mentions in log body (strip Docker timestamp prefix first).
         # Use explicit separator chars instead of \b to avoid matching substrings
         # of longer identifiers (e.g. "api" inside "grapiql").
-        body = re.sub(r"^\S+Z\s+", "", line)
-        for name in known_containers:
-            if len(name) >= 4 and re.search(
-                r"(?:^|[\s:/,'\"])" + re.escape(name) + r"(?:[\s:/,'\"]|$)",
-                body,
-                re.IGNORECASE,
-            ):
-                _add(name, "name_mention", "low")
+        if name_re:
+            body = re.sub(r"^\S+Z\s+", "", line)
+            for m in name_re.finditer(body):
+                _add(m.group(1), "name_mention", "low")
 
     return found
 
