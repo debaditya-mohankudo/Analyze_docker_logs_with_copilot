@@ -209,10 +209,14 @@ def find_file_in_repo(repo_root: Path, frame_path: str) -> Path | None:
     # Absolute path — only accept if it resolves within repo_root.
     # Early-return in all cases: an absolute frame_path must never fall
     # through to the relative checks below (Path("/repo") / "/abs" = "/abs").
+    # repo_root is resolved to absolute first: relative_to() requires both
+    # operands to be absolute (or both relative with a common base), and
+    # repo_root may be a relative path when REPO_PATHS is configured as ".".
     candidate = Path(frame_path)
     if candidate.is_absolute():
+        resolved_root = repo_root.resolve()
         try:
-            candidate.relative_to(repo_root)  # raises ValueError if outside
+            candidate.relative_to(resolved_root)  # raises ValueError if outside
             if candidate.is_file():
                 return candidate
         except ValueError:
@@ -220,7 +224,7 @@ def find_file_in_repo(repo_root: Path, frame_path: str) -> Path | None:
         # Strip anchor and re-root under repo (handles Docker build paths)
         try:
             rel = candidate.relative_to(candidate.anchor)
-            rooted = repo_root / rel
+            rooted = resolved_root / rel
             if rooted.is_file():
                 return rooted
         except ValueError:

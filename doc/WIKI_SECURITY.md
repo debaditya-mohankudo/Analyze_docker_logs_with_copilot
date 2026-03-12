@@ -78,18 +78,32 @@ enforcement, those paths would be read and returned to the caller.
 
 #### Rule 1 — Containment before existence check
 
-Before accepting any **absolute** frame path, confirm it is under `repo_root`:
+Before accepting any **absolute** frame path, resolve `repo_root` to an
+absolute path and confirm the candidate is under it:
 
 ```python
+resolved_root = repo_root.resolve()   # must precede relative_to — see Rule 1a
 try:
-    candidate.relative_to(repo_root)   # raises ValueError if outside
+    candidate.relative_to(resolved_root)   # raises ValueError if outside
     if candidate.is_file():
         return candidate
 except ValueError:
     pass
 ```
 
-Never call `candidate.is_file()` before `relative_to(repo_root)` passes.
+Never call `candidate.is_file()` before `relative_to(resolved_root)` passes.
+
+#### Rule 1a — Always resolve `repo_root` before `relative_to`
+
+`Path.relative_to()` requires both operands to share a common absolute (or
+relative) prefix. When `REPO_PATHS` is configured as `.`, `repo_root` is a
+relative path and `relative_to(repo_root)` raises `ValueError` for every
+absolute frame path — including legitimate ones inside the repo — silently
+breaking code-context extraction for the common `REPO_PATHS=.` config.
+
+`repo_root.resolve()` converts the configured path to its absolute host
+equivalent before any comparison. The same resolved root is used for the
+re-rooting branch (Rule 3).
 
 #### Rule 2 — Early return after the absolute block
 
