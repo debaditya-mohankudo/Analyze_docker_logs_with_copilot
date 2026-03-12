@@ -21,6 +21,9 @@ Use this table to answer questions with minimal hops.
 | "How does dependency mapping work?" | [WIKI_TOOLS.md § map_service_dependencies](WIKI_TOOLS.md#10-map_service_dependencies) | [WIKI_ARCHITECTURE.md § Dependency Mapping](WIKI_ARCHITECTURE.md#dependency-mapping) | [WIKI_TOOLS.md](WIKI_TOOLS.md) |
 | "How do I create an investigation plan?" | [WIKI_INVESTIGATION_PLANNER.md](WIKI_INVESTIGATION_PLANNER.md) | [WIKI_TOOLS.md § plan_investigation](WIKI_TOOLS.md#13-plan_investigation) | [WIKI_INVESTIGATION_PLANNER.md](WIKI_INVESTIGATION_PLANNER.md) |
 | "How do I see the code around a container error?" | [WIKI_CODE_REPO.md](WIKI_CODE_REPO.md) | [WIKI_TOOLS.md § analyze_code_context](WIKI_TOOLS.md#14-analyze_code_context) | [WIKI_CODE_REPO.md](WIKI_CODE_REPO.md) |
+| "How does secret detection / redaction work?" | [WIKI_SECURITY.md](WIKI_SECURITY.md) | — | [WIKI_SECURITY.md](WIKI_SECURITY.md) |
+| "What are the path confinement / security guardrails?" | [WIKI_SECURITY.md](WIKI_SECURITY.md) | — | [WIKI_SECURITY.md](WIKI_SECURITY.md) |
+| "How do I add a secret pattern?" | [WIKI_SECURITY.md § Adding a new secret pattern](WIKI_SECURITY.md#adding-a-new-secret-pattern) | — | [WIKI_SECURITY.md](WIKI_SECURITY.md) |
 
 ---
 
@@ -34,6 +37,7 @@ Use this table to answer questions with minimal hops.
 | Module design, algorithms, signal confidence | [WIKI_ARCHITECTURE.md](WIKI_ARCHITECTURE.md) |
 | Setup, config, cache, remote Docker | [WIKI_OPERATIONS.md](WIKI_OPERATIONS.md) |
 | Test strategy, CI, coverage targets | [WIKI_QUALITY.md](WIKI_QUALITY.md) |
+| Security guardrails (secret detection, path confinement) | [WIKI_SECURITY.md](WIKI_SECURITY.md) |
 
 ---
 
@@ -59,6 +63,7 @@ Use this table to answer questions with minimal hops.
 | [WIKI_COPILOT_PROMPTS.md](WIKI_COPILOT_PROMPTS.md) | Natural language prompts organized by workflow |
 | [WIKI_OPERATIONS.md](WIKI_OPERATIONS.md) | Setup, configuration, cache, remote Docker |
 | [WIKI_QUALITY.md](WIKI_QUALITY.md) | Test suite, CI, coverage, adding tests |
+| [WIKI_SECURITY.md](WIKI_SECURITY.md) | Secret detection, redaction rules, path confinement guardrails |
 
 ## Proposals
 

@@ -207,41 +207,21 @@ Errors must:
 - Not crash server
 
 -------------------------------------------------------------------------------
-## 6. SECRET DETECTION SAFETY
+## 6. SECURITY
 -------------------------------------------------------------------------------
 
-SecretDetector rules:
+**Canonical document:** [doc/WIKI_SECURITY.md](doc/WIKI_SECURITY.md)
 
-- Must redact secrets before returning
-- Must categorize severity:
-    - critical
-    - high
-    - medium
-- Must include remediation suggestions
-- Never echo full credential value
+All security rules live there. Summary of the two critical areas:
 
-### 6.1 Repository Path Confinement (CRITICAL)
+- **Secret detection** — `SecretDetector` must redact before returning,
+  categorize severity (critical / high / medium), and never echo raw credential
+  values. See §1 of the security doc.
 
-`find_file_in_repo` (coderepo.py) MUST enforce that every resolved file path
-is contained within the configured repository root. Failure to do so allows
-stack-frame paths from container logs (e.g. `/etc/passwd`,
-`/home/user/.ssh/id_rsa`) to be read and returned to the caller.
-
-Rules:
-
-- Before accepting an **absolute** frame path, call
-  `candidate.relative_to(repo_root)` — reject (return `None`) if it raises
-  `ValueError`.
-- After the absolute-path block, always `return None` on no-match.
-  Do **not** fall through to the relative-path logic: Python's `/` operator
-  discards the left side when the right operand is absolute
-  (`Path("/repo") / "/etc/passwd"` → `Path("/etc/passwd")`).
-- The re-rooting branch (strip anchor, prepend `repo_root`) is the only
-  permitted way to map an absolute container path to a host file, and only
-  because it always joins *under* `repo_root`.
-
-Every change to `find_file_in_repo` must include a test that passes an
-absolute path **outside** `repo_root` and asserts `None` is returned.
+- **Repository path confinement** — `find_file_in_repo` must call
+  `relative_to(repo_root)` before any `is_file()` check on absolute paths,
+  and must `return None` after the absolute block to prevent Python's `/`
+  operator from discarding the repo root. See §2 of the security doc.
 
 -------------------------------------------------------------------------------
 ## 7. DOCKER INTERACTION RULES
