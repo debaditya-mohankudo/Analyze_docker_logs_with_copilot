@@ -255,6 +255,29 @@ class TestFindFileInRepo:
         result = find_file_in_repo(repo, str(outside))
         assert result is None
 
+    def test_absolute_path_inside_relative_repo_root(self, tmp_path, monkeypatch):
+        # Regression: when repo_root is a relative path (e.g. REPO_PATHS="."),
+        # find_file_in_repo must still resolve absolute frame paths that point
+        # inside the repo — it must not silently return None for valid configs.
+        f = tmp_path / "app" / "main.py"
+        f.parent.mkdir()
+        f.write_text("# main")
+        # CWD set to tmp_path so that Path(".") resolves to tmp_path
+        monkeypatch.chdir(tmp_path)
+        result = find_file_in_repo(Path("."), str(f))
+        assert result == f.resolve()
+
+    def test_absolute_path_outside_relative_repo_root_rejected(self, tmp_path, monkeypatch):
+        # Security: even with a relative repo_root, absolute paths outside it
+        # must still be rejected after the resolve() fix.
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        outside = tmp_path / "secret.txt"
+        outside.write_text("sensitive")
+        monkeypatch.chdir(repo)
+        result = find_file_in_repo(Path("."), str(outside))
+        assert result is None
+
     def test_basename_search(self, tmp_path):
         (tmp_path / "pkg" / "server").mkdir(parents=True)
         f = tmp_path / "pkg" / "server" / "Service.java"
