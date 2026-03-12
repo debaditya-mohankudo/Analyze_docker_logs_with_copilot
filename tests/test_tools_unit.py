@@ -50,6 +50,7 @@ class _FakeFinding:
     context_before: str
     context_after: str
     matched_text_redacted: str
+    recommendation: str = ""
 
 
 class _FakePatternDetector:
@@ -699,3 +700,180 @@ class TestToolAnalyzeRootCausesContract:
         assert p["time_window_seconds"] == 300
         assert p["include_transitive"] is True
         assert isinstance(out.get("language", ""), str)
+
+
+# ---------------------------------------------------------------------------
+# tool_plan_investigation — return-structure contract
+# ---------------------------------------------------------------------------
+
+# Top-level keys present on every successful call.
+# If you add or rename a key, update this set AND the tool/planner together.
+_PLAN_REQUIRED_KEYS = frozenset({
+    "status",
+    "signals_detected",
+    "focus",
+    "containers_in_scope",
+    "step_count",
+    "plan",
+    "plan_file",
+})
+
+# Each step dict must always carry at least these three keys.
+# 'target' and 'parameters' are optional (omitted when not applicable).
+_STEP_REQUIRED_KEYS = frozenset({"step", "action", "reason"})
+
+
+class TestToolPlanInvestigationContract:
+    """
+    Guards the return-structure contract of tool_plan_investigation.
+    Tests run without Docker — generate_plan is pure (no I/O beyond file write).
+    """
+
+    def test_success_path_has_required_keys(self, tmp_path):
+        with patch("docker_log_analyzer.tools.generate_plan",
+                   wraps=lambda **kw: __import__(
+                       "docker_log_analyzer.investigation_planner",
+                       fromlist=["generate_plan"]
+                   ).generate_plan(**kw, plans_dir=tmp_path)):
+            out = tools.tool_plan_investigation(["payment-service returning 500s"])
+        assert _PLAN_REQUIRED_KEYS <= out.keys(), (
+            f"Missing keys: {_PLAN_REQUIRED_KEYS - out.keys()}"
+        )
+
+    def test_every_step_has_required_keys(self, tmp_path):
+        with patch("docker_log_analyzer.tools.generate_plan",
+                   wraps=lambda **kw: __import__(
+                       "docker_log_analyzer.investigation_planner",
+                       fromlist=["generate_plan"]
+                   ).generate_plan(**kw, plans_dir=tmp_path)):
+            out = tools.tool_plan_investigation(["high error rate"])
+        for step in out["plan"]:
+            assert _STEP_REQUIRED_KEYS <= step.keys(), (
+                f"Step missing keys: {_STEP_REQUIRED_KEYS - step.keys()}"
+            )
+
+    def test_step_count_matches_plan_length(self, tmp_path):
+        with patch("docker_log_analyzer.tools.generate_plan",
+                   wraps=lambda **kw: __import__(
+                       "docker_log_analyzer.investigation_planner",
+                       fromlist=["generate_plan"]
+                   ).generate_plan(**kw, plans_dir=tmp_path)):
+            out = tools.tool_plan_investigation(["crash in api"])
+        assert out["step_count"] == len(out["plan"])
+
+    def test_focus_and_containers_reflected_in_output(self, tmp_path):
+        with patch("docker_log_analyzer.tools.generate_plan",
+                   wraps=lambda **kw: __import__(
+                       "docker_log_analyzer.investigation_planner",
+                       fromlist=["generate_plan"]
+                   ).generate_plan(**kw, plans_dir=tmp_path)):
+            out = tools.tool_plan_investigation(
+                ["leaked credentials"], containers=["api"], focus="security"
+            )
+        assert out["focus"] == "security"
+        assert "api" in out["containers_in_scope"]
+        assert out["status"] == "success"
+
+
+# ---------------------------------------------------------------------------
+# tool_detect_data_leaks — return-structure contract
+# ---------------------------------------------------------------------------
+
+# Top-level keys present on every successful scan (with ≥1 container).
+# The "no running containers" path intentionally returns only status+message
+# and is excluded from this contract (it is a no-op sentinel, not a scan).
+_DATA_LEAKS_REQUIRED_KEYS = frozenset({
+    "status",
+    "scan_window",
+    "containers_scanned",
+    "cache_hits",
+    "findings",
+    "summary",
+    "per_container",
+    "recommendations",
+})
+
+_SCAN_WINDOW_REQUIRED_KEYS = frozenset({"start", "end", "duration_seconds"})
+
+# Keys present on every finding dict emitted by the tool.
+_FINDING_REQUIRED_KEYS = frozenset({
+    "container",
+    "severity",
+    "pattern_name",
+    "matched_text",
+    "line_number",
+    "timestamp",
+    "context_before",
+    "context_after",
+})
+
+
+class TestToolDetectDataLeaksContract:
+    """
+    Guards the return-structure contract of tool_detect_data_leaks.
+    Uses AsyncMock for asyncio.sleep so tests complete instantly.
+    """
+
+    def _run(self, coro):
+        return asyncio.run(coro)
+
+    def _base_patches(self, client, logs=None, findings=None):
+        """Return a list of context managers for the common happy-path patches."""
+        from unittest.mock import patch, AsyncMock
+        return [
+            patch("docker_log_analyzer.tools._docker_client", return_value=client),
+            patch("docker_log_analyzer.tools.asyncio.sleep", new=AsyncMock()),
+            patch("docker_log_analyzer.tools._fetch_logs_with_cache",
+                  return_value=(logs or ["log line"], False)),
+            patch("docker_log_analyzer.tools.SecretDetector",
+                  return_value=_FakeSecretDetector(findings or [])),
+        ]
+
+    def test_success_path_has_required_keys(self):
+        c = _FakeContainer("/svc")
+        client = _mock_client(list_containers=[c])
+        with patch("docker_log_analyzer.tools._docker_client", return_value=client), \
+             patch("docker_log_analyzer.tools.asyncio.sleep", new=AsyncMock()), \
+             patch("docker_log_analyzer.tools._fetch_logs_with_cache", return_value=(["line"], False)), \
+             patch("docker_log_analyzer.tools.SecretDetector", return_value=_FakeSecretDetector()):
+            out = self._run(tools.tool_detect_data_leaks(duration_seconds=0))
+        assert _DATA_LEAKS_REQUIRED_KEYS <= out.keys(), (
+            f"Missing keys: {_DATA_LEAKS_REQUIRED_KEYS - out.keys()}"
+        )
+
+    def test_scan_window_has_required_keys(self):
+        c = _FakeContainer("/svc")
+        client = _mock_client(list_containers=[c])
+        with patch("docker_log_analyzer.tools._docker_client", return_value=client), \
+             patch("docker_log_analyzer.tools.asyncio.sleep", new=AsyncMock()), \
+             patch("docker_log_analyzer.tools._fetch_logs_with_cache", return_value=(["line"], False)), \
+             patch("docker_log_analyzer.tools.SecretDetector", return_value=_FakeSecretDetector()):
+            out = self._run(tools.tool_detect_data_leaks(duration_seconds=0))
+        assert _SCAN_WINDOW_REQUIRED_KEYS <= out["scan_window"].keys(), (
+            f"Missing scan_window keys: {_SCAN_WINDOW_REQUIRED_KEYS - out['scan_window'].keys()}"
+        )
+
+    def test_each_finding_has_required_keys(self):
+        c = _FakeContainer("/svc")
+        client = _mock_client(list_containers=[c])
+        finding = _FakeFinding(
+            severity="critical", pattern_name="AWS Access Key ID",
+            line_number=1, timestamp="2026-01-01T00:00:00Z",
+            context_before="before", context_after="after",
+            matched_text_redacted="AK**",
+        )
+        with patch("docker_log_analyzer.tools._docker_client", return_value=client), \
+             patch("docker_log_analyzer.tools.asyncio.sleep", new=AsyncMock()), \
+             patch("docker_log_analyzer.tools._fetch_logs_with_cache", return_value=(["line"], False)), \
+             patch("docker_log_analyzer.tools.SecretDetector", return_value=_FakeSecretDetector([finding])):
+            out = self._run(tools.tool_detect_data_leaks(duration_seconds=0))
+        assert len(out["findings"]) == 1
+        assert _FINDING_REQUIRED_KEYS <= out["findings"][0].keys(), (
+            f"Missing finding keys: {_FINDING_REQUIRED_KEYS - out['findings'][0].keys()}"
+        )
+
+    def test_docker_error_returns_error_status(self):
+        with patch("docker_log_analyzer.tools._docker_client", side_effect=RuntimeError("down")):
+            out = self._run(tools.tool_detect_data_leaks(duration_seconds=0))
+        assert out["status"] == "error"
+        assert "error" in out
