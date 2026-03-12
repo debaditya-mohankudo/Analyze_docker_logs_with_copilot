@@ -97,6 +97,7 @@ Full module map and algorithm details: **[doc/WIKI_ARCHITECTURE.md](doc/WIKI_ARC
 | [doc/WIKI_OPERATIONS.md](doc/WIKI_OPERATIONS.md) | Setup, config, remote Docker, cache, Copilot prompts |
 | [doc/WIKI_ARCHITECTURE.md](doc/WIKI_ARCHITECTURE.md) | Module map, algorithms, design decisions |
 | [doc/WIKI_QUALITY.md](doc/WIKI_QUALITY.md) | Test suite, CI, coverage, adding tests |
+| [doc/WIKI_SECURITY.md](doc/WIKI_SECURITY.md) | Secret detection, redaction rules, path confinement guardrails |
 | [CLAUDE.md](CLAUDE.md) | Architecture rules and contributor constraints |
 
 ---
