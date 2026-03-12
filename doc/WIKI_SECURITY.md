@@ -1,0 +1,177 @@
+# Wiki Hub: Security
+
+Canonical reference for all security constraints, guardrails, and patterns in Docker Log Analyzer.
+
+---
+
+## Agent Use Rules
+
+- Start here for "what secrets are detected", "how does redaction work", "what are the path safety rules", "how do I add a secret pattern".
+- Architecture rules are in [../CLAUDE.md §6](../CLAUDE.md) (stub that points here).
+- Tool parameters for `detect_data_leaks` are in [WIKI_TOOLS.md § detect_data_leaks](WIKI_TOOLS.md#4-detect_data_leaks).
+
+---
+
+## 1. Secret Detection (`secret_detector.py`)
+
+### What it does
+
+`SecretDetector` scans log lines against 20 compiled regex patterns and returns
+structured findings with redacted values. It never echoes the full matched secret.
+
+### Output contract
+
+Every finding contains:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `severity` | `critical` \| `high` \| `medium` | Classified by pattern |
+| `pattern_name` | string | Named pattern that fired (e.g. `AWS_SECRET_KEY`) |
+| `matched_text` | string | **Redacted** form only — raw value never returned |
+| `redacted_text` | string | Same value with sensitive portion replaced by `***REDACTED***` |
+| `line_number` | int | 1-based line number within the scanned log |
+| `timestamp` | string | ISO-8601 UTC timestamp from the log line |
+| `recommendation` | string | Remediation suggestion |
+
+### Rules (CRITICAL)
+
+- **Must redact** before returning — raw credential values must never appear in tool output.
+- **Must categorize severity** — every pattern is assigned `critical`, `high`, or `medium` at definition time.
+- **Must include remediation** — every finding must include a `recommendation` string.
+- **Never log secrets** in raw form — not to stdout, not to the logger, not to any file.
+
+### Severity levels and patterns (20 total)
+
+| Pattern | Severity |
+|---------|----------|
+| `AWS_SECRET_KEY`, `AWS_ACCESS_KEY` | critical |
+| `GITHUB_TOKEN` | critical |
+| `CREDIT_CARD`, `SSN`, `PRIVATE_KEY` | critical |
+| `STRIPE_SECRET_KEY` | critical |
+| `GENERIC_API_KEY`, `JWT_TOKEN`, `DATABASE_URL`, `BASIC_AUTH`, `PASSWORD_VAR` | high |
+| `GOOGLE_API_KEY`, `STRIPE_PUBLISHABLE_KEY`, `AZURE_STORAGE_KEY`, `OAUTH_CLIENT_SECRET` | high |
+| `EMAIL_ADDRESS`, `PHONE_NUMBER` | medium |
+| `BASE64_SECRET`, `SESSION_COOKIE` | medium |
+
+**Severity filter behavior:** `critical` returns only critical findings; `high` returns
+critical + high; `medium` returns all three; `all` returns everything.
+
+### Adding a new secret pattern
+
+1. Add the compiled regex to `secret_detector.py` with an explicit severity.
+2. Add a unit test to `tests/test_secret_detector.py` with a synthetic match line.
+3. Verify no false positives on sample logs before merging.
+4. Update the pattern table above.
+
+---
+
+## 2. Repository Path Confinement (`coderepo.py`)
+
+### What it does
+
+`find_file_in_repo` resolves stack-frame file paths from container logs to absolute
+paths on the host. Container logs can contain attacker-controlled or unexpected
+absolute paths (e.g. `/etc/passwd`, `/home/user/.ssh/id_rsa`). Without confinement
+enforcement, those paths would be read and returned to the caller.
+
+### Rules (CRITICAL)
+
+#### Rule 1 — Containment before existence check
+
+Before accepting any **absolute** frame path, confirm it is under `repo_root`:
+
+```python
+try:
+    candidate.relative_to(repo_root)   # raises ValueError if outside
+    if candidate.is_file():
+        return candidate
+except ValueError:
+    pass
+```
+
+Never call `candidate.is_file()` before `relative_to(repo_root)` passes.
+
+#### Rule 2 — Early return after the absolute block
+
+After the absolute-path block, always `return None` on no-match. Do **not** fall
+through to the relative-path logic.
+
+**Why:** Python's `/` operator discards the left side when the right operand is absolute:
+
+```python
+Path("/repo") / "/etc/passwd"   # → Path("/etc/passwd")  ← not confined!
+```
+
+If an absolute frame path reaches the relative section, `repo_root / frame_path`
+silently becomes the raw host path, bypassing all confinement.
+
+#### Rule 3 — Re-rooting is the only permitted absolute→host mapping
+
+The re-rooting branch (strip the leading anchor, prepend `repo_root`) is the only
+permitted way to convert an absolute container path to a host file:
+
+```python
+rel = candidate.relative_to(candidate.anchor)   # strip leading "/"
+rooted = repo_root / rel                         # always under repo_root
+```
+
+This is safe because the join starts from `repo_root`.
+
+### Required test for every change to `find_file_in_repo`
+
+Every PR that touches `find_file_in_repo` must include a test that passes an absolute
+path **outside** `repo_root` and asserts `None` is returned:
+
+```python
+def test_absolute_path_outside_repo_is_rejected(self, tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    outside = tmp_path / "secret.txt"
+    outside.write_text("sensitive")
+    result = find_file_in_repo(repo, str(outside))
+    assert result is None
+```
+
+This test lives in `tests/test_coderepo.py :: TestFindFileInRepo`.
+
+---
+
+## 3. Docker Socket Access
+
+- The Docker socket is mounted **read-only**.
+- Tools must never attempt container modification (exec, kill, stop, write).
+- `start_test_containers` / `stop_test_containers` are the only allowed lifecycle
+  tools, and only for test containers defined in `docker-compose.test.yml`.
+
+---
+
+## 4. General Output Safety
+
+| Rule | Location |
+|------|----------|
+| Never print to stdout except MCP protocol frames | All `tool_*()` functions |
+| Structured error JSON — never raise through the MCP boundary | All `tool_*()` functions |
+| No raw secrets in logger output | `secret_detector.py`, `tools.py` |
+| No network calls except Docker daemon | Entire codebase |
+| No telemetry, no external SaaS | Entire codebase |
+
+---
+
+## Retrieval keywords
+
+security, secret, credential, redact, PII, path traversal, repo root, confinement,
+find_file_in_repo, SecretDetector, detect_data_leaks, AWS, GitHub token, credit card,
+SSN, private key, JWT, severity, critical, high, medium, Docker socket, read-only,
+safe output, no stdout
+
+**[negative keywords / not-this-doc]**
+test strategy, CI, coverage, architecture, tool params, cache strategy, Copilot prompts
+
+---
+
+## See also
+
+- Tool parameters for `detect_data_leaks`: [WIKI_TOOLS.md § detect_data_leaks](WIKI_TOOLS.md#4-detect_data_leaks)
+- Architecture constraints: [../CLAUDE.md](../CLAUDE.md)
+- Test strategy: [WIKI_QUALITY.md](WIKI_QUALITY.md)
+- Home: [WIKI_HOME.md](WIKI_HOME.md)
