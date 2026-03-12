@@ -23,6 +23,8 @@ from .cache_manager import (
     write_cached_logs_for_date,
     get_cache_info,
 )
+from .investigation_planner import generate_plan
+from .coderepo import analyse_code_context
 from .config import settings
 from .correlator import correlate
 from .dependency_mapper import build_graph, find_cascade_candidates
@@ -32,6 +34,7 @@ from .root_cause_analyzer import rank_root_causes
 from .secret_detector import SecretDetector
 from .patterns import DOCKER_TS_RE, ERROR_PATTERN_RE
 from .spike_detector import detect_spikes
+from .coderepo import analyse_code_context
 from .docker import (
     COMPOSE_FILE,
     _docker_client,
@@ -910,3 +913,126 @@ def tool_get_last_errors(
         "limit": limit,
         "errors": entries,
     }
+
+
+def tool_plan_investigation(
+    symptoms: list[str],
+    containers: list[str] | None = None,
+    focus: str | None = None,
+) -> dict:
+    """
+    Generate a structured, step-by-step investigation plan from observed symptoms.
+
+    Classifies symptoms into signal categories (crash, spike, cascade, security,
+    pattern) and maps them to an ordered sequence of MCP tool calls to execute.
+    The structured plan (list of steps) is returned in the JSON response AND
+    saved as a human-readable Markdown table to .cache/plans/. Open plan_file
+    for the formatted version; use the plan list to drive automated execution.
+
+    Parameters
+    ----------
+    symptoms    : Observed problem descriptions, e.g.
+                  ["payment-service returning 500s", "high latency in checkout"].
+    containers  : Container names to scope the investigation. Omit for all.
+    focus       : One of 'root_cause', 'security', 'performance', 'general'.
+                  Defaults to 'general'.
+
+    Returns
+    -------
+    JSON with:
+        status             – 'success' or 'error'
+        signals_detected   – inferred signal categories
+        focus              – effective focus used
+        containers_in_scope
+        step_count         – number of planned steps
+        plan               – list of {step, action, target, reason, parameters}
+        plan_file          – path to the saved Markdown plan
+    """
+    return generate_plan(symptoms=symptoms, containers=containers, focus=focus)
+
+
+def tool_analyze_code_context(
+    container_name: str,
+    tail: int = 200,
+    context_lines: int | None = None,
+    max_frames: int | None = None,
+    repo_path: str | None = None,
+    language: str | None = None,
+) -> dict:
+    """
+    Parse stack traces from a container's recent error logs and surface the
+    relevant source code context from the linked code repository.
+
+    Workflow:
+      1. Fetch the last `tail` log lines from `container_name`
+      2. Filter to error/fatal lines
+      3. Parse stack frames (Python / Java / Go / Node.js)
+      4. Resolve each frame's file path against the configured repo root
+      5. Extract `context_lines` of source code around each error line
+
+    Repository resolution order:
+      1. `repo_path` parameter (explicit override)
+      2. `container_repo_map` in config (e.g. {"api": "/home/user/api"})
+      3. First valid path in `repo_paths` config list
+
+    Parameters
+    ----------
+    container_name : Target container (required).
+    tail           : Log lines to scan for stack traces (default 200).
+    context_lines  : Source lines before/after the error line
+                     (default: config.code_context_lines = 10).
+    max_frames     : Max stack frames per error event
+                     (default: config.max_stack_frames = 10).
+    repo_path      : Explicit path to the repository root. Overrides config.
+    language       : Force a language parser: python, java, go, nodejs.
+                     Auto-detected from analyze_patterns if omitted.
+
+    Returns
+    -------
+    JSON with:
+        status         – 'success' | 'no_frames' | 'error'
+        container      – container name
+        language       – detected or forced language
+        repo_root      – resolved repo path (null if not configured)
+        frames_found   – total stack frames extracted
+        frames         – list of {raw_frame, function, file_in_log, line_no,
+                         resolved_file, code_context}
+        unresolved_files – frame paths that could not be found in the repo
+        warnings       – informational messages (e.g. no repo configured)
+    """
+    try:
+        client = _docker_client()
+    except RuntimeError as exc:
+        return {"status": "error", "error": str(exc)}
+
+    try:
+        c = client.container.inspect(container_name)
+    except NoSuchContainer:
+        return {"status": "error", "error": f"Container '{container_name}' not found."}
+
+    lines = _fetch_logs(c, tail=tail)
+
+    # Auto-detect language if not forced
+    detected_lang = language or "unknown"
+    if language is None:
+        lang, _conf = PatternDetector.detect_language(lines)
+        detected_lang = lang if lang else "unknown"
+
+    # Build repo map — explicit repo_path overrides everything
+    container_repo_map: dict[str, str] = dict(settings.container_repo_map)
+    repo_paths: list[str] = list(settings.repo_paths)
+    if repo_path:
+        container_repo_map[container_name] = repo_path
+
+    ctx_lines = context_lines if context_lines is not None else settings.code_context_lines
+    max_f = max_frames if max_frames is not None else settings.max_stack_frames
+
+    return analyse_code_context(
+        log_lines=lines,
+        language=detected_lang,
+        container_name=container_name,
+        container_repo_map=container_repo_map,
+        repo_paths=repo_paths,
+        context_lines=ctx_lines,
+        max_frames=max_f,
+    )

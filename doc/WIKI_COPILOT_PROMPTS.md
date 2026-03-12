@@ -115,6 +115,30 @@ For tool parameter details, see [WIKI_TOOLS.md](WIKI_TOOLS.md).
 
 ---
 
+## Code context — deep-dive into failing source code
+
+- "Show me the source code around the stack trace in payment-service."
+- "Parse the stack traces from api-gateway and show the failing lines. Repo is at /home/user/api."
+- "The worker container is crashing — analyze its stack trace and show me the code."
+- "After finding the root cause, show me the code context for the top container."
+
+**Tools used:** `analyze_code_context`
+
+> Requires `REPO_PATHS` or `CONTAINER_REPO_MAP` set in `.env`, or pass `repo_path` directly.
+
+---
+
+## Investigation planning
+
+- "Plan how to investigate payment-service 500 errors and high latency in checkout."
+- "Create an investigation plan for connection refused errors. Focus on root cause."
+- "Plan a security investigation for auth-service — I suspect credentials are leaking."
+- "Give me a full investigation plan scoped to api-gateway and database containers."
+
+**Tools used:** `plan_investigation` → saves Markdown plan to `.cache/plans/`
+
+---
+
 ## Combined investigation workflows
 
 - "List my containers, then check for error spikes and tell me which ones are most correlated."

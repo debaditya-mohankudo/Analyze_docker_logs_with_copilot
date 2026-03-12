@@ -1,7 +1,7 @@
 """
 MCP Server for Docker Log Pattern Analysis (non-LLM).
 
-Exposes 11 tools to VSCode Copilot Agent Mode via .vscode/mcp.json:
+Exposes 14 tools to VSCode Copilot Agent Mode via .vscode/mcp.json:
 
   list_containers           – discover running Docker containers
   analyze_patterns          – PatternDetector per container (timestamps, language, log levels)
@@ -13,6 +13,8 @@ Exposes 11 tools to VSCode Copilot Agent Mode via .vscode/mcp.json:
   sync_docker_logs          – cache logs for offline / instant analysis
   capture_logs       – live capture + spike + correlation report
   get_last_errors           – last N error/fatal lines from a single container
+  plan_investigation        – generate a structured investigation plan from symptoms
+  analyze_code_context      – parse stack traces + surface source code around error lines
   start_test_containers     – build & start test log-generator containers
   stop_test_containers      – stop and remove test log-generator containers
 
@@ -45,6 +47,8 @@ from .tools import (
     tool_map_service_dependencies,
     tool_analyze_root_causes,
     tool_get_last_errors,
+    tool_plan_investigation,
+    tool_analyze_code_context,
 )
 
 
@@ -295,6 +299,69 @@ async def get_last_errors(
         container_name=container_name,
         tail=tail,
         limit=limit,
+    )
+
+
+@mcp.tool()
+async def plan_investigation(
+    symptoms: list[str],
+    containers: list[str] | None = None,
+    focus: str | None = None,
+) -> dict:
+    """Generate a structured, step-by-step DevOps investigation plan from observed symptoms.
+
+    Classifies symptoms into signal categories (crash, spike, cascade, security, pattern)
+    and maps them to an ordered sequence of MCP tool calls to execute. The full plan is
+    written to a Markdown file under .cache/plans/ — the response returns the file path,
+    not the plan text itself.
+
+    Args:
+        symptoms: Observed problem descriptions, e.g.
+            ["payment-service returning 500s", "high latency in checkout"].
+        containers: Container names to scope the investigation. Omit to cover all containers.
+        focus: Investigation focus — one of 'root_cause', 'security', 'performance',
+            or 'general' (default).
+    """
+    return tool_plan_investigation(
+        symptoms=symptoms,
+        containers=containers,
+        focus=focus,
+    )
+
+
+@mcp.tool()
+async def analyze_code_context(
+    container_name: str,
+    tail: int = 200,
+    context_lines: int | None = None,
+    max_frames: int | None = None,
+    repo_path: str | None = None,
+    language: str | None = None,
+) -> dict:
+    """Parse stack traces from a container's recent error logs and surface the relevant
+    source code context from the linked code repository. Use this after get_last_errors
+    or analyze_error_spikes to dive into the actual code that caused the failure.
+
+    Workflow: fetch error logs → parse stack frames (Python/Java/Go/Node.js) →
+    resolve file paths against the configured repo root → return N lines of code
+    around each error location.
+
+    Args:
+        container_name: Target container (required).
+        tail: Log lines to scan for stack traces (default 200).
+        context_lines: Source lines before/after the error line (default: config value 10).
+        max_frames: Maximum stack frames to return (default: config value 10).
+        repo_path: Explicit repository root path — overrides CONTAINER_REPO_MAP and REPO_PATHS
+            config. Use when the repo isn't pre-configured.
+        language: Force parser — 'python', 'java', 'go', or 'nodejs'. Auto-detected if omitted.
+    """
+    return tool_analyze_code_context(
+        container_name=container_name,
+        tail=tail,
+        context_lines=context_lines,
+        max_frames=max_frames,
+        repo_path=repo_path,
+        language=language,
     )
 
 

@@ -16,9 +16,9 @@ Use this hub for test strategy, CI configuration, coverage targets, and adding n
 
 | Metric | Value |
 |--------|-------|
-| Unit tests | 319 (no Docker required) |
+| Unit tests | 415 (no Docker required) |
 | Integration tests | 67 (Docker + test containers) |
-| Total | 386 |
+| Total | 482 |
 | CI execution (unit only) | ~0.8 s parallel via pytest-xdist |
 | Coverage (core modules) | 90–100% |
 
@@ -48,14 +48,16 @@ uv run pytest tests/test_dependency_mapper.py -v
 | `test_spike_detector.py` | 16 | unit | Rolling-window spike detection, Docker timestamp parsing, edge cases |
 | `test_correlator.py` | 17 | unit | Correlation scoring, event extraction, empty/single container |
 | `test_correlation_cache.py` | 14 | unit | Cache key stability, TTL expiry, TTL=0 disable, cache miss/hit flow, use_cache=false bypass |
-| `test_pattern_detector.py` | 33 | unit | Timestamp formats (ISO/syslog/epoch/Apache), language detection, log levels, health checks |
+| `test_pattern_detector.py` | 45 | unit | Timestamp formats (ISO/syslog/epoch/Apache), language detection, framework detection, log levels, health checks |
 | `test_secret_detector.py` | 45 | unit | 20 secret patterns, redaction, severity filtering, remediation, Docker timestamp regex |
 | `test_dependency_mapper.py` | 36 | unit | HTTP/HTTPS/DB/gRPC/DNS/TCP/name-mention extraction, graph builder, cascade direction, hit_count, transitive |
 | `test_root_cause_analyzer.py` | 27 | unit | Fan-in scoring, cascade scoring, spike timing bonus, combined signals, zero-score exclusion |
-| `test_tools_unit.py` | 49 | unit | tools.py helper functions, Docker/cache/time parsing helpers, sync/async tool error branches, lifecycle and sync paths |
+| `test_tools_unit.py` | 54 | unit | tools.py helper functions, Docker/cache/time parsing helpers, sync/async tool error branches, lifecycle and sync paths; wrapper-level design-principle tests for `tool_analyze_code_context` |
 | `test_cache_manager.py` | 25 | unit | Parquet write/read, schema validation, window filtering, multi-day, corrupt file, atomic write cleanup, metadata, clear cache |
 | `test_docker.py` | 16 | unit | `_docker_client`, `_fetch_logs`, `_fetch_logs_window`, `_fetch_logs_with_cache` helpers |
 | `test_patterns.py` | 24 | unit | DOCKER_TS_RE and ERROR_PATTERN_RE regex: matches, non-matches, edge cases |
+| `test_investigation_planner.py` | 40 | unit | Signal classification, focus modes, plan generation, Markdown file output, container scoping; single-container correlation skip, explicit-scope list_containers skip |
+| `test_coderepo.py` | 39 | unit | Stack trace parsers (Python/Java/Go/Node.js), repo resolution, file finding, code context extraction |
 | `test_mcp_integration.py` | 53 | integration | All 12 MCP tools, live Docker, field presence, value ranges, error cases |
 | `test_remote_docker_integration.py` | 14 | integration | Remote Docker via SSH/TCP, graceful fallback when unavailable (12 auto-skip) |
 
@@ -95,7 +97,8 @@ Target: core modules ≥ 90% (per [../CLAUDE.md](../CLAUDE.md) §4).
 
 ### Recent Coverage Uplift: `tools.py`
 
-- Added `tests/test_tools_unit.py` (49 unit tests) to cover helper and tool branches without Docker.
+- Added `tests/test_tools_unit.py` (54 unit tests) to cover helper and tool branches without Docker.
+- Includes wrapper-level design-principle tests for `tool_analyze_code_context` (Docker wiring, error contract, frame parsing, language auto-detection).
 - Measured result: `docker_log_analyzer/tools.py` is now **93%** covered in unit scope.
 
 Reproduce:
@@ -132,6 +135,50 @@ Defined in [`tests/conftest.py`](../tests/conftest.py):
 | `corr_aligned_logs` | function | web + db errors within 30s → high correlation |
 | `corr_distant_logs` | function | web + db errors 2 min apart → zero correlation |
 | `python_logs`, `java_logs`, `go_logs`, `nodejs_logs` | function | Language-specific sample log lines |
+
+---
+
+## Testing Priority (CRITICAL)
+
+Per [CLAUDE.md §4.0](../CLAUDE.md), **design-principle verification must be written before feature tests.**
+
+For every new `tool_*()` wrapper, add tests in this order:
+
+### 1. Stateless wiring (first)
+
+Patch `_docker_client` and `_fetch_logs` (or the relevant fetch helper) and call
+`tool_<name>()` directly. Confirm the full Docker → fetch → analyse → return path
+executes without error and returns the expected top-level shape.
+
+```python
+def test_docker_error_returns_error_status():
+    with patch("docker_log_analyzer.tools._docker_client", side_effect=RuntimeError("down")):
+        out = tools.tool_my_new_tool("api")
+    assert out["status"] == "error"
+```
+
+### 2. Tool isolation (second)
+
+Call the tool with no prior tool calls. Do not set up any shared state. Confirm it
+does not raise and returns a valid JSON dict.
+
+### 3. Error contract (third)
+
+Cover every early-exit branch: Docker down, container not found, empty logs.
+Each must return `{"status": "error", ...}` — never raise an exception.
+
+### 4. Feature / output correctness (last)
+
+Only after the above pass: assert output field values, ranges, and shapes.
+
+---
+
+**Why this order matters:** Wiring bugs (wrong function signatures, mis-unpacked
+return values, wrong argument types) are invisible to pure-module tests. The
+`analyze_code_context` incident illustrated this — a broken `_fetch_logs_with_cache`
+call and a `(str, float)` tuple passed where a `str` was expected both slipped
+through because only `test_coderepo.py` pure-module tests existed. Wrapper-level
+tests catch these at the boundary.
 
 ---
 

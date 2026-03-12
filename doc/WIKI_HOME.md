@@ -19,6 +19,8 @@ Use this table to answer questions with minimal hops.
 | "What Copilot prompts can I use for triage?" | [WIKI_COPILOT_PROMPTS.md](WIKI_COPILOT_PROMPTS.md) | — | [WIKI_COPILOT_PROMPTS.md](WIKI_COPILOT_PROMPTS.md) |
 | "What are the architecture rules / constraints?" | [../CLAUDE.md](../CLAUDE.md) | [WIKI_ARCHITECTURE.md](WIKI_ARCHITECTURE.md) | [../CLAUDE.md](../CLAUDE.md) |
 | "How does dependency mapping work?" | [WIKI_TOOLS.md § map_service_dependencies](WIKI_TOOLS.md#10-map_service_dependencies) | [WIKI_ARCHITECTURE.md § Dependency Mapping](WIKI_ARCHITECTURE.md#dependency-mapping) | [WIKI_TOOLS.md](WIKI_TOOLS.md) |
+| "How do I create an investigation plan?" | [WIKI_INVESTIGATION_PLANNER.md](WIKI_INVESTIGATION_PLANNER.md) | [WIKI_TOOLS.md § plan_investigation](WIKI_TOOLS.md#13-plan_investigation) | [WIKI_INVESTIGATION_PLANNER.md](WIKI_INVESTIGATION_PLANNER.md) |
+| "How do I see the code around a container error?" | [WIKI_CODE_REPO.md](WIKI_CODE_REPO.md) | [WIKI_TOOLS.md § analyze_code_context](WIKI_TOOLS.md#14-analyze_code_context) | [WIKI_CODE_REPO.md](WIKI_CODE_REPO.md) |
 
 ---
 
@@ -51,7 +53,9 @@ Use this table to answer questions with minimal hops.
 | Hub | Purpose |
 |-----|---------|
 | [WIKI_ARCHITECTURE.md](WIKI_ARCHITECTURE.md) | System design, modules, algorithms, confidence model |
-| [WIKI_TOOLS.md](WIKI_TOOLS.md) | All 12 MCP tools — parameters, return shapes, behavior |
+| [WIKI_TOOLS.md](WIKI_TOOLS.md) | All 14 MCP tools — parameters, return shapes, behavior |
+| [WIKI_INVESTIGATION_PLANNER.md](WIKI_INVESTIGATION_PLANNER.md) | Investigation planner — signal detection, plan steps, file output |
+| [WIKI_CODE_REPO.md](WIKI_CODE_REPO.md) | Code repo context — stack trace parsing, file resolution, code deep-dive |
 | [WIKI_COPILOT_PROMPTS.md](WIKI_COPILOT_PROMPTS.md) | Natural language prompts organized by workflow |
 | [WIKI_OPERATIONS.md](WIKI_OPERATIONS.md) | Setup, configuration, cache, remote Docker |
 | [WIKI_QUALITY.md](WIKI_QUALITY.md) | Test suite, CI, coverage, adding tests |

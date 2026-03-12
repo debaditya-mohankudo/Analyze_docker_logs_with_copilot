@@ -61,6 +61,9 @@ class _FakePatternDetector:
     def detect_language(self, lines):
         return ("python", 0.8123)
 
+    def detect_framework(self, language, lines):
+        return None
+
     def extract_log_levels(self, lines):
         return {"INFO": 2, "ERROR": 1, "CRITICAL": 1}
 
@@ -540,3 +543,66 @@ class TestAsyncTools:
             out = tools.tool_map_service_dependencies()
         assert out["status"] == "success"
         assert out["cascade_candidates"] == [{"from": "a", "to": "b"}]
+
+
+# ---------------------------------------------------------------------------
+# tool_analyze_code_context – wrapper-level tests
+# ---------------------------------------------------------------------------
+
+
+_PY_TRACEBACK = [
+    "2026-03-07T10:00:00Z ERROR app Traceback (most recent call last):",
+    '2026-03-07T10:00:00Z ERROR app   File "app.py", line 42, in handle_request',
+    "2026-03-07T10:00:00Z ERROR app ValueError: bad input",
+]
+
+
+class TestToolAnalyzeCodeContextWrapper:
+    def test_docker_error_returns_error_status(self):
+        with patch("docker_log_analyzer.tools._docker_client", side_effect=RuntimeError("down")):
+            out = tools.tool_analyze_code_context("api")
+        assert out["status"] == "error"
+
+    def test_container_not_found_returns_error(self):
+        client = _mock_client(inspect_map={})
+        with patch("docker_log_analyzer.tools._docker_client", return_value=client):
+            out = tools.tool_analyze_code_context("missing")
+        assert out["status"] == "error"
+        assert "missing" in out["error"]
+
+    def test_no_logs_returns_no_frames(self):
+        c = _FakeContainer("/api", logs_result=b"")
+        client = _mock_client(inspect_map={"api": c})
+        with patch("docker_log_analyzer.tools._docker_client", return_value=client):
+            out = tools.tool_analyze_code_context("api")
+        assert out["status"] == "no_frames"
+
+    def test_stack_frames_parsed_from_all_lines(self, tmp_path):
+        # Verifies that frame lines (which don't match ERROR_PATTERN_RE) reach the parser.
+        src = tmp_path / "app.py"
+        src.write_text("\n".join(f"line{i}" for i in range(1, 60)))
+        logs = "\n".join(_PY_TRACEBACK).encode()
+        c = _FakeContainer("/api", logs_result=logs)
+        client = _mock_client(inspect_map={"api": c})
+        with patch("docker_log_analyzer.tools._docker_client", return_value=client), patch(
+            "docker_log_analyzer.tools.settings.container_repo_map", {"api": str(tmp_path)}
+        ), patch("docker_log_analyzer.tools.settings.repo_paths", []):
+            out = tools.tool_analyze_code_context("api", language="python")
+        assert out["status"] == "success"
+        assert out["frames_found"] >= 1
+        assert out["frames"][0]["file_in_log"] == "app.py"
+
+    def test_language_auto_detected_as_string(self, tmp_path):
+        # Regression: detect_language returns (str, float); wrapper must unpack to str.
+        src = tmp_path / "app.py"
+        src.write_text("\n".join(f"line{i}" for i in range(1, 60)))
+        logs = "\n".join(_PY_TRACEBACK).encode()
+        c = _FakeContainer("/api", logs_result=logs)
+        client = _mock_client(inspect_map={"api": c})
+        with patch("docker_log_analyzer.tools._docker_client", return_value=client), patch(
+            "docker_log_analyzer.tools.settings.container_repo_map", {"api": str(tmp_path)}
+        ), patch("docker_log_analyzer.tools.settings.repo_paths", []):
+            out = tools.tool_analyze_code_context("api")  # language=None → auto-detect
+        # If detected_lang were a tuple, coderepo.py:147 would raise AttributeError
+        assert out["status"] in ("success", "no_frames")
+        assert isinstance(out.get("language", ""), str)
