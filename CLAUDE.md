@@ -10,6 +10,20 @@ Stateless MCP (Model Context Protocol) stdio server for VSCode Copilot Agent Mod
 No LLMs. No Kafka. All analysis is local and deterministic.
 
 -------------------------------------------------------------------------------
+## 0. DESIGN PHILOSOPHY
+-------------------------------------------------------------------------------
+
+When facing a design decision, consult the Zen of Python (`python -c "import this"`).
+Key principles that have guided this codebase:
+
+- **Explicit is better than implicit** — data a struct owns should live on the struct,
+  not in a lookup table elsewhere (e.g. `SecretPattern.recommendation`).
+- **Simple is better than complex** — prefer the straightforward solution before
+  reaching for abstractions.
+- **Readability counts** — a reader should understand intent at the definition site,
+  not by tracing through dispatch logic.
+
+-------------------------------------------------------------------------------
 ## 1. CORE DESIGN PRINCIPLES
 -------------------------------------------------------------------------------
 
