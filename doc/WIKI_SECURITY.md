@@ -78,32 +78,31 @@ enforcement, those paths would be read and returned to the caller.
 
 #### Rule 1 — Containment before existence check
 
-Before accepting any **absolute** frame path, resolve `repo_root` to an
-absolute path and confirm the candidate is under it:
+Before accepting any **absolute** frame path, resolve both `repo_root` and the
+candidate to absolute paths, then confirm the candidate is under `repo_root`:
 
 ```python
-resolved_root = repo_root.resolve()   # must precede relative_to — see Rule 1a
-try:
-    candidate.relative_to(resolved_root)   # raises ValueError if outside
-    if candidate.is_file():
-        return candidate
-except ValueError:
-    pass
+resolved_root = repo_root.resolve()
+resolved_candidate = candidate.resolve(strict=False)
+
+if resolved_candidate.is_relative_to(resolved_root) and resolved_candidate.is_file():
+    return resolved_candidate
 ```
 
-Never call `candidate.is_file()` before `relative_to(resolved_root)` passes.
+Never call `candidate.is_file()` before the containment check passes.
 
-#### Rule 1a — Always resolve `repo_root` before `relative_to`
+#### Rule 1a — Always resolve `repo_root` before comparing
 
-`Path.relative_to()` requires both operands to share a common absolute (or
-relative) prefix. When `REPO_PATHS` is configured as `.`, `repo_root` is a
-relative path and `relative_to(repo_root)` raises `ValueError` for every
-absolute frame path — including legitimate ones inside the repo — silently
+`Path.is_relative_to()` (and the older `relative_to()`) requires both operands
+to share a common absolute prefix. When `REPO_PATHS` is configured as `.`,
+`repo_root` is a relative path and the containment check silently fails for
+every absolute frame path — including legitimate ones inside the repo —
 breaking code-context extraction for the common `REPO_PATHS=.` config.
 
 `repo_root.resolve()` converts the configured path to its absolute host
-equivalent before any comparison. The same resolved root is used for the
-re-rooting branch (Rule 3).
+equivalent before any comparison. `candidate.resolve(strict=False)` normalises
+the frame path (handles `..`, symlinks) without raising if the file is absent.
+The same `resolved_root` is used for the re-rooting branch (Rule 3).
 
 #### Rule 2 — Early return after the absolute block
 
@@ -125,11 +124,12 @@ The re-rooting branch (strip the leading anchor, prepend `repo_root`) is the onl
 permitted way to convert an absolute container path to a host file:
 
 ```python
-rel = candidate.relative_to(candidate.anchor)   # strip leading "/"
-rooted = repo_root / rel                         # always under repo_root
+rel = resolved_candidate.relative_to(resolved_candidate.anchor)   # strip leading "/"
+rooted = resolved_root / rel                                        # always under repo_root
 ```
 
-This is safe because the join starts from `repo_root`.
+This is safe because the join starts from `resolved_root`. Any absolute path is
+relative to its own anchor, so `relative_to(anchor)` never raises `ValueError`.
 
 ### Required test for every change to `find_file_in_repo`
 
