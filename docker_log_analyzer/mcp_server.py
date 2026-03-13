@@ -398,7 +398,7 @@ def trace_request_flow(
 
 
 @mcp.tool()
-def classify_errors(
+async def classify_errors(
     container_names: list[str] | None = None,
     tail: int = 1000,
     categories: list[str] | None = None,
@@ -417,7 +417,7 @@ def classify_errors(
         tail:            Log lines to fetch per container (default 1000).
         categories:      Optional filter — only include these categories in results.
     """
-    return tool_classify_errors(
+    return await tool_classify_errors(
         container_names=container_names,
         tail=tail,
         categories=categories,
