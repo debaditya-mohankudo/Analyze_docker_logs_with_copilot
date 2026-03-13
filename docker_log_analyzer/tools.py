@@ -991,6 +991,12 @@ def tool_trace_request_flow(
         cname = _container_name(c)
         lines, was_cached = _fetch_logs_with_cache(c, cname, since, now, use_cache=use_cache)
         cache_hits[cname] = was_cached
+        # Respect per-container tail by limiting to the most recent lines,
+        # even when the cache API returns a larger time window.
+        if tail <= 0:
+            lines = []
+        else:
+            lines = lines[-tail:]
         if not lines or not patterns:
             continue
         matches = extract_ids(lines, patterns)

@@ -1079,6 +1079,20 @@ class TestToolTraceRequestFlowContract:
         assert "svc" in out["cache_hits"]
         assert out["cache_hits"]["svc"] is True
 
+    def test_tail_limits_lines_passed_to_extract_ids(self):
+        c = _FakeContainer("/svc")
+        client = _mock_client(list_containers=[c])
+        lines = ["line-1", "line-2", "line-3", "line-4", "line-5"]
+        with patch("docker_log_analyzer.tools._docker_client", return_value=client), \
+             patch("docker_log_analyzer.tools._fetch_logs_with_cache", return_value=(lines, False)), \
+             patch("docker_log_analyzer.tools.extract_ids", return_value=[]) as extract_mock, \
+             patch("docker_log_analyzer.tools.group_by_request", return_value={}), \
+             patch("docker_log_analyzer.tools.build_timelines", return_value=[]):
+            tools.tool_trace_request_flow(tail=2, min_events=1)
+
+        passed_lines = extract_mock.call_args.args[0]
+        assert passed_lines == ["line-4", "line-5"]
+
 
 # ---------------------------------------------------------------------------
 # tool_classify_errors – return-structure contract tests
