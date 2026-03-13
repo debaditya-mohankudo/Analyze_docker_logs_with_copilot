@@ -1,7 +1,7 @@
 """
 MCP Server for Docker Log Pattern Analysis (non-LLM).
 
-Exposes 14 tools to VSCode Copilot Agent Mode via .vscode/mcp.json:
+Exposes 16 tools to VSCode Copilot Agent Mode via .vscode/mcp.json:
 
   list_containers           – discover running Docker containers
   analyze_patterns          – PatternDetector per container (timestamps, language, log levels)
@@ -15,6 +15,8 @@ Exposes 14 tools to VSCode Copilot Agent Mode via .vscode/mcp.json:
   get_last_errors           – last N error/fatal lines from a single container
   plan_investigation        – generate a structured investigation plan from symptoms
   analyze_code_context      – parse stack traces + surface source code around error lines
+  trace_request_flow        – trace individual request IDs across containers via log correlation
+  classify_errors           – categorise errors into semantic classes (database, network, timeout, etc.)
   start_test_containers     – build & start test log-generator containers
   stop_test_containers      – stop and remove test log-generator containers
 
@@ -49,6 +51,8 @@ from .tools import (
     tool_get_last_errors,
     tool_plan_investigation,
     tool_analyze_code_context,
+    tool_trace_request_flow,
+    tool_classify_errors,
 )
 
 
@@ -362,6 +366,61 @@ async def analyze_code_context(
         max_frames=max_frames,
         repo_path=repo_path,
         language=language,
+    )
+
+
+@mcp.tool()
+def trace_request_flow(
+    container_names: list[str] | None = None,
+    tail: int = 500,
+    min_events: int = 2,
+    max_requests: int = 50,
+) -> dict:
+    """Trace individual request flows across containers by correlating request/trace/
+    correlation IDs found in log lines. Builds per-request chronological timelines
+    showing how a single transaction propagated through your services.
+
+    Configure which ID patterns to search for via REQUEST_ID_PATTERNS in your .env
+    (e.g. REQUEST_ID_PATTERNS='{"request_id": "requestId=([\\\\w-]+)"}').
+
+    Args:
+        container_names: Containers to scan. Omit for all running containers.
+        tail:            Log lines to fetch per container (default 500).
+        min_events:      Minimum events per request ID to include (default 2).
+        max_requests:    Maximum timelines to return, sorted by event count (default 50).
+    """
+    return tool_trace_request_flow(
+        container_names=container_names,
+        tail=tail,
+        min_events=min_events,
+        max_requests=max_requests,
+    )
+
+
+@mcp.tool()
+def classify_errors(
+    container_names: list[str] | None = None,
+    tail: int = 1000,
+    categories: list[str] | None = None,
+) -> dict:
+    """Classify errors in container logs into semantic categories: database,
+    network, timeout, auth, oom, disk, rate_limit, configuration, application,
+    or unknown. Returns per-container breakdowns with counts, percentages,
+    timestamps, sample lines, recommendations, and a minute-level timeline.
+
+    Use this after analyze_error_spikes to understand *what kind* of errors are
+    spiking, or before analyze_root_causes to prioritize infrastructure errors
+    (database, network) over application-level errors.
+
+    Args:
+        container_names: Containers to scan. Omit for all running containers.
+        tail:            Log lines to fetch per container (default 1000).
+        categories:      Optional filter — only include these categories in results.
+    """
+    return tool_classify_errors(
+        container_names=container_names,
+        tail=tail,
+        categories=categories,
     )
 
 

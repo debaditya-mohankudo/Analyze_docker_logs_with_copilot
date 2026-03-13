@@ -90,6 +90,20 @@ class Settings(BaseSettings):
         description="Maximum stack frames to extract per error event in analyze_code_context",
     )
 
+    # Request Tracing Configuration
+    request_id_patterns: Dict[str, str] = Field(
+        default={
+            "request_id": r"(?:request[_-]?id|req[_-]?id|x[_-]?request[_-]?id)[=:\s]+([A-Za-z0-9\-_]{8,})",
+            "trace_id": r"(?:trace[_-]?id|traceid)[=:\s]+([A-Za-z0-9\-_]{8,})",
+            "correlation_id": r"(?:correlation[_-]?id|corr[_-]?id)[=:\s]+([A-Za-z0-9\-_]{8,})",
+        },
+        description=(
+            "Named regex patterns (each with exactly one capture group) used by "
+            "trace_request_flow to extract request/trace/correlation IDs from log lines. "
+            "Example: {\"request_id\": \"requestId=([\\\\w-]+)\"}"
+        ),
+    )
+
     # Error Patterns for spike and correlation detection
     error_patterns: List[str] = Field(
         default=[

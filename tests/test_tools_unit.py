@@ -877,3 +877,343 @@ class TestToolDetectDataLeaksContract:
             out = self._run(tools.tool_detect_data_leaks(duration_seconds=0))
         assert out["status"] == "error"
         assert "error" in out
+
+
+# ---------------------------------------------------------------------------
+# tool_trace_request_flow – return-structure contract tests
+# ---------------------------------------------------------------------------
+
+_TRACE_FLOW_REQUIRED_KEYS = frozenset({
+    "status",
+    "timelines",
+    "request_count",
+    "containers_scanned",
+    "cache_hits",
+    "parameters",
+})
+
+_TRACE_FLOW_PARAMETERS_REQUIRED_KEYS = frozenset({
+    "tail",
+    "min_events",
+    "max_requests",
+})
+
+_TIMELINE_REQUIRED_KEYS = frozenset({
+    "request_id",
+    "container",
+    "event_count",
+    "first_seen",
+    "last_seen",
+    "duration_ms",
+    "events",
+})
+
+_TIMELINE_EVENT_REQUIRED_KEYS = frozenset({
+    "timestamp",
+    "pattern_name",
+    "message",
+})
+
+
+class TestToolTraceRequestFlowContract:
+    """Guards the return-structure contract of tool_trace_request_flow.
+
+    All tests are Docker-free; request_tracer module functions are mocked or
+    exercised via lightweight fakes.
+    """
+
+    def test_docker_error_returns_error_status(self):
+        with patch("docker_log_analyzer.tools._docker_client", side_effect=RuntimeError("no docker")):
+            out = tools.tool_trace_request_flow()
+        assert out["status"] == "error"
+        assert "error" in out
+
+    def test_container_not_found_returns_error_status(self):
+        client = _mock_client(list_containers=[])
+        with patch("docker_log_analyzer.tools._docker_client", return_value=client):
+            client.container.inspect = MagicMock(side_effect=tools.NoSuchContainer("x"))
+            out = tools.tool_trace_request_flow(container_names=["missing"])
+        assert out["status"] == "error"
+        assert "error" in out
+
+    def test_no_running_containers_returns_success(self):
+        client = _mock_client(list_containers=[])
+        with patch("docker_log_analyzer.tools._docker_client", return_value=client):
+            out = tools.tool_trace_request_flow()
+        assert out["status"] == "success"
+        assert out["timelines"] == []
+        assert out["request_count"] == 0
+
+    def test_success_path_has_required_top_level_keys(self):
+        c = _FakeContainer("/svc")
+        client = _mock_client(list_containers=[c])
+        with patch("docker_log_analyzer.tools._docker_client", return_value=client), \
+             patch("docker_log_analyzer.tools._fetch_logs_with_cache", return_value=([], False)), \
+             patch("docker_log_analyzer.tools.extract_ids", return_value=[]), \
+             patch("docker_log_analyzer.tools.group_by_request", return_value={}), \
+             patch("docker_log_analyzer.tools.build_timelines", return_value=[]):
+            out = tools.tool_trace_request_flow()
+        assert _TRACE_FLOW_REQUIRED_KEYS <= out.keys(), (
+            f"Missing keys: {_TRACE_FLOW_REQUIRED_KEYS - out.keys()}"
+        )
+
+    def test_parameters_sub_dict_has_required_keys(self):
+        c = _FakeContainer("/svc")
+        client = _mock_client(list_containers=[c])
+        with patch("docker_log_analyzer.tools._docker_client", return_value=client), \
+             patch("docker_log_analyzer.tools._fetch_logs_with_cache", return_value=([], False)), \
+             patch("docker_log_analyzer.tools.extract_ids", return_value=[]), \
+             patch("docker_log_analyzer.tools.group_by_request", return_value={}), \
+             patch("docker_log_analyzer.tools.build_timelines", return_value=[]):
+            out = tools.tool_trace_request_flow()
+        assert _TRACE_FLOW_PARAMETERS_REQUIRED_KEYS <= out["parameters"].keys(), (
+            f"Missing parameters keys: {_TRACE_FLOW_PARAMETERS_REQUIRED_KEYS - out['parameters'].keys()}"
+        )
+
+    def test_each_timeline_has_required_keys(self):
+        c = _FakeContainer("/svc")
+        client = _mock_client(list_containers=[c])
+        fake_timeline = {
+            "request_id": "abc-123",
+            "container": "svc",
+            "event_count": 3,
+            "first_seen": "2026-03-13T10:00:00.000Z",
+            "last_seen": "2026-03-13T10:00:01.000Z",
+            "duration_ms": 1000.0,
+            "events": [],
+        }
+        with patch("docker_log_analyzer.tools._docker_client", return_value=client), \
+             patch("docker_log_analyzer.tools._fetch_logs_with_cache", return_value=(["line"], False)), \
+             patch("docker_log_analyzer.tools.extract_ids", return_value=[("abc-123", "request_id", 1.0, "line")]), \
+             patch("docker_log_analyzer.tools.group_by_request", return_value={"abc-123": [(1.0, "request_id", "line")]}), \
+             patch("docker_log_analyzer.tools.build_timelines", return_value=[fake_timeline]):
+            out = tools.tool_trace_request_flow(min_events=1)
+        assert len(out["timelines"]) == 1
+        assert _TIMELINE_REQUIRED_KEYS <= out["timelines"][0].keys(), (
+            f"Missing timeline keys: {_TIMELINE_REQUIRED_KEYS - out['timelines'][0].keys()}"
+        )
+
+    def test_each_timeline_event_has_required_keys(self):
+        c = _FakeContainer("/svc")
+        client = _mock_client(list_containers=[c])
+        fake_event = {
+            "timestamp": "2026-03-13T10:00:00.000Z",
+            "pattern_name": "request_id",
+            "message": "GET /api/order request_id=abc-123",
+        }
+        fake_timeline = {
+            "request_id": "abc-123",
+            "container": "svc",
+            "event_count": 2,
+            "first_seen": "2026-03-13T10:00:00.000Z",
+            "last_seen": "2026-03-13T10:00:01.000Z",
+            "duration_ms": 1000.0,
+            "events": [fake_event],
+        }
+        with patch("docker_log_analyzer.tools._docker_client", return_value=client), \
+             patch("docker_log_analyzer.tools._fetch_logs_with_cache", return_value=(["line"], False)), \
+             patch("docker_log_analyzer.tools.extract_ids", return_value=[]), \
+             patch("docker_log_analyzer.tools.group_by_request", return_value={}), \
+             patch("docker_log_analyzer.tools.build_timelines", return_value=[fake_timeline]):
+            out = tools.tool_trace_request_flow(min_events=1)
+        assert len(out["timelines"][0]["events"]) == 1
+        assert _TIMELINE_EVENT_REQUIRED_KEYS <= out["timelines"][0]["events"][0].keys(), (
+            f"Missing event keys: {_TIMELINE_EVENT_REQUIRED_KEYS - out['timelines'][0]['events'][0].keys()}"
+        )
+
+    def test_min_events_filters_single_occurrence_requests(self):
+        c = _FakeContainer("/svc")
+        client = _mock_client(list_containers=[c])
+        single_event_timeline = {
+            "request_id": "noise-001",
+            "container": "svc",
+            "event_count": 1,
+            "first_seen": None,
+            "last_seen": None,
+            "duration_ms": None,
+            "events": [{"timestamp": None, "pattern_name": "request_id", "message": "line"}],
+        }
+        with patch("docker_log_analyzer.tools._docker_client", return_value=client), \
+             patch("docker_log_analyzer.tools._fetch_logs_with_cache", return_value=(["line"], False)), \
+             patch("docker_log_analyzer.tools.extract_ids", return_value=[]), \
+             patch("docker_log_analyzer.tools.group_by_request", return_value={}), \
+             patch("docker_log_analyzer.tools.build_timelines", return_value=[single_event_timeline]):
+            out = tools.tool_trace_request_flow(min_events=2)
+        # The single-event timeline must be filtered out.
+        assert out["timelines"] == []
+        assert out["request_count"] == 0
+
+    def test_max_requests_truncates_output(self):
+        c = _FakeContainer("/svc")
+        client = _mock_client(list_containers=[c])
+        timelines = [
+            {
+                "request_id": f"req-{i}",
+                "container": "svc",
+                "event_count": 5,
+                "first_seen": None,
+                "last_seen": None,
+                "duration_ms": None,
+                "events": [],
+            }
+            for i in range(10)
+        ]
+        with patch("docker_log_analyzer.tools._docker_client", return_value=client), \
+             patch("docker_log_analyzer.tools._fetch_logs_with_cache", return_value=(["line"], False)), \
+             patch("docker_log_analyzer.tools.extract_ids", return_value=[]), \
+             patch("docker_log_analyzer.tools.group_by_request", return_value={}), \
+             patch("docker_log_analyzer.tools.build_timelines", return_value=timelines):
+            out = tools.tool_trace_request_flow(min_events=1, max_requests=3)
+        assert len(out["timelines"]) == 3
+        assert out["request_count"] == 10  # total before truncation
+
+    def test_cache_hits_populated_for_nonempty_container_list(self):
+        c = _FakeContainer("/svc")
+        client = _mock_client(list_containers=[c])
+        with patch("docker_log_analyzer.tools._docker_client", return_value=client), \
+             patch("docker_log_analyzer.tools._fetch_logs_with_cache", return_value=([], True)), \
+             patch("docker_log_analyzer.tools.extract_ids", return_value=[]), \
+             patch("docker_log_analyzer.tools.group_by_request", return_value={}), \
+             patch("docker_log_analyzer.tools.build_timelines", return_value=[]):
+            out = tools.tool_trace_request_flow()
+        assert "svc" in out["cache_hits"]
+        assert out["cache_hits"]["svc"] is True
+
+
+# ---------------------------------------------------------------------------
+# tool_classify_errors – return-structure contract tests
+# ---------------------------------------------------------------------------
+
+_CLASSIFY_ERRORS_REQUIRED_KEYS = frozenset({
+    "status",
+    "containers",
+    "summary",
+    "containers_scanned",
+    "cache_hits",
+    "parameters",
+})
+
+_CLASSIFY_ERRORS_SUMMARY_REQUIRED_KEYS = frozenset({
+    "total_errors",
+    "dominant_category",
+})
+
+_CLASSIFY_ERRORS_PARAMS_REQUIRED_KEYS = frozenset({
+    "tail",
+    "categories",
+})
+
+_CATEGORY_STAT_REQUIRED_KEYS = frozenset({
+    "count",
+    "percentage",
+    "first_seen",
+    "last_seen",
+    "samples",
+    "recommendation",
+})
+
+
+class TestToolClassifyErrorsContract:
+    """Guards the return-structure contract of tool_classify_errors."""
+
+    def test_docker_error_returns_error_status(self):
+        with patch("docker_log_analyzer.tools._docker_client", side_effect=RuntimeError("down")):
+            out = tools.tool_classify_errors()
+        assert out["status"] == "error"
+        assert "error" in out
+
+    def test_container_not_found_returns_error_status(self):
+        client = _mock_client(list_containers=[])
+        with patch("docker_log_analyzer.tools._docker_client", return_value=client):
+            client.container.inspect = MagicMock(side_effect=tools.NoSuchContainer("x"))
+            out = tools.tool_classify_errors(container_names=["missing"])
+        assert out["status"] == "error"
+        assert "error" in out
+
+    def test_invalid_category_filter_returns_error(self):
+        client = _mock_client(list_containers=[_FakeContainer("/svc")])
+        with patch("docker_log_analyzer.tools._docker_client", return_value=client):
+            out = tools.tool_classify_errors(categories=["bogus_cat"])
+        assert out["status"] == "error"
+        assert "Invalid categories" in out["error"]
+
+    def test_no_running_containers_returns_success(self):
+        client = _mock_client(list_containers=[])
+        with patch("docker_log_analyzer.tools._docker_client", return_value=client):
+            out = tools.tool_classify_errors()
+        assert out["status"] == "success"
+        assert out["containers"] == {}
+        assert out["summary"]["total_errors"] == 0
+
+    def test_success_path_has_required_top_level_keys(self):
+        c = _FakeContainer("/svc")
+        client = _mock_client(list_containers=[c])
+        with patch("docker_log_analyzer.tools._docker_client", return_value=client), \
+             patch("docker_log_analyzer.tools._fetch_logs_with_cache", return_value=([], False)):
+            out = tools.tool_classify_errors()
+        assert _CLASSIFY_ERRORS_REQUIRED_KEYS <= out.keys(), (
+            f"Missing keys: {_CLASSIFY_ERRORS_REQUIRED_KEYS - out.keys()}"
+        )
+
+    def test_summary_has_required_keys(self):
+        c = _FakeContainer("/svc")
+        client = _mock_client(list_containers=[c])
+        with patch("docker_log_analyzer.tools._docker_client", return_value=client), \
+             patch("docker_log_analyzer.tools._fetch_logs_with_cache", return_value=([], False)):
+            out = tools.tool_classify_errors()
+        assert _CLASSIFY_ERRORS_SUMMARY_REQUIRED_KEYS <= out["summary"].keys(), (
+            f"Missing summary keys: {_CLASSIFY_ERRORS_SUMMARY_REQUIRED_KEYS - out['summary'].keys()}"
+        )
+
+    def test_parameters_has_required_keys(self):
+        c = _FakeContainer("/svc")
+        client = _mock_client(list_containers=[c])
+        with patch("docker_log_analyzer.tools._docker_client", return_value=client), \
+             patch("docker_log_analyzer.tools._fetch_logs_with_cache", return_value=([], False)):
+            out = tools.tool_classify_errors()
+        assert _CLASSIFY_ERRORS_PARAMS_REQUIRED_KEYS <= out["parameters"].keys(), (
+            f"Missing parameter keys: {_CLASSIFY_ERRORS_PARAMS_REQUIRED_KEYS - out['parameters'].keys()}"
+        )
+
+    def test_per_container_stats_with_errors(self):
+        c = _FakeContainer("/svc")
+        client = _mock_client(list_containers=[c])
+        error_lines = [
+            "2026-03-13T10:00:00Z ERROR deadlock detected",
+            "2026-03-13T10:00:01Z ERROR read timeout",
+        ]
+        with patch("docker_log_analyzer.tools._docker_client", return_value=client), \
+             patch("docker_log_analyzer.tools._fetch_logs_with_cache", return_value=(error_lines, False)):
+            out = tools.tool_classify_errors()
+        container_stats = out["containers"]["svc"]
+        assert container_stats["total_errors"] == 2
+        assert container_stats["dominant_category"] is not None
+        # Verify at least one category has the right shape.
+        for cat_name, cat_stat in container_stats["categories"].items():
+            assert _CATEGORY_STAT_REQUIRED_KEYS <= cat_stat.keys(), (
+                f"Missing category stat keys for '{cat_name}': {_CATEGORY_STAT_REQUIRED_KEYS - cat_stat.keys()}"
+            )
+
+    def test_category_filter_applied(self):
+        c = _FakeContainer("/svc")
+        client = _mock_client(list_containers=[c])
+        error_lines = [
+            "2026-03-13T10:00:00Z ERROR deadlock detected",
+            "2026-03-13T10:00:01Z ERROR read timeout",
+        ]
+        with patch("docker_log_analyzer.tools._docker_client", return_value=client), \
+             patch("docker_log_analyzer.tools._fetch_logs_with_cache", return_value=(error_lines, False)):
+            out = tools.tool_classify_errors(categories=["database"])
+        container_stats = out["containers"]["svc"]
+        # Only "database" category should appear.
+        for cat_name in container_stats["categories"]:
+            assert cat_name == "database"
+
+    def test_cache_hits_populated(self):
+        c = _FakeContainer("/svc")
+        client = _mock_client(list_containers=[c])
+        with patch("docker_log_analyzer.tools._docker_client", return_value=client), \
+             patch("docker_log_analyzer.tools._fetch_logs_with_cache", return_value=([], True)):
+            out = tools.tool_classify_errors()
+        assert "svc" in out["cache_hits"]
+        assert out["cache_hits"]["svc"] is True

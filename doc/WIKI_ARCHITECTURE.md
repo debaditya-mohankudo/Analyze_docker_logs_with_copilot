@@ -33,7 +33,7 @@ Authoritative source for all constraints: [../CLAUDE.md](../CLAUDE.md)
 
 ```text
 docker_log_analyzer/
-  mcp_server.py           # Tool registration and FastMCP wiring (12 tools)
+  mcp_server.py           # Tool registration and FastMCP wiring (16 tools)
   tools.py                # Tool implementations (tool_* functions, pattern/correlation cache)
   docker.py               # Docker helpers: client, log fetching, _fetch_logs_with_cache()
   spike_detector.py       # Polars rolling-window spike detection (1-min buckets)
@@ -42,6 +42,8 @@ docker_log_analyzer/
   log_pattern_analyzer.py # PatternDetector: timestamp format, language, log levels
   secret_detector.py      # SecretDetector: 20 patterns, redaction, severity
   root_cause_analyzer.py  # Score-based root cause ranking (fan-in, cascade, spike timing)
+  request_tracer.py       # Request ID extraction + cross-container timeline builder
+  error_classifier.py     # Regex-based semantic error classification (9 categories)
   patterns.py             # Shared compiled regexes (DOCKER_TS_RE, ERROR_PATTERN_RE)
   cache_manager.py        # Atomic Parquet log cache (write + multi-day read)
   config.py               # Pydantic BaseSettings singleton (settings.*)
