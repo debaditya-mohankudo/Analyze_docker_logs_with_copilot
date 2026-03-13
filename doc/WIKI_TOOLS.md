@@ -1,6 +1,6 @@
 # Wiki Hub: MCP Tools Reference
 
-Canonical reference for all 14 MCP tools — parameters, return shapes, and behavior.
+Canonical reference for all 16 MCP tools — parameters, return shapes, and behavior.
 
 ---
 
@@ -30,6 +30,8 @@ Canonical reference for all 14 MCP tools — parameters, return shapes, and beha
 | 12 | [get_last_errors](#12-get_last_errors) | Last N error/fatal lines from a single container |
 | 13 | [plan_investigation](#13-plan_investigation) | Generate a structured investigation plan from symptoms |
 | 14 | [analyze_code_context](#14-analyze_code_context) | Parse stack traces + surface source code around error lines |
+| 15 | [trace_request_flow](#15-trace_request_flow) | Trace individual request IDs across container boundaries |
+| 16 | [classify_errors](#16-classify_errors) | Categorise errors into semantic classes (database, network, timeout, etc.) |
 
 ---
 
@@ -787,7 +789,177 @@ when containers are explicitly scoped.
 
 ---
 
-tool, MCP, parameters, returns, list_containers, analyze_patterns, analyze_error_spikes, detect_data_leaks, analyze_correlations, sync_docker_logs, capture_logs, map_service_dependencies, analyze_root_causes, get_last_errors, plan_investigation, start_test_containers, stop_test_containers, reference, contract, schema, tail, use_cache, confidence, hit_count, cascade, dependency, spike, correlation, secret, pattern, root cause, scoring, fan-in, fan-out, last error, fatal, panic, triage, investigation, planner, symptoms, signals, focus
+## 15. trace_request_flow
+
+**Status:** Implemented — 2026-03-13
+
+Traces individual request flows across container boundaries by extracting request/trace/correlation IDs from log lines and assembling per-request chronological timelines. Useful when you need to follow a specific HTTP request, transaction, or job as it propagates through multiple microservices.
+
+**Parameters:**
+
+| Parameter          | Type       | Default | Description                                                          |
+|--------------------|------------|---------|----------------------------------------------------------------------|
+| `container_names`  | string[]?  | —       | Containers to scan; omit for all running containers                  |
+| `tail`             | int        | 500     | Log lines to fetch per container                                     |
+| `min_events`       | int        | 2       | Minimum event count per request ID — filters single-occurrence noise |
+| `max_requests`     | int        | 50      | Maximum timelines to return, sorted by event count descending        |
+
+**ID pattern configuration (`.env`):**
+
+```env
+# Named patterns — each value must contain exactly one capture group
+REQUEST_ID_PATTERNS={"request_id": "request[_-]?id[=:]([\\w-]+)", "trace_id": "traceId=([\\w-]+)"}
+```
+
+Default patterns detect `request_id`, `trace_id`, and `correlation_id` in KV (`request_id=<id>`), header (`X-Request-Id: <id>`), and JSON (`"requestId":"<id>"`) formats.
+
+**Returns:**
+
+```json
+{
+  "status": "success",
+  "request_count": 3,
+  "timelines": [
+    {
+      "request_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+      "container": "gateway",
+      "event_count": 4,
+      "first_seen": "2026-03-13T10:01:00.123Z",
+      "last_seen": "2026-03-13T10:01:00.465Z",
+      "duration_ms": 342.0,
+      "events": [
+        {
+          "timestamp": "2026-03-13T10:01:00.123Z",
+          "pattern_name": "request_id",
+          "message": "POST /api/order request_id=f47ac10b-58cc-4372-a567-0e02b2c3d479 status=200"
+        }
+      ]
+    }
+  ],
+  "containers_scanned": ["gateway", "web-app", "database"],
+  "cache_hits": { "gateway": true, "web-app": false, "database": true },
+  "parameters": { "tail": 500, "min_events": 2, "max_requests": 50 }
+}
+```
+
+**Field notes:**
+
+- `request_count` — total timelines found before `max_requests` truncation
+- `duration_ms` — milliseconds between the first and last event for that request ID in this container; `null` if no parseable timestamps
+- `first_seen` / `last_seen` — ISO-8601 UTC with millisecond precision; `null` if no timestamps
+- `events` — sorted chronologically; capped at 500 characters per message
+- Each timeline entry is scoped to **one container**. To reconstruct a full cross-container request trace, group the returned `timelines` by `request_id`.
+
+**Differentiation from `analyze_correlations`:**
+
+| Tool                   | What it answers                                                                 |
+|------------------------|---------------------------------------------------------------------------------|
+| `analyze_correlations` | Did errors in A and B happen at the same time? (temporal, statistical)          |
+| `trace_request_flow`   | Did *this specific request* touch A and then B? (request-level, causal)         |
+
+**Use case:** After `analyze_correlations` shows containers A and B are correlated, use `trace_request_flow` to confirm by finding request IDs that appear in both containers' logs — turning statistical correlation into causal evidence.
+
+**Notes:**
+
+- Requires logs to contain request IDs — if none are found, `timelines` is empty and `request_count` is 0
+- Pattern matching is case-insensitive
+- Invalid regex patterns in `REQUEST_ID_PATTERNS` are skipped with a warning (server does not crash)
+- Per-container scope: cross-container stitching is the caller's responsibility (group by `request_id`)
+
+---
+
+## 16. classify_errors
+
+**Status:** Implemented — 2026-03-13
+
+Classifies error log lines into semantic categories using rule-based regex matching. Answers "what *kind* of errors are happening?" — turning a raw error count into an actionable breakdown by failure mode.
+
+**Parameters:**
+
+| Parameter          | Type       | Default | Description                                                |
+|--------------------|------------|---------|------------------------------------------------------------|
+| `container_names`  | string[]?  | —       | Containers to scan; omit for all running containers        |
+| `tail`             | int        | 1000    | Log lines to fetch per container                           |
+| `categories`       | string[]?  | —       | Filter to specific categories (e.g. `["database","timeout"]`) |
+
+**Error categories (checked in specificity order):**
+
+| Category        | Example patterns                                                          | Recommendation |
+|-----------------|---------------------------------------------------------------------------|----------------|
+| `database`      | `deadlock detected`, `too many connections`, `PSQLException`, port 5432/3306/6379 | Check connection pool limits and DB health |
+| `network`       | `ECONNREFUSED`, `DNS resolution failed`, `socket hang up`, `no such host` | Check network connectivity and DNS |
+| `timeout`       | `read timeout`, `gateway timeout`, `504`, `context deadline exceeded`     | Review upstream latency and timeout configs |
+| `auth`          | `401 Unauthorized`, `403 Forbidden`, `invalid token`, `JWT expired`       | Verify credentials and token validity |
+| `oom`           | `OOMKilled`, `OutOfMemoryError`, `heap space`, `MemoryError`             | Inspect memory limits and fix leaks |
+| `disk`          | `no space left on device`, `ENOSPC`, `disk quota exceeded`               | Check disk usage and log rotation |
+| `rate_limit`    | `429 Too Many Requests`, `rate limit exceeded`, `throttled`               | Implement backoff/retry and review limits |
+| `configuration` | `missing required`, `invalid config`, `environment variable not set`      | Verify env vars and config files |
+| `application`   | `NullPointerException`, `TypeError`, `panic:`, `unhandled exception`      | Review application code at stack trace |
+| `unknown`       | Error lines matching no specific category                                 | Inspect sample lines manually |
+
+**Returns:**
+
+```json
+{
+  "status": "success",
+  "containers": {
+    "web-app": {
+      "total_errors": 142,
+      "categories": {
+        "database": {
+          "count": 89,
+          "percentage": 62.7,
+          "first_seen": "2026-03-13T10:01:00.123Z",
+          "last_seen": "2026-03-13T10:05:23.456Z",
+          "samples": ["ERROR deadlock detected in transaction 42"],
+          "recommendation": "Check database connection pool limits..."
+        },
+        "timeout": {
+          "count": 31,
+          "percentage": 21.8,
+          "first_seen": "...",
+          "last_seen": "...",
+          "samples": ["..."],
+          "recommendation": "..."
+        }
+      },
+      "dominant_category": "database",
+      "category_timeline": [
+        {"minute": "2026-03-13T10:01", "database": 12, "timeout": 3}
+      ]
+    }
+  },
+  "summary": {
+    "total_errors": 142,
+    "dominant_category": "database",
+    "categories": { "...same shape as per-container..." }
+  },
+  "containers_scanned": ["web-app"],
+  "cache_hits": { "web-app": true },
+  "parameters": { "tail": 1000, "categories": null }
+}
+```
+
+**Differentiation from `analyze_error_spikes`:**
+
+| Tool                   | What it answers                                             |
+|------------------------|-------------------------------------------------------------|
+| `analyze_error_spikes` | *When* did error rates spike? (temporal anomaly detection)  |
+| `classify_errors`      | *What kind* of errors are happening? (semantic breakdown)   |
+
+**Use case:** After `analyze_error_spikes` confirms a spike, call `classify_errors` to understand whether it's database timeouts, auth failures, or application crashes — then use the recommendation to guide remediation.
+
+**Notes:**
+
+- Categories are checked in specificity order: `database` matches before `network` (DB timeouts are a subset of network issues)
+- `unknown` catches error lines that match ERROR_PATTERN_RE but no specific category
+- Non-error lines (INFO, DEBUG) are silently skipped
+- Invalid category names in the `categories` filter return an error with the list of valid categories
+- `summary` aggregates across all scanned containers; `containers` gives per-container breakdowns
+
+---
+
+tool, MCP, parameters, returns, list_containers, analyze_patterns, analyze_error_spikes, detect_data_leaks, analyze_correlations, sync_docker_logs, capture_logs, map_service_dependencies, analyze_root_causes, get_last_errors, plan_investigation, start_test_containers, stop_test_containers, trace_request_flow, classify_errors, reference, contract, schema, tail, use_cache, confidence, hit_count, cascade, dependency, spike, correlation, secret, pattern, root cause, scoring, fan-in, fan-out, last error, fatal, panic, triage, investigation, planner, symptoms, signals, focus, request id, trace id, correlation id, request tracing, error classification, semantic, category, database, network, timeout, auth, oom, disk, rate limit, configuration, application
 
 **[negative keywords / not-this-doc]**
 algorithm internals, module design, CI, coverage, test suite, setup, installation, Copilot prompts

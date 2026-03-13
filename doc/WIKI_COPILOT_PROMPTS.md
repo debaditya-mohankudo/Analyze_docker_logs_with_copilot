@@ -139,6 +139,33 @@ For tool parameter details, see [WIKI_TOOLS.md](WIKI_TOOLS.md).
 
 ---
 
+## Request flow tracing
+
+- "Trace request flows across all containers — show me how requests propagate."
+- "Which request IDs appear in both test-gateway and test-web-app?"
+- "Show me the timeline for requests that touched at least 3 containers."
+- "Trace request IDs in test-web-app and test-database — are any requests failing end-to-end?"
+
+**Tools used:** `trace_request_flow`
+
+> Configure ID patterns via `REQUEST_ID_PATTERNS` in `.env` (e.g. `request_id`, `trace_id`, `correlation_id`).
+
+---
+
+## Error classification
+
+- "What kinds of errors are happening in test-web-app — database, network, or application?"
+- "Classify all errors across my containers and tell me the dominant category."
+- "Are the errors in test-database mostly timeouts or connection failures?"
+- "Show me only database and network errors across all containers."
+- "What category of errors is spiking in test-gateway right now?"
+
+**Tools used:** `classify_errors`
+
+> Use after `analyze_error_spikes` to understand *what kind* of errors are spiking, or before `analyze_root_causes` to prioritize infrastructure errors over application errors.
+
+---
+
 ## Combined investigation workflows
 
 - "List my containers, then check for error spikes and tell me which ones are most correlated."
@@ -162,7 +189,7 @@ For tool parameter details, see [WIKI_TOOLS.md](WIKI_TOOLS.md).
 
 ## Retrieval keywords
 
-copilot, prompt, natural language, agent mode, vscode, workflow, triage, investigation, discovery, spike, correlation, dependency, root cause, secret, cache, capture, test containers, get_last_errors, analyze_root_causes, analyze_patterns, analyze_error_spikes
+copilot, prompt, natural language, agent mode, vscode, workflow, triage, investigation, discovery, spike, correlation, dependency, root cause, secret, cache, capture, test containers, get_last_errors, analyze_root_causes, analyze_patterns, analyze_error_spikes, trace_request_flow, classify_errors, request tracing, error classification, request ID, trace ID, database errors, network errors
 
 **[negative keywords / not-this-doc]**
 parameters, return shapes, algorithm internals, module design, CI, coverage, configuration, environment variables

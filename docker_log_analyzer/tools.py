@@ -30,6 +30,8 @@ from .correlator import correlate
 from .dependency_mapper import build_graph, find_cascade_candidates
 from .log_pattern_analyzer import PatternDetector
 from .logger import logger
+from .error_classifier import classify_lines, aggregate_stats, VALID_CATEGORIES
+from .request_tracer import RequestIdPattern, extract_ids, group_by_request, build_timelines
 from .root_cause_analyzer import rank_root_causes
 from .secret_detector import SecretDetector
 from .patterns import DOCKER_TS_RE, ERROR_PATTERN_RE
@@ -909,6 +911,222 @@ def tool_get_last_errors(
         "errors_found": len(error_lines),
         "limit": limit,
         "errors": entries,
+    }
+
+
+def tool_trace_request_flow(
+    container_names: Optional[list[str]] = None,
+    tail: int = 500,
+    use_cache: bool = True,
+    min_events: int = 2,
+    max_requests: int = 50,
+) -> dict:
+    """Trace request flows across containers by correlating request/trace IDs in logs.
+
+    Scans log lines for configurable request ID patterns (set via REQUEST_ID_PATTERNS
+    in config / .env), groups matched lines by ID, and builds per-request chronological
+    timelines. Useful for tracing a single HTTP request or transaction across multiple
+    microservices.
+
+    Parameters
+    ----------
+    container_names : Containers to scan. Omit for all running containers.
+    tail            : Log lines to fetch per container (default 500).
+    use_cache       : Use cached logs when available (default True).
+    min_events      : Minimum events per request ID to include (default 2).
+                      Filters out IDs seen only once (likely noise).
+    max_requests    : Maximum number of request timelines to return (default 50).
+                      Sorted by event_count descending before truncation.
+
+    Returns
+    -------
+    JSON with:
+        status              – 'success' or 'error'
+        timelines           – list of per-request timeline dicts
+        request_count       – total matched requests before max_requests truncation
+        containers_scanned  – container names that were scanned
+        cache_hits          – dict of container → bool (True = served from cache)
+        parameters          – effective tail / min_events / max_requests values
+    """
+    try:
+        client = _docker_client()
+    except RuntimeError as exc:
+        return {"status": "error", "error": str(exc)}
+
+    if container_names:
+        targets = []
+        for name in container_names:
+            try:
+                targets.append(client.container.inspect(name))
+            except NoSuchContainer:
+                return {"status": "error", "error": f"Container '{name}' not found."}
+    else:
+        targets = client.container.list()
+
+    if not targets:
+        return {
+            "status": "success",
+            "timelines": [],
+            "request_count": 0,
+            "containers_scanned": [],
+            "cache_hits": {},
+            "parameters": {"tail": tail, "min_events": min_events, "max_requests": max_requests},
+        }
+
+    # Build RequestIdPattern list from settings.
+    patterns = []
+    for name, pat in settings.request_id_patterns.items():
+        try:
+            patterns.append(RequestIdPattern(name=name, pattern=pat))
+        except ValueError as exc:
+            logger.warning("Skipping invalid request_id pattern '%s': %s", name, exc)
+
+    now = datetime.now(timezone.utc)
+    since = now - timedelta(hours=24)
+
+    cache_hits: dict[str, bool] = {}
+    all_timelines: list[dict] = []
+
+    for c in targets:
+        cname = _container_name(c)
+        lines, was_cached = _fetch_logs_with_cache(c, cname, since, now, use_cache=use_cache)
+        cache_hits[cname] = was_cached
+        if not lines or not patterns:
+            continue
+        matches = extract_ids(lines, patterns)
+        grouped = group_by_request(matches)
+        timelines = build_timelines(grouped, container_name=cname)
+        all_timelines.extend(timelines)
+
+    # Filter by min_events, sort by event_count descending, truncate.
+    filtered = [t for t in all_timelines if t["event_count"] >= min_events]
+    filtered.sort(key=lambda t: t["event_count"], reverse=True)
+    total = len(filtered)
+
+    return {
+        "status": "success",
+        "timelines": filtered[:max_requests],
+        "request_count": total,
+        "containers_scanned": [_container_name(c) for c in targets],
+        "cache_hits": cache_hits,
+        "parameters": {"tail": tail, "min_events": min_events, "max_requests": max_requests},
+    }
+
+
+def tool_classify_errors(
+    container_names: Optional[list[str]] = None,
+    tail: int = 1000,
+    categories: Optional[list[str]] = None,
+    use_cache: bool = True,
+) -> dict:
+    """Classify errors in container logs into semantic categories.
+
+    Scans log lines for error patterns, then categorises each error into one of:
+    database, network, timeout, auth, oom, disk, rate_limit, configuration,
+    application, or unknown.  Returns per-container breakdowns with counts,
+    percentage, timestamps, sample lines, and a minute-level category timeline.
+
+    Parameters
+    ----------
+    container_names : Containers to scan. Omit for all running containers.
+    tail            : Log lines to fetch per container (default 1000).
+    categories      : Optional filter — only include these categories in results.
+                      Example: ["database", "timeout"].
+    use_cache       : Use cached logs when available (default True).
+
+    Returns
+    -------
+    JSON with:
+        status              – 'success' or 'error'
+        containers          – dict of container → classification breakdown
+        summary             – aggregate stats across all containers
+        containers_scanned  – list of container names scanned
+        cache_hits          – dict of container → bool
+        parameters          – effective parameter values
+    """
+    try:
+        client = _docker_client()
+    except RuntimeError as exc:
+        return {"status": "error", "error": str(exc)}
+
+    # Validate category filter.
+    if categories:
+        invalid = set(categories) - VALID_CATEGORIES
+        if invalid:
+            return {
+                "status": "error",
+                "error": f"Invalid categories: {sorted(invalid)}. Valid: {sorted(VALID_CATEGORIES)}",
+            }
+
+    if container_names:
+        targets = []
+        for name in container_names:
+            try:
+                targets.append(client.container.inspect(name))
+            except NoSuchContainer:
+                return {"status": "error", "error": f"Container '{name}' not found."}
+    else:
+        targets = client.container.list()
+
+    params = {
+        "tail": tail,
+        "categories": categories,
+    }
+
+    if not targets:
+        return {
+            "status": "success",
+            "containers": {},
+            "summary": {"total_errors": 0, "dominant_category": None},
+            "containers_scanned": [],
+            "cache_hits": {},
+            "parameters": params,
+        }
+
+    now = datetime.now(timezone.utc)
+    since = now - timedelta(hours=24)
+
+    cache_hits: dict[str, bool] = {}
+    per_container: dict[str, dict] = {}
+    all_classified: list[tuple[str, float | None, str]] = []
+
+    for c in targets:
+        cname = _container_name(c)
+        lines, was_cached = _fetch_logs_with_cache(c, cname, since, now, use_cache=use_cache)
+        cache_hits[cname] = was_cached
+        if not lines:
+            per_container[cname] = {
+                "total_errors": 0,
+                "categories": {},
+                "dominant_category": None,
+                "category_timeline": [],
+            }
+            continue
+
+        classified = classify_lines(lines)
+
+        # Apply category filter if specified.
+        if categories:
+            classified = [(cat, ts, line) for cat, ts, line in classified if cat in categories]
+
+        stats = aggregate_stats(classified)
+        per_container[cname] = stats
+        all_classified.extend(classified)
+
+    # Cross-container summary.
+    summary_stats = aggregate_stats(all_classified)
+
+    return {
+        "status": "success",
+        "containers": per_container,
+        "summary": {
+            "total_errors": summary_stats["total_errors"],
+            "dominant_category": summary_stats["dominant_category"],
+            "categories": summary_stats["categories"],
+        },
+        "containers_scanned": [_container_name(c) for c in targets],
+        "cache_hits": cache_hits,
+        "parameters": params,
     }
 
 
