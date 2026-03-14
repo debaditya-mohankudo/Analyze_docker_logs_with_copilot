@@ -15,7 +15,7 @@ Canonical reference for all 16 MCP tools — parameters, return shapes, and beha
 Use this flow to choose the first tool with high confidence, then branch deeper only if needed.
 
 ```mermaid
-flowchart TD
+flowchart LR
   A[Need to investigate logs] --> B{Know target container?}
   B -- No --> L[list_containers]
   L --> B
