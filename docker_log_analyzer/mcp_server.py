@@ -417,7 +417,7 @@ async def classify_errors(
         tail:            Log lines to fetch per container (default 1000).
         categories:      Optional filter — only include these categories in results.
     """
-    return await tool_classify_errors(
+    return tool_classify_errors(
         container_names=container_names,
         tail=tail,
         categories=categories,
