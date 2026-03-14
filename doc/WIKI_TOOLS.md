@@ -10,6 +10,51 @@ Canonical reference for all 16 MCP tools — parameters, return shapes, and beha
 - For algorithm internals, see [WIKI_ARCHITECTURE.md](WIKI_ARCHITECTURE.md).
 - For Copilot prompts that invoke these tools, see [WIKI_COPILOT_PROMPTS.md](WIKI_COPILOT_PROMPTS.md).
 
+### Tool Selection Flow (Copilot)
+
+Use this flow to choose the first tool with high confidence, then branch deeper only if needed.
+
+```mermaid
+flowchart TD
+  A[Need to investigate logs] --> B{Know target container?}
+  B -- No --> L[list_containers]
+  L --> B
+
+  B -- Yes --> C{Primary question}
+
+  C -- "Last error now" --> G[get_last_errors]
+  C -- "What changed in runtime behavior?" --> P[analyze_patterns]
+  C -- "Did error rate spike?" --> S[analyze_error_spikes]
+  C -- "Are services failing together?" --> R[analyze_correlations]
+  C -- "Is this a data leak/security issue?" --> D[detect_data_leaks]
+  C -- "What depends on what?" --> M[map_service_dependencies]
+  C -- "Likely root cause service?" --> RC[analyze_root_causes]
+  C -- "Need fresh reproducible window?" --> CL[capture_logs]
+  C -- "Need offline/fast cache first?" --> SY[sync_docker_logs]
+  C -- "Need stack trace to source code" --> CC[analyze_code_context]
+  C -- "Need request-level journey" --> TR[trace_request_flow]
+  C -- "Need semantic error grouping" --> CE[classify_errors]
+  C -- "Not sure where to start" --> PI[plan_investigation]
+
+  PI --> S
+  PI --> R
+  PI --> M
+  PI --> RC
+
+  S --> CE
+  R --> M
+  M --> RC
+  G --> CC
+  CL --> S
+  CL --> R
+```
+
+Confidence guidance:
+
+- High confidence direct mapping: use the tool linked from the primary question above.
+- Medium confidence broad incident: start with `plan_investigation`, then execute top steps.
+- High-cardinality or historic windows: run `sync_docker_logs` first to improve repeatability and speed.
+
 ---
 
 ## Tool Index

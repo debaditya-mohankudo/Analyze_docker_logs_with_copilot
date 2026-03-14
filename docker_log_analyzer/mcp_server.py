@@ -22,6 +22,7 @@ Exposes 16 tools to VSCode Copilot Agent Mode via .vscode/mcp.json:
 
 All tools are stateless (fetch → analyse → return JSON). No external API calls.
 Tool implementations live in tools.py; this file is FastMCP wiring.
+For tool-choice guidance, see doc/WIKI_TOOLS.md → "Tool Selection Flow (Copilot)".
 """
 
 from __future__ import annotations
