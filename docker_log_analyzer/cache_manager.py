@@ -26,6 +26,7 @@ from typing import Optional, List
 import polars as pl
 
 from .logger import logger
+from .patterns import parse_timestamp
 
 CACHE_DIR = Path(".cache/logs")
 METADATA_FILE = CACHE_DIR / "metadata.json"
@@ -37,16 +38,8 @@ def _ensure_cache_dir() -> None:
 
 
 def _parse_timestamp(log_line: str) -> Optional[datetime]:
-    """Extract ISO-8601 timestamp from Docker log line."""
-    # Docker logs format: TIMESTAMP MESSAGE
-    # e.g., "2026-03-04T10:30:45.123456789Z [INFO] ..."
-    try:
-        ts_str = log_line.split()[0]
-        if ts_str.endswith("Z"):
-            ts_str = ts_str[:-1] + "+00:00"
-        return datetime.fromisoformat(ts_str)
-    except (IndexError, ValueError):
-        return None
+    """Extract a Docker-prepended timestamp using the shared parser."""
+    return parse_timestamp(log_line)
 
 
 def _atomic_write(file_path: Path, content: str) -> None:
