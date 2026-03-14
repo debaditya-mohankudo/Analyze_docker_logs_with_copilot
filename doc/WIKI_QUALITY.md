@@ -58,7 +58,7 @@ uv run pytest tests/test_dependency_mapper.py -v
 | `test_patterns.py` | 24 | unit | DOCKER_TS_RE and ERROR_PATTERN_RE regex: matches, non-matches, edge cases |
 | `test_investigation_planner.py` | 40 | unit | Signal classification, focus modes, plan generation, Markdown file output, container scoping; single-container correlation skip, explicit-scope list_containers skip |
 | `test_coderepo.py` | 39 | unit | Stack trace parsers (Python/Java/Go/Node.js), repo resolution, file finding, code context extraction |
-| `test_mcp_integration.py` | 53 | integration | All 12 MCP tools, live Docker, field presence, value ranges, error cases |
+| `test_mcp_integration.py` | 53 | integration | All 16 MCP tools, live Docker, field presence, value ranges, error cases |
 | `test_remote_docker_integration.py` | 14 | integration | Remote Docker via SSH/TCP, graceful fallback when unavailable (12 auto-skip) |
 
 ---

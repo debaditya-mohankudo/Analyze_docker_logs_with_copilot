@@ -57,7 +57,7 @@ Use this table to answer questions with minimal hops.
 | Hub | Purpose |
 |-----|---------|
 | [WIKI_ARCHITECTURE.md](WIKI_ARCHITECTURE.md) | System design, modules, algorithms, confidence model |
-| [WIKI_TOOLS.md](WIKI_TOOLS.md) | All 14 MCP tools — parameters, return shapes, behavior |
+| [WIKI_TOOLS.md](WIKI_TOOLS.md) | All 16 MCP tools — parameters, return shapes, behavior |
 | [WIKI_INVESTIGATION_PLANNER.md](WIKI_INVESTIGATION_PLANNER.md) | Investigation planner — signal detection, plan steps, file output |
 | [WIKI_CODE_REPO.md](WIKI_CODE_REPO.md) | Code repo context — stack trace parsing, file resolution, code deep-dive |
 | [WIKI_COPILOT_PROMPTS.md](WIKI_COPILOT_PROMPTS.md) | Natural language prompts organized by workflow |

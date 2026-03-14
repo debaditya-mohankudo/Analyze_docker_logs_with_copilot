@@ -82,7 +82,7 @@ uv run python -c "from docker_log_analyzer.mcp_server import run; print('OK')"
 
 ## Architecture
 
-VSCode Copilot Chat (Agent Mode) → MCP stdio → 12 stateless tool calls → Docker SDK → JSON.
+VSCode Copilot Chat (Agent Mode) → MCP stdio → 16 stateless tool calls → Docker SDK → JSON.
 
 Full module map and algorithm details: **[doc/WIKI_ARCHITECTURE.md](doc/WIKI_ARCHITECTURE.md)**.
 
@@ -93,7 +93,7 @@ Full module map and algorithm details: **[doc/WIKI_ARCHITECTURE.md](doc/WIKI_ARC
 | Page | Purpose |
 | ---- | ------- |
 | [doc/WIKI_HOME.md](doc/WIKI_HOME.md) | Navigation hub and agent routing table |
-| [doc/WIKI_TOOLS.md](doc/WIKI_TOOLS.md) | All 12 tools — parameters, return shapes, behavior |
+| [doc/WIKI_TOOLS.md](doc/WIKI_TOOLS.md) | All 16 tools — parameters, return shapes, behavior |
 | [doc/WIKI_OPERATIONS.md](doc/WIKI_OPERATIONS.md) | Setup, config, remote Docker, cache, Copilot prompts |
 | [doc/WIKI_ARCHITECTURE.md](doc/WIKI_ARCHITECTURE.md) | Module map, algorithms, design decisions |
 | [doc/WIKI_QUALITY.md](doc/WIKI_QUALITY.md) | Test suite, CI, coverage, adding tests |
