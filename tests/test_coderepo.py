@@ -345,6 +345,48 @@ class TestExtractCodeContext:
 # --------------------------------------------------------------------------- #
 
 class TestAnalyseCodeContext:
+    def test_success_payload_has_required_contract_keys(self, tmp_path):
+        src = tmp_path / "app.py"
+        src.write_text("line1\nline2\nline3")
+
+        lines = ['  File "app.py", line 2, in main', "Exception: boom"]
+        result = analyse_code_context(
+            log_lines=lines,
+            language="python",
+            container_name="svc",
+            container_repo_map={"svc": str(tmp_path)},
+            repo_paths=[],
+        )
+
+        required_top = {
+            "status",
+            "container",
+            "language",
+            "repo_root",
+            "frames_found",
+            "frames",
+            "unresolved_files",
+            "warnings",
+        }
+        required_frame = {
+            "language",
+            "raw_frame",
+            "function",
+            "file_in_log",
+            "line_no",
+            "resolved_file",
+            "code_context",
+        }
+
+        assert result["status"] == "success"
+        assert required_top <= result.keys(), (
+            f"Missing top-level keys: {required_top - result.keys()}"
+        )
+        assert len(result["frames"]) >= 1
+        assert required_frame <= result["frames"][0].keys(), (
+            f"Missing frame keys: {required_frame - result['frames'][0].keys()}"
+        )
+
     def test_no_frames_returns_no_frames_status(self):
         result = analyse_code_context(
             log_lines=["INFO: all good"],
