@@ -274,3 +274,9 @@ class TestErrorPatternExtraction:
         patterns = PatternDetector.extract_error_patterns(nginx_logs)
         texts = [p for p, _ in patterns]
         assert any("connect() failed" in t or "upstream timed out" in t or "no live upstreams" in t for t in texts)
+
+    def test_extracts_configured_database_patterns(self):
+        logs = ["2024-03-02T21:10:00Z ERROR PSQLException could not execute statement"]
+        patterns = PatternDetector.extract_error_patterns(logs)
+        texts = [p for p, _ in patterns]
+        assert any("PSQLException" in t or "could not execute statement" in t for t in texts)

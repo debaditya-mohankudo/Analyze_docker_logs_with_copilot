@@ -20,6 +20,29 @@ from typing import Dict, List, Optional, Tuple
 from datetime import datetime
 
 from .logger import logger
+from .config import settings
+
+
+# Error-pattern extraction uses three layers:
+# 1. settings.error_patterns provides the configurable baseline catalog.
+# 2. _EXTRACT_ERROR_PATTERNS appends broader summary-oriented shapes so
+#    extract_error_patterns can still surface readable grouped snippets.
+# 3. _ERROR_LINE_RE is a cheap prefilter so we only run the full pattern set
+#    on lines that already look like errors.
+_EXTRACT_ERROR_PATTERNS = [
+    *settings.error_patterns,
+    r"(Connection|Timeout|Failed|Error|Exception): [^:]*",
+    r"(Database|API|Network|Service) error",
+    r"Status code: \d{3}",
+    r"(connect\(\) failed|upstream timed out|no live upstreams|SSL_do_handshake\(\) failed)[^,\n]*",
+]
+_COMPILED_EXTRACT_ERROR_PATTERNS = [
+    re.compile(pattern, re.IGNORECASE) for pattern in _EXTRACT_ERROR_PATTERNS
+]
+_ERROR_LINE_RE = re.compile(
+    "|".join(f"(?:{pattern})" for pattern in [*settings.error_patterns, r"\[(error|crit|alert|emerg)\]"]),
+    re.IGNORECASE,
+)
 
 
 @dataclass
@@ -349,17 +372,11 @@ class PatternDetector:
     def extract_error_patterns(log_lines: List[str]) -> List[Tuple[str, int]]:
         """Extract common error patterns."""
         errors = Counter()
-        error_patterns = [
-            r"(Connection|Timeout|Failed|Error|Exception): [^:]*",
-            r"(Database|API|Network|Service) error",
-            r"Status code: \d{3}",
-            r"(connect\(\) failed|upstream timed out|no live upstreams|SSL_do_handshake\(\) failed)[^,\n]*",
-        ]
-        
+
         for log_line in log_lines:
-            if re.search(r"ERROR|CRITICAL|FATAL|Exception|\[(error|crit|alert|emerg)\]", log_line, re.IGNORECASE):
-                for pattern in error_patterns:
-                    match = re.search(pattern, log_line)
+            if _ERROR_LINE_RE.search(log_line):
+                for pattern_re in _COMPILED_EXTRACT_ERROR_PATTERNS:
+                    match = pattern_re.search(log_line)
                     if match:
                         errors[match.group(0)] += 1
         
