@@ -28,6 +28,10 @@ class TestDockerTsRe:
         line = "2026-03-07T12:00:00Z ERROR something"
         assert DOCKER_TS_RE.match(line)
 
+    def test_matches_rfc3339_with_explicit_offset(self):
+        line = "2026-03-07T12:00:00+00:00 INFO offset timestamp"
+        assert DOCKER_TS_RE.match(line)
+
     def test_does_not_match_plain_text(self):
         assert not DOCKER_TS_RE.match("just a plain log line")
 
@@ -97,6 +101,21 @@ class TestParseTimestamp:
         assert dt is not None
         assert dt.tzinfo == timezone.utc
         assert dt.hour == 8
+
+    def test_parses_line_with_explicit_utc_offset(self):
+        line = "2026-03-07T08:30:00+00:00 some message"
+        dt = parse_timestamp(line)
+        assert dt is not None
+        assert dt.tzinfo == timezone.utc
+        assert dt.hour == 8
+
+    def test_converts_non_utc_offset_to_utc(self):
+        line = "2026-03-07T08:30:00+02:00 some message"
+        dt = parse_timestamp(line)
+        assert dt is not None
+        assert dt.tzinfo == timezone.utc
+        assert dt.hour == 6
+        assert dt.minute == 30
 
     def test_returns_none_for_plain_text(self):
         assert parse_timestamp("no timestamp here") is None

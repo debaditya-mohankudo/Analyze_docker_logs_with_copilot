@@ -130,6 +130,17 @@ class TestWriteCachedLogsForDate:
         # Timestamp must be timezone-aware UTC
         assert df["timestamp"].dtype == pl.Datetime("us", "UTC")
 
+    def test_explicit_offset_timestamp_is_parsed_and_written(self, isolated_cache):
+        logs = ["2026-03-06T10:00:00+00:00 offset message"]
+        cm.write_cached_logs_for_date("web-app", logs, _utc(2026, 3, 6, 10, 0, 0).date())
+
+        df = pl.read_parquet(isolated_cache / "web-app" / "2026-03-06.parquet")
+        assert len(df) == 1
+        assert df["message"][0] == logs[0]
+        assert df["timestamp"][0].replace(tzinfo=timezone.utc) == datetime(
+            2026, 3, 6, 10, 0, 0, tzinfo=timezone.utc
+        )
+
 
 # ---------------------------------------------------------------------------
 # read_cached_logs_for_window (parquet path)
