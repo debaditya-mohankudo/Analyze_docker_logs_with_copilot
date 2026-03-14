@@ -370,7 +370,7 @@ async def analyze_code_context(
 
 
 @mcp.tool()
-def trace_request_flow(
+async def trace_request_flow(
     container_names: list[str] | None = None,
     tail: int = 500,
     min_events: int = 2,
