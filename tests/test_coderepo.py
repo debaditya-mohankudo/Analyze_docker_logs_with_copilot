@@ -328,6 +328,17 @@ class TestExtractCodeContext:
         ctx = extract_code_context(tmp_path / "no_file.py", line_no=1)
         assert "error" in ctx
 
+    def test_negative_context_lines_behaves_like_zero(self, tmp_path):
+        f = self._make_file(tmp_path, ["line1", "line2", "line3", "line4", "line5"])
+
+        ctx_neg = extract_code_context(f, line_no=3, context_lines=-2)
+        ctx_zero = extract_code_context(f, line_no=3, context_lines=0)
+
+        assert ctx_neg["at"] == (3, "line3")
+        assert ctx_neg["before"] == []
+        assert ctx_neg["after"] == []
+        assert ctx_neg == ctx_zero
+
 
 # --------------------------------------------------------------------------- #
 # analyse_code_context (full pipeline)
