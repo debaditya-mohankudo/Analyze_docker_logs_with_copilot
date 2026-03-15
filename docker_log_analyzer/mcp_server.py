@@ -377,9 +377,11 @@ async def trace_request_flow(
     min_events: int = 2,
     max_requests: int = 50,
 ) -> dict:
-    """Trace individual request flows across containers by correlating request/trace/
-    correlation IDs found in log lines. Builds per-request chronological timelines
-    showing how a single transaction propagated through your services.
+    """Trace request flows by correlating request/trace/correlation IDs found in log
+    lines. Builds per-request chronological timelines per container. Pass multiple
+    container_names to collect timelines from each — the same request ID will appear
+    as a separate entry per container, letting you manually trace a transaction across
+    service boundaries.
 
     Configure which ID patterns to search for via REQUEST_ID_PATTERNS in your .env
     (e.g. REQUEST_ID_PATTERNS='{"request_id": "requestId=([\\\\w-]+)"}').

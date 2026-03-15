@@ -921,12 +921,13 @@ def tool_trace_request_flow(
     min_events: int = 2,
     max_requests: int = 50,
 ) -> dict:
-    """Trace request flows across containers by correlating request/trace IDs in logs.
+    """Trace request flows by correlating request/trace IDs in logs.
 
     Scans log lines for configurable request ID patterns (set via REQUEST_ID_PATTERNS
     in config / .env), groups matched lines by ID, and builds per-request chronological
-    timelines. Useful for tracing a single HTTP request or transaction across multiple
-    microservices.
+    timelines per container. Call with multiple container_names to collect timelines from
+    each; the same request ID will appear as separate timeline entries per container —
+    compare them manually to trace a transaction across service boundaries.
 
     Parameters
     ----------
@@ -1100,6 +1101,10 @@ def tool_classify_errors(
         cname = _container_name(c)
         lines, was_cached = _fetch_logs_with_cache(c, cname, since, now, use_cache=use_cache)
         cache_hits[cname] = was_cached
+        if tail <= 0:
+            lines = []
+        else:
+            lines = lines[-tail:]
         if not lines:
             per_container[cname] = {
                 "total_errors": 0,
