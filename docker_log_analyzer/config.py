@@ -93,11 +93,11 @@ class Settings(BaseSettings):
     # Request Tracing Configuration
     request_id_patterns: Dict[str, str] = Field(
         default={
-            "request_id": r"(?:request[_-]?id|req[_-]?id|x[_-]?request[_-]?id)[=:\s]+([A-Za-z0-9\-_]{8,})",
-            "trace_id": r"(?:trace[_-]?id|traceid)[=:\s]+([A-Za-z0-9\-_]{8,})",
-            "correlation_id": r"(?:correlation[_-]?id|corr[_-]?id)[=:\s]+([A-Za-z0-9\-_]{8,})",
-            "transaction_id": r"(?:transaction[_-]?id|txn[_-]?id|tx[_-]?id)[=:\s]+([A-Za-z0-9\-_]{8,})",
-            "session_id": r"(?:session[_-]?id|sess[_-]?id)[=:\s]+([A-Za-z0-9\-_]{8,})",
+            "request_id":     r"(?:request[_-]?id|req[_-]?id|x[_-]?request[_-]?id)[=:\s]+([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})",
+            "trace_id":       r"(?:trace[_-]?id|traceid)[=:\s]+([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})",
+            "correlation_id": r"(?:correlation[_-]?id|corr[_-]?id)[=:\s]+([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})",
+            "transaction_id": r"(?:transaction[_-]?id|txn[_-]?id|tx[_-]?id)[=:\s]+([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})",
+            "session_id":     r"(?:session[_-]?id|sess[_-]?id)[=:\s]+([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})",
         },
         description=(
             "Named regex patterns (each with exactly one capture group) used by "
@@ -106,7 +106,7 @@ class Settings(BaseSettings):
         ),
     )
     trace_window_seconds: int = Field(
-        default=60,
+        default=120,
         description=(
             "Max seconds between first and last event for the same ID value to be "
             "considered one trace. Groups with a wider spread are dropped as accidental "

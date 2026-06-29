@@ -19,9 +19,9 @@ Environment Variables:
 
 import os
 import random
-import string
 import sys
 import time
+import uuid
 from datetime import datetime, timezone
 
 # ── Configuration ────────────────────────────────────────────────────────────
@@ -176,10 +176,8 @@ HEALTH_CHECK_MESSAGES = [
 # ── Request ID helpers ───────────────────────────────────────────────────────
 
 def _new_request_id() -> str:
-    """Generate a realistic-looking request ID (UUID-style hex)."""
-    return "".join(random.choices(string.hexdigits[:16], k=8)) + "-" + \
-           "".join(random.choices(string.hexdigits[:16], k=4)) + "-" + \
-           "".join(random.choices(string.hexdigits[:16], k=4))
+    """Generate a standard UUID4."""
+    return str(uuid.uuid4())
 
 # Shared pool of in-flight request IDs — other containers can pick these up
 # to simulate cross-container correlation (same value, different pattern name).
