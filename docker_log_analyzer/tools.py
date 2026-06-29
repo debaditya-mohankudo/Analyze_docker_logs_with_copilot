@@ -8,8 +8,8 @@ All tools are stateless: fetch logs from Docker SDK → analyse → return JSON.
 No background threads, no persistent in-memory state, no external API calls.
 """
 
-import asyncio
 import hashlib
+import time
 import json
 import re
 from datetime import datetime, timezone, timedelta, date
@@ -500,7 +500,7 @@ def tool_sync_docker_logs(
     }
 
 
-async def tool_capture_logs(
+def tool_capture_logs(
     container_names: Optional[list[str]] = None,
     duration_seconds: int = 120,
     spike_threshold: float = 2.0,
@@ -537,7 +537,7 @@ async def tool_capture_logs(
         len(targets), duration_seconds,
     )
 
-    await asyncio.sleep(duration_seconds)
+    time.sleep(duration_seconds)
 
     end_time = datetime.now(timezone.utc)
 
@@ -603,7 +603,7 @@ async def tool_capture_logs(
     }
 
 
-async def tool_detect_data_leaks(
+def tool_detect_data_leaks(
     duration_seconds: int = 60,
     container_names: Optional[list[str]] = None,
     severity_filter: str = "all",
@@ -631,7 +631,7 @@ async def tool_detect_data_leaks(
     start_time = datetime.now(timezone.utc)
     logger.info("detect_data_leaks: scanning %d containers for %ds", len(targets), duration_seconds)
 
-    await asyncio.sleep(duration_seconds)
+    time.sleep(duration_seconds)
 
     end_time = datetime.now(timezone.utc)
 

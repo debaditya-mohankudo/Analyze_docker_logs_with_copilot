@@ -5,11 +5,10 @@ These tests are Docker-free and rely on mocks/fakes to maximize branch coverage
 for tools.py without integration overhead.
 """
 
-import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -438,20 +437,20 @@ class TestCorrelateLifecycleAndSync:
 
 
 # ---------------------------------------------------------------------------
-# async tools
+# sync tools (formerly async)
 # ---------------------------------------------------------------------------
 
 
 class TestAsyncTools:
     def test_capture_logs_docker_error(self):
         with patch("docker_log_analyzer.tools._docker_client", side_effect=RuntimeError("x")):
-            out = asyncio.run(tools.tool_capture_logs(duration_seconds=0))
+            out = tools.tool_capture_logs(duration_seconds=0)
         assert out["status"] == "error"
 
     def test_capture_logs_no_targets(self):
         client = _mock_client(list_containers=[])
         with patch("docker_log_analyzer.tools._docker_client", return_value=client):
-            out = asyncio.run(tools.tool_capture_logs(duration_seconds=0))
+            out = tools.tool_capture_logs(duration_seconds=0)
         assert out["status"] == "success"
         assert "No running containers" in out["message"]
 
@@ -459,13 +458,13 @@ class TestAsyncTools:
         c = _FakeContainer("/svc")
         client = _mock_client(list_containers=[c], inspect_map={"svc": c})
         with patch("docker_log_analyzer.tools._docker_client", return_value=client), patch(
-            "docker_log_analyzer.tools.asyncio.sleep", new=AsyncMock()
+            "docker_log_analyzer.tools.time.sleep"
         ), patch("docker_log_analyzer.tools._fetch_logs_with_cache", return_value=(["x"], False)), patch(
             "docker_log_analyzer.tools.PatternDetector", return_value=_FakePatternDetector()
         ), patch("docker_log_analyzer.tools.detect_spikes", return_value=[{"container": "svc"}]), patch(
             "docker_log_analyzer.tools.correlate", return_value=[]
         ):
-            out = asyncio.run(tools.tool_capture_logs(duration_seconds=0))
+            out = tools.tool_capture_logs(duration_seconds=0)
         assert out["status"] == "success"
         assert out["summary"]["total_log_lines"] == 1
         assert out["summary"]["spike_count"] == 1
@@ -473,15 +472,13 @@ class TestAsyncTools:
     def test_detect_data_leaks_not_found(self):
         client = _mock_client(list_containers=[])
         with patch("docker_log_analyzer.tools._docker_client", return_value=client):
-            out = asyncio.run(
-                tools.tool_detect_data_leaks(duration_seconds=0, container_names=["missing"])
-            )
+            out = tools.tool_detect_data_leaks(duration_seconds=0, container_names=["missing"])
         assert out["status"] == "error"
 
     def test_detect_data_leaks_no_targets(self):
         client = _mock_client(list_containers=[])
         with patch("docker_log_analyzer.tools._docker_client", return_value=client):
-            out = asyncio.run(tools.tool_detect_data_leaks(duration_seconds=0))
+            out = tools.tool_detect_data_leaks(duration_seconds=0)
         assert out["status"] == "success"
         assert "No running containers" in out["message"]
 
@@ -498,11 +495,11 @@ class TestAsyncTools:
             matched_text_redacted="sk-****",
         )
         with patch("docker_log_analyzer.tools._docker_client", return_value=client), patch(
-            "docker_log_analyzer.tools.asyncio.sleep", new=AsyncMock()
+            "docker_log_analyzer.tools.time.sleep"
         ), patch("docker_log_analyzer.tools._fetch_logs_with_cache", return_value=(["line"], True)), patch(
             "docker_log_analyzer.tools.SecretDetector", return_value=_FakeSecretDetector([finding])
         ):
-            out = asyncio.run(tools.tool_detect_data_leaks(duration_seconds=0))
+            out = tools.tool_detect_data_leaks(duration_seconds=0)
         assert out["status"] == "success"
         assert out["findings"][0]["matched_text"] == "sk-****"
 
@@ -809,20 +806,13 @@ _FINDING_REQUIRED_KEYS = frozenset({
 
 
 class TestToolDetectDataLeaksContract:
-    """
-    Guards the return-structure contract of tool_detect_data_leaks.
-    Uses AsyncMock for asyncio.sleep so tests complete instantly.
-    """
-
-    def _run(self, coro):
-        return asyncio.run(coro)
+    """Guards the return-structure contract of tool_detect_data_leaks."""
 
     def _base_patches(self, client, logs=None, findings=None):
-        """Return a list of context managers for the common happy-path patches."""
-        from unittest.mock import patch, AsyncMock
+        from unittest.mock import patch
         return [
             patch("docker_log_analyzer.tools._docker_client", return_value=client),
-            patch("docker_log_analyzer.tools.asyncio.sleep", new=AsyncMock()),
+            patch("docker_log_analyzer.tools.time.sleep"),
             patch("docker_log_analyzer.tools._fetch_logs_with_cache",
                   return_value=(logs or ["log line"], False)),
             patch("docker_log_analyzer.tools.SecretDetector",
@@ -833,10 +823,10 @@ class TestToolDetectDataLeaksContract:
         c = _FakeContainer("/svc")
         client = _mock_client(list_containers=[c])
         with patch("docker_log_analyzer.tools._docker_client", return_value=client), \
-             patch("docker_log_analyzer.tools.asyncio.sleep", new=AsyncMock()), \
+             patch("docker_log_analyzer.tools.time.sleep"), \
              patch("docker_log_analyzer.tools._fetch_logs_with_cache", return_value=(["line"], False)), \
              patch("docker_log_analyzer.tools.SecretDetector", return_value=_FakeSecretDetector()):
-            out = self._run(tools.tool_detect_data_leaks(duration_seconds=0))
+            out = tools.tool_detect_data_leaks(duration_seconds=0)
         assert _DATA_LEAKS_REQUIRED_KEYS <= out.keys(), (
             f"Missing keys: {_DATA_LEAKS_REQUIRED_KEYS - out.keys()}"
         )
@@ -845,10 +835,10 @@ class TestToolDetectDataLeaksContract:
         c = _FakeContainer("/svc")
         client = _mock_client(list_containers=[c])
         with patch("docker_log_analyzer.tools._docker_client", return_value=client), \
-             patch("docker_log_analyzer.tools.asyncio.sleep", new=AsyncMock()), \
+             patch("docker_log_analyzer.tools.time.sleep"), \
              patch("docker_log_analyzer.tools._fetch_logs_with_cache", return_value=(["line"], False)), \
              patch("docker_log_analyzer.tools.SecretDetector", return_value=_FakeSecretDetector()):
-            out = self._run(tools.tool_detect_data_leaks(duration_seconds=0))
+            out = tools.tool_detect_data_leaks(duration_seconds=0)
         assert _SCAN_WINDOW_REQUIRED_KEYS <= out["scan_window"].keys(), (
             f"Missing scan_window keys: {_SCAN_WINDOW_REQUIRED_KEYS - out['scan_window'].keys()}"
         )
@@ -863,10 +853,10 @@ class TestToolDetectDataLeaksContract:
             matched_text_redacted="AK**",
         )
         with patch("docker_log_analyzer.tools._docker_client", return_value=client), \
-             patch("docker_log_analyzer.tools.asyncio.sleep", new=AsyncMock()), \
+             patch("docker_log_analyzer.tools.time.sleep"), \
              patch("docker_log_analyzer.tools._fetch_logs_with_cache", return_value=(["line"], False)), \
              patch("docker_log_analyzer.tools.SecretDetector", return_value=_FakeSecretDetector([finding])):
-            out = self._run(tools.tool_detect_data_leaks(duration_seconds=0))
+            out = tools.tool_detect_data_leaks(duration_seconds=0)
         assert len(out["findings"]) == 1
         assert _FINDING_REQUIRED_KEYS <= out["findings"][0].keys(), (
             f"Missing finding keys: {_FINDING_REQUIRED_KEYS - out['findings'][0].keys()}"
@@ -874,7 +864,7 @@ class TestToolDetectDataLeaksContract:
 
     def test_docker_error_returns_error_status(self):
         with patch("docker_log_analyzer.tools._docker_client", side_effect=RuntimeError("down")):
-            out = self._run(tools.tool_detect_data_leaks(duration_seconds=0))
+            out = tools.tool_detect_data_leaks(duration_seconds=0)
         assert out["status"] == "error"
         assert "error" in out
 

@@ -67,13 +67,13 @@ mcp = FastMCP("docker-log-analyzer")
 # ── Tools ─────────────────────────────────────────────────────────────────────
 
 @mcp.tool()
-async def list_containers() -> dict:
+def list_containers() -> dict:
     """List all running Docker containers with name, image, status, and labels."""
     return tool_list_containers()
 
 
 @mcp.tool()
-async def analyze_patterns(
+def analyze_patterns(
     container_name: str | None = None,
     tail: int = 500,
     force_refresh: bool = False,
@@ -95,7 +95,7 @@ async def analyze_patterns(
 
 
 @mcp.tool()
-async def analyze_error_spikes(
+def analyze_error_spikes(
     container_name: str | None = None,
     tail: int = 1000,
     window_minutes: int = 5,
@@ -121,7 +121,7 @@ async def analyze_error_spikes(
 
 
 @mcp.tool()
-async def analyze_correlations(
+def analyze_correlations(
     container_names: list[str] | None = None,
     time_window_seconds: int = 30,
     tail: int = 500,
@@ -141,7 +141,7 @@ async def analyze_correlations(
 
 
 @mcp.tool()
-async def start_test_containers(rebuild: bool = False) -> dict:
+def start_test_containers(rebuild: bool = False) -> dict:
     """Build and start the test log-generator containers defined in docker-compose.test.yml.
     Spins up 4 containers (web-app, database, cache, gateway) that emit random logs in
     different formats (ISO-8601, syslog, epoch, Apache) and languages (Python, Java, Go,
@@ -154,13 +154,13 @@ async def start_test_containers(rebuild: bool = False) -> dict:
 
 
 @mcp.tool()
-async def stop_test_containers() -> dict:
+def stop_test_containers() -> dict:
     """Stop and remove the test log-generator containers started by start_test_containers."""
     return tool_stop_test_containers()
 
 
 @mcp.tool()
-async def sync_docker_logs(
+def sync_docker_logs(
     container_names: list[str] | None = None,
     since: str | None = None,
     until: str | None = None,
@@ -186,7 +186,7 @@ async def sync_docker_logs(
 
 
 @mcp.tool()
-async def capture_logs(
+def capture_logs(
     container_names: list[str] | None = None,
     duration_seconds: int = 120,
     spike_threshold: float = 2.0,
@@ -204,7 +204,7 @@ async def capture_logs(
         time_window_seconds: Co-occurrence window for cross-container correlation
             (default 30).
     """
-    return await tool_capture_logs(
+    return tool_capture_logs(
         container_names=container_names,
         duration_seconds=duration_seconds,
         spike_threshold=spike_threshold,
@@ -213,7 +213,7 @@ async def capture_logs(
 
 
 @mcp.tool()
-async def detect_data_leaks(
+def detect_data_leaks(
     duration_seconds: int = 60,
     container_names: list[str] | None = None,
     severity_filter: str = "all",
@@ -228,7 +228,7 @@ async def detect_data_leaks(
         severity_filter: Filter by minimum severity — 'critical' (API keys), 'high'
             (tokens, DB URLs), 'all' (includes PII). Default 'all'.
     """
-    return await tool_detect_data_leaks(
+    return tool_detect_data_leaks(
         duration_seconds=duration_seconds,
         container_names=container_names,
         severity_filter=severity_filter,
@@ -236,7 +236,7 @@ async def detect_data_leaks(
 
 
 @mcp.tool()
-async def map_service_dependencies(
+def map_service_dependencies(
     containers: list[str] | None = None,
     tail: int = 500,
     include_transitive: bool = False,
@@ -262,7 +262,7 @@ async def map_service_dependencies(
 
 
 @mcp.tool()
-async def analyze_root_causes(
+def analyze_root_causes(
     containers: list[str] | None = None,
     tail: int = 500,
     time_window_seconds: int = 3600,
@@ -288,7 +288,7 @@ async def analyze_root_causes(
 
 
 @mcp.tool()
-async def get_last_errors(
+def get_last_errors(
     container_name: str,
     tail: int = 200,
     limit: int = 10,
@@ -310,7 +310,7 @@ async def get_last_errors(
 
 
 @mcp.tool()
-async def plan_investigation(
+def plan_investigation(
     symptoms: list[str],
     containers: list[str] | None = None,
     focus: str | None = None,
@@ -337,7 +337,7 @@ async def plan_investigation(
 
 
 @mcp.tool()
-async def analyze_code_context(
+def analyze_code_context(
     container_name: str,
     tail: int = 200,
     context_lines: int | None = None,
@@ -373,7 +373,7 @@ async def analyze_code_context(
 
 
 @mcp.tool()
-async def trace_request_flow(
+def trace_request_flow(
     container_names: list[str] | None = None,
     tail: int = 500,
     min_events: int = 2,
@@ -403,7 +403,7 @@ async def trace_request_flow(
 
 
 @mcp.tool()
-async def classify_errors(
+def classify_errors(
     container_names: list[str] | None = None,
     tail: int = 1000,
     categories: list[str] | None = None,
@@ -430,7 +430,7 @@ async def classify_errors(
 
 
 @mcp.tool()
-async def cache_info(container_name: str | None = None) -> dict:
+def cache_info(container_name: str | None = None) -> dict:
     """Show a summary of the local log cache (.cache/logs/): cached containers,
     dates covered, total log lines, disk size, and last sync time. Use this to
     check whether cached logs are fresh before running analysis tools, or to
@@ -443,7 +443,7 @@ async def cache_info(container_name: str | None = None) -> dict:
 
 
 @mcp.tool()
-async def clear_cache(container_name: str | None = None) -> dict:
+def clear_cache(container_name: str | None = None) -> dict:
     """Clear the local log cache (.cache/logs/). After clearing, the next
     analysis tool call will fetch fresh logs from the Docker API instead of
     using stale cached data. Use this when logs look wrong or the cache is
