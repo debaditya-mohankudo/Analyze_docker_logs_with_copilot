@@ -5,6 +5,7 @@ All tests are self-contained (no Docker required).
 """
 
 import pytest
+from math import log1p
 
 from docker_log_analyzer.root_cause_analyzer import (
     WEIGHT_CASCADE,
@@ -30,9 +31,9 @@ def _cascade(origin, receiver, score=0.8):
             "evidence": "test"}
 
 
-def _spike(container, ts):
-    return {"container": container, "first_spike_ts": ts,
-            "spike_count": 1, "max_error_rate": 10.0}
+def _spike(container, ts, ratio=10.0):
+    return {"container": container, "bucket_minute": ts, "ratio": ratio,
+            "error_count": int(ratio), "baseline": 1.0}
 
 
 def _scores(result):
@@ -51,9 +52,9 @@ class TestEmptyInputs:
         graph = {"web": [_edge("db")], "db": []}
         result = rank_root_causes(graph, [], [])
         scores = _scores(result)
-        # db has 1 fan-in: +WEIGHT_DEPENDENT; web has 1 outbound: WEIGHT_DEPENDENCY
+        # db has 1 fan-in: +WEIGHT_DEPENDENT; web has 1 outbound: penalty floored to 0.0
         assert scores["db"] == WEIGHT_DEPENDENT
-        assert scores["web"] == WEIGHT_DEPENDENCY
+        assert scores["web"] == 0.0
 
     def test_cascades_only_no_graph_no_spikes(self):
         result = rank_root_causes({}, [_cascade("db", "web", 1.0)], [])
@@ -111,20 +112,22 @@ class TestFanInScoring:
 class TestFanOutPenalty:
 
     def test_single_outbound_edge_applies_penalty(self):
+        # Penalty is applied but floored at 0.0 — no fan-in to offset it
         graph = {"web": [_edge("db")]}
         scores = _scores(rank_root_causes(graph, [], []))
-        assert scores["web"] == WEIGHT_DEPENDENCY  # -1.0
+        assert scores["web"] == 0.0
 
     def test_two_outbound_edges_doubles_penalty(self):
+        # Two outbound edges, no fan-in → double penalty floored to 0.0
         graph = {"web": [_edge("db"), _edge("cache")]}
         scores = _scores(rank_root_causes(graph, [], []))
-        assert scores["web"] == pytest.approx(2 * WEIGHT_DEPENDENCY)
+        assert scores["web"] == 0.0
 
-    def test_fan_out_can_make_score_negative(self):
-        # No fan-in, one outbound dep → negative score is expected (Issue E tracks floor)
+    def test_fan_out_penalty_floored_at_zero(self):
+        # Fan-out penalty cannot produce a negative score (Issue E fix)
         graph = {"leaf": [_edge("external")]}
         scores = _scores(rank_root_causes(graph, [], []))
-        assert scores["leaf"] < 0
+        assert scores["leaf"] == 0.0
 
 
 # ── Cascade scoring ────────────────────────────────────────────────────────────
@@ -157,13 +160,13 @@ class TestSpikeTiming:
     def test_origin_spiked_first_adds_weight(self):
         cascades = [_cascade("db", "web")]
         spikes = [
-            _spike("db",  "2026-03-07T10:00:00Z"),
-            _spike("web", "2026-03-07T10:05:00Z"),
+            _spike("db",  "2026-03-07T10:00:00Z", ratio=10.0),
+            _spike("web", "2026-03-07T10:05:00Z", ratio=5.0),
         ]
         scores = _scores(rank_root_causes({}, cascades, spikes))
-        # Cascade score + spike timing bonus
-        expected = 0.8 * WEIGHT_CASCADE + WEIGHT_SPIKE_FIRST
-        assert scores["db"] == pytest.approx(expected)
+        # Cascade score + spike timing bonus weighted by log1p(ratio)
+        expected = 0.8 * WEIGHT_CASCADE + WEIGHT_SPIKE_FIRST * log1p(10.0)
+        assert scores["db"] == pytest.approx(expected, rel=1e-3)
 
     def test_origin_spiked_after_target_no_bonus(self):
         cascades = [_cascade("db", "web")]
@@ -190,22 +193,21 @@ class TestSpikeTiming:
         scores = _scores(rank_root_causes({}, cascades, spikes))
         assert scores["db"] == pytest.approx(0.8 * WEIGHT_CASCADE)
 
-    def test_spike_with_none_first_spike_ts_excluded(self):
-        """Issue A fix: spikes with first_spike_ts=None are excluded from lookup."""
+    def test_spike_with_none_bucket_minute_excluded(self):
+        """Spikes with bucket_minute=None are excluded from spike timing lookup."""
         cascades = [_cascade("db", "web")]
         spikes = [
-            {"container": "db",  "first_spike_ts": None},
-            {"container": "web", "first_spike_ts": "2026-03-07T10:05:00Z"},
+            {"container": "db",  "bucket_minute": None, "ratio": 5.0},
+            {"container": "web", "bucket_minute": "2026-03-07T10:05:00Z", "ratio": 5.0},
         ]
-        # Must not raise; None is excluded from spike_time dict
         scores = _scores(rank_root_causes({}, cascades, spikes))
         assert scores["db"] == pytest.approx(0.8 * WEIGHT_CASCADE)
 
-    def test_spike_with_missing_first_spike_ts_key_excluded(self):
-        """Issue A fix: spikes missing the first_spike_ts key entirely are excluded."""
+    def test_spike_with_missing_bucket_minute_key_excluded(self):
+        """Spikes missing the bucket_minute key entirely are excluded from timing."""
         cascades = [_cascade("db", "web")]
         spikes = [
-            {"container": "db"},  # no first_spike_ts key
+            {"container": "db"},  # no bucket_minute key
             _spike("web", "2026-03-07T10:05:00Z"),
         ]
         scores = _scores(rank_root_causes({}, cascades, spikes))
@@ -280,8 +282,8 @@ class TestFourServiceScenario:
 
     def test_database_score_includes_all_signals(self, graph, cascades, spikes):
         scores = _scores(rank_root_causes(graph, cascades, spikes))
-        # database: fan-in=1 (+2.0) + cascade(0.81) × 3.0 (+2.43) + spike_first (+4.0)
-        expected = WEIGHT_DEPENDENT + 0.81 * WEIGHT_CASCADE + WEIGHT_SPIKE_FIRST
+        # database: fan-in=1 (+2.0) + cascade(0.81)×3.0 (+2.43) + spike_first×log1p(10.0)
+        expected = WEIGHT_DEPENDENT + 0.81 * WEIGHT_CASCADE + WEIGHT_SPIKE_FIRST * log1p(10.0)
         assert scores["database"] == pytest.approx(expected, rel=1e-3)
 
     def test_web_app_fan_out_penalty_applied(self, graph, cascades, spikes):
