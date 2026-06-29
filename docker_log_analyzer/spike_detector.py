@@ -43,7 +43,7 @@ def detect_spikes(
     Args:
         log_lines: Raw log lines with Docker-prepended timestamps.
         container_name: Container label for spike event output.
-        window_minutes: Unused internally but kept for API consistency.
+        window_minutes: Rolling baseline look-back window in minutes (1-minute buckets).
         spike_threshold: Ratio (current / baseline) that constitutes a spike.
 
     Returns:
@@ -90,7 +90,7 @@ def detect_spikes(
     baseline = (
         error_series
         .shift(1)
-        .rolling_mean(window_size=BASELINE_BUCKETS, min_samples=1)
+        .rolling_mean(window_size=max(1, window_minutes), min_samples=1)
     )
 
     bucket_counts = bucket_counts.with_columns([
