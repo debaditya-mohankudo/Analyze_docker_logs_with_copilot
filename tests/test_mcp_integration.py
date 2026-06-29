@@ -251,34 +251,29 @@ class TestTestContainerLifecycle:
 class TestDetectDataLeaks:
 
     def test_returns_success_status(self, docker_client, setup_integration_containers):
-        import asyncio
-        result = asyncio.run(tool_detect_data_leaks(duration_seconds=1))
+        result = tool_detect_data_leaks(duration_seconds=1)
         assert result["status"] == "success"
 
     def test_contains_required_fields(self, docker_client, setup_integration_containers):
-        import asyncio
-        result = asyncio.run(tool_detect_data_leaks(duration_seconds=1))
+        result = tool_detect_data_leaks(duration_seconds=1)
         assert "scan_window" in result
         assert "findings" in result
         assert "summary" in result
         assert "recommendations" in result
 
     def test_scan_window_has_timestamps(self, docker_client, setup_integration_containers):
-        import asyncio
-        result = asyncio.run(tool_detect_data_leaks(duration_seconds=1))
+        result = tool_detect_data_leaks(duration_seconds=1)
         scan_window = result["scan_window"]
         assert "start" in scan_window
         assert "end" in scan_window
         assert "duration_seconds" in scan_window
 
     def test_findings_is_list(self, docker_client, setup_integration_containers):
-        import asyncio
-        result = asyncio.run(tool_detect_data_leaks(duration_seconds=1))
+        result = tool_detect_data_leaks(duration_seconds=1)
         assert isinstance(result["findings"], list)
 
     def test_finding_fields_present(self, docker_client, setup_integration_containers):
-        import asyncio
-        result = asyncio.run(tool_detect_data_leaks(duration_seconds=5))
+        result = tool_detect_data_leaks(duration_seconds=5)
         if result["findings"]:
             for finding in result["findings"]:
                 assert "container" in finding
@@ -292,47 +287,42 @@ class TestDetectDataLeaks:
                 assert "*" in finding["matched_text"] or finding["severity"] == "low"
 
     def test_summary_counts_findings(self, docker_client, setup_integration_containers):
-        import asyncio
-        result = asyncio.run(tool_detect_data_leaks(duration_seconds=1))
+        result = tool_detect_data_leaks(duration_seconds=1)
         summary = result["summary"]
         assert "total_findings" in summary
         assert "by_severity" in summary
         assert all(k in summary["by_severity"] for k in ["critical", "high", "medium", "low"])
 
     def test_filters_by_severity_critical(self, docker_client, setup_integration_containers):
-        import asyncio
-        result = asyncio.run(tool_detect_data_leaks(
+        result = tool_detect_data_leaks(
             duration_seconds=5,
             severity_filter="critical"
-        ))
+        )
         # If there are findings, they should all be critical
         for finding in result["findings"]:
             assert finding["severity"] == "critical"
 
     def test_filters_by_severity_high(self, docker_client, setup_integration_containers):
-        import asyncio
-        result = asyncio.run(tool_detect_data_leaks(
+        result = tool_detect_data_leaks(
             duration_seconds=5,
             severity_filter="high"
-        ))
+        )
         # If there are findings, they should be critical or high
         for finding in result["findings"]:
             assert finding["severity"] in ("critical", "high")
 
     def test_specific_container_filtering(self, docker_client, setup_integration_containers):
-        import asyncio
-        result = asyncio.run(tool_detect_data_leaks(
+        result = tool_detect_data_leaks(
             duration_seconds=1,
             container_names=["test-web-app"]
-        ))
+        )
         assert result["status"] == "success"
         # All findings should be from the specified container
         for finding in result["findings"]:
             assert "test-web-app" in finding["container"]
 
     def test_recommendations_present(self, docker_client, setup_integration_containers):
-        import asyncio
-        result = asyncio.run(tool_detect_data_leaks(duration_seconds=5))
+        result = tool_detect_data_leaks(duration_seconds=5)
         assert isinstance(result["recommendations"], list)
         # If critical findings, should recommend action
         if result["summary"]["by_severity"]["critical"] > 0:
@@ -340,11 +330,10 @@ class TestDetectDataLeaks:
             assert any("crit" in r.lower() for r in result["recommendations"])
 
     def test_invalid_container_name_error(self, docker_client):
-        import asyncio
-        result = asyncio.run(tool_detect_data_leaks(
+        result = tool_detect_data_leaks(
             duration_seconds=1,
             container_names=["nonexistent-container-xyz"]
-        ))
+        )
         assert result["status"] == "error"
         assert "not found" in result["error"].lower()
 
