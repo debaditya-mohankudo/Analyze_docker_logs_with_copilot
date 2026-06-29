@@ -36,7 +36,6 @@ from .root_cause_analyzer import rank_root_causes
 from .secret_detector import SecretDetector
 from .patterns import DOCKER_TS_RE, ERROR_PATTERN_RE
 from .spike_detector import detect_spikes
-from .coderepo import analyse_code_context
 from .docker import (
     COMPOSE_FILE,
     _docker_client,
