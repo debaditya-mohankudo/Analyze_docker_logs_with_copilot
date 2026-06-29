@@ -45,7 +45,7 @@ class RequestIdPattern:
 
 _FAST_PATH_RE = re.compile(
     r"request[_-]?id|trace[_-]?id|correlation[_-]?id|req[_-]?id|x[_-]?request"
-    r"|transaction[_-]?id|txn[_-]?id|tx[_-]?id",
+    r"|transaction[_-]?id|txn[_-]?id|tx[_-]?id|session[_-]?id|sess[_-]?id",
     re.IGNORECASE,
 )
 

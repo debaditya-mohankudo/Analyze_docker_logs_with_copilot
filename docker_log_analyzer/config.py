@@ -97,6 +97,7 @@ class Settings(BaseSettings):
             "trace_id": r"(?:trace[_-]?id|traceid)[=:\s]+([A-Za-z0-9\-_]{8,})",
             "correlation_id": r"(?:correlation[_-]?id|corr[_-]?id)[=:\s]+([A-Za-z0-9\-_]{8,})",
             "transaction_id": r"(?:transaction[_-]?id|txn[_-]?id|tx[_-]?id)[=:\s]+([A-Za-z0-9\-_]{8,})",
+            "session_id": r"(?:session[_-]?id|sess[_-]?id)[=:\s]+([A-Za-z0-9\-_]{8,})",
         },
         description=(
             "Named regex patterns (each with exactly one capture group) used by "
