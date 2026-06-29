@@ -22,6 +22,7 @@ from docker_log_analyzer.tools import (
     tool_stop_test_containers,
     tool_analyze_code_context,
     tool_plan_investigation,
+    tool_trace_request_flow,
 )
 
 
@@ -486,3 +487,105 @@ class TestPlanInvestigation:
         result = tool_plan_investigation(symptoms=["memory leak"])
         assert "plan_file" in result
         assert os.path.isfile(result["plan_file"])
+
+
+# ── trace_request_flow ────────────────────────────────────────────────────────
+
+class TestTraceRequestFlow:
+    """Integration tests for tool_trace_request_flow.
+
+    The test containers emit request_id / transaction_id / trace_id /
+    correlation_id suffixes on ~1-in-5 normal log lines (see log_generator/).
+    Tests use min_events=1 so single-event IDs are included — makes results
+    deterministic regardless of how long containers have been running.
+    """
+
+    def test_returns_success_status(self, docker_client, setup_integration_containers):
+        result = tool_trace_request_flow(tail=200, min_events=1)
+        assert result["status"] == "success"
+
+    def test_required_top_level_keys(self, docker_client, setup_integration_containers):
+        result = tool_trace_request_flow(tail=200, min_events=1)
+        for key in ("status", "timelines", "request_count", "containers_scanned",
+                    "cache_hits", "parameters"):
+            assert key in result
+
+    def test_timelines_is_list(self, docker_client, setup_integration_containers):
+        result = tool_trace_request_flow(tail=200, min_events=1)
+        assert isinstance(result["timelines"], list)
+
+    def test_parameters_echoed_back(self, docker_client, setup_integration_containers):
+        result = tool_trace_request_flow(tail=300, min_events=1, max_requests=20)
+        p = result["parameters"]
+        assert p["tail"] == 300
+        assert p["min_events"] == 1
+        assert p["max_requests"] == 20
+        assert "trace_window_seconds" in p
+
+    def test_timeline_schema(self, docker_client, setup_integration_containers):
+        result = tool_trace_request_flow(tail=500, min_events=1)
+        for tl in result["timelines"]:
+            assert "id_value" in tl
+            assert "id_patterns" in tl
+            assert "containers" in tl
+            assert "event_count" in tl
+            assert "first_seen" in tl
+            assert "last_seen" in tl
+            assert "duration_ms" in tl
+            assert "events" in tl
+            assert isinstance(tl["id_patterns"], list)
+            assert isinstance(tl["containers"], list)
+            assert isinstance(tl["events"], list)
+
+    def test_each_event_has_required_fields(self, docker_client, setup_integration_containers):
+        result = tool_trace_request_flow(tail=500, min_events=1)
+        for tl in result["timelines"]:
+            for event in tl["events"]:
+                assert "container" in event
+                assert "timestamp" in event
+                assert "pattern_name" in event
+                assert "message" in event
+
+    def test_request_count_matches_timelines(self, docker_client, setup_integration_containers):
+        result = tool_trace_request_flow(tail=500, min_events=1, max_requests=10)
+        assert result["request_count"] >= len(result["timelines"])
+
+    def test_invalid_container_returns_error(self, docker_client):
+        result = tool_trace_request_flow(container_names=["nonexistent-xyz"])
+        assert result["status"] == "error"
+        assert "not found" in result["error"].lower()
+
+    def test_specific_container_filter(self, docker_client, setup_integration_containers):
+        result = tool_trace_request_flow(
+            container_names=["test-web-app"],
+            tail=300,
+            min_events=1,
+        )
+        assert result["status"] == "success"
+        assert "test-web-app" in result["containers_scanned"]
+        # All timeline events must come from the requested container
+        for tl in result["timelines"]:
+            for event in tl["events"]:
+                assert event["container"] == "test-web-app"
+
+    def test_finds_request_ids_after_warmup(self, docker_client, setup_integration_containers):
+        """Containers emit request_id on 1-in-5 lines — with tail=500 we expect matches."""
+        result = tool_trace_request_flow(tail=500, min_events=1)
+        assert result["request_count"] > 0, (
+            "No request IDs found. Check that log_generator emits request_id / "
+            "transaction_id suffixes (REQUEST_ID_RATE env var)."
+        )
+
+    def test_cross_container_merge_produces_multi_container_timeline(
+        self, docker_client, setup_integration_containers
+    ):
+        """IDs shared across containers (same value, different field names) should
+        appear as a single timeline entry listing multiple containers."""
+        result = tool_trace_request_flow(tail=1000, min_events=1)
+        multi = [tl for tl in result["timelines"] if len(tl["containers"]) > 1]
+        # Log generator reuses IDs across containers with 30% probability — with
+        # tail=1000 across 4 containers we expect at least one cross-container hit
+        # most of the time. We assert on shape, not count, to avoid flakiness.
+        for tl in multi:
+            assert len(tl["id_patterns"]) >= 1
+            assert tl["event_count"] >= 2

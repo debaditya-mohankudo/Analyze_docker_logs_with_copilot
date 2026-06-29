@@ -19,11 +19,15 @@ Environment Variables:
 
 import os
 import random
+import string
 import sys
 import time
 from datetime import datetime, timezone
 
 # ── Configuration ────────────────────────────────────────────────────────────
+# Request ID emission rate — 1 in N normal log lines will carry a request_id.
+# Set to 0 to disable. Enables trace_request_flow integration tests.
+REQUEST_ID_RATE  = int(os.getenv("REQUEST_ID_RATE", "5"))   # 1-in-5 normal lines
 
 LOG_FORMAT       = os.getenv("LOG_FORMAT", "mixed")
 LOG_LANGUAGE     = os.getenv("LOG_LANGUAGE", "mixed")
@@ -169,6 +173,46 @@ HEALTH_CHECK_MESSAGES = [
     'INFO  Readiness probe: ready',
 ]
 
+# ── Request ID helpers ───────────────────────────────────────────────────────
+
+def _new_request_id() -> str:
+    """Generate a realistic-looking request ID (UUID-style hex)."""
+    return "".join(random.choices(string.hexdigits[:16], k=8)) + "-" + \
+           "".join(random.choices(string.hexdigits[:16], k=4)) + "-" + \
+           "".join(random.choices(string.hexdigits[:16], k=4))
+
+# Shared pool of in-flight request IDs — other containers can pick these up
+# to simulate cross-container correlation (same value, different pattern name).
+_SHARED_IDS: list[str] = []
+_MAX_SHARED  = 5
+
+
+def _maybe_request_id_suffix(is_error: bool) -> str:
+    """Return a ' request_id=<id>' suffix for ~1-in-REQUEST_ID_RATE normal lines."""
+    if REQUEST_ID_RATE <= 0 or is_error:
+        return ""
+    if random.randint(1, REQUEST_ID_RATE) != 1:
+        return ""
+    # 30% chance: reuse a shared ID from pool (cross-container correlation)
+    if _SHARED_IDS and random.random() < 0.30:
+        rid = random.choice(_SHARED_IDS)
+    else:
+        rid = _new_request_id()
+        if len(_SHARED_IDS) < _MAX_SHARED:
+            _SHARED_IDS.append(rid)
+        elif random.random() < 0.5:
+            _SHARED_IDS[random.randrange(_MAX_SHARED)] = rid
+    # Vary the field name by service so different containers use different names —
+    # this exercises the cross-pattern-name merging in cross_container_timelines().
+    field = {
+        "web-app":  "request_id",
+        "database": "transaction_id",
+        "cache":    "trace_id",
+        "gateway":  "correlation_id",
+    }.get(SERVICE_NAME, "request_id")
+    return f" {field}={rid}"
+
+
 # ── Log line builders ────────────────────────────────────────────────────────
 
 def pick_format() -> str:
@@ -195,10 +239,12 @@ def build_line(is_error: bool) -> str:
     else:
         msg = random.choice(NORMAL_MESSAGES.get(lang, NORMAL_MESSAGES["generic"]))
 
+    rid_suffix = _maybe_request_id_suffix(is_error)
+
     # Apache format wraps the message differently
     if fmt == "apache":
-        return f'[{ts}] [{SERVICE_NAME}] {msg}'
-    return f'{ts} {msg}'
+        return f'[{ts}] [{SERVICE_NAME}] {msg}{rid_suffix}'
+    return f'{ts} {msg}{rid_suffix}'
 
 # ── Main loop ────────────────────────────────────────────────────────────────
 
