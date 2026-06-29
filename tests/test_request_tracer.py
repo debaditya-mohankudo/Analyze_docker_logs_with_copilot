@@ -9,6 +9,7 @@ from docker_log_analyzer.request_tracer import (
     _build_fast_path,
     RequestIdPattern,
     build_timelines,
+    cross_container_timelines,
     extract_ids,
     group_by_request,
 )
@@ -186,3 +187,93 @@ class TestRequestIdPatternValidation:
     def test_invalid_regex_raises_value_error(self):
         with pytest.raises(ValueError, match="invalid regex"):
             RequestIdPattern(name="bad", pattern=r"([")
+
+
+# ---------------------------------------------------------------------------
+# cross_container_timelines
+# ---------------------------------------------------------------------------
+
+class TestCrossContainerTimelines:
+
+    def _match(self, id_value, pattern_name, unix_ts, line, container):
+        return (id_value, pattern_name, unix_ts, line, container)
+
+    def test_single_container_single_pattern_passthrough(self):
+        matches = [
+            self._match("abc-123", "request_id", 1000.0, "GET /api request_id=abc-123", "web"),
+            self._match("abc-123", "request_id", 1001.0, "200 OK request_id=abc-123", "web"),
+        ]
+        result = cross_container_timelines(matches, trace_window_seconds=60)
+        assert len(result) == 1
+        tl = result[0]
+        assert tl["id_value"] == "abc-123"
+        assert tl["containers"] == ["web"]
+        assert tl["id_patterns"] == ["request_id"]
+        assert tl["event_count"] == 2
+        assert tl["duration_ms"] == 1000.0
+
+    def test_same_value_different_pattern_names_merges(self):
+        """request_id=abc in web and transaction_id=abc in db → one timeline."""
+        matches = [
+            self._match("abc-123", "request_id",    1000.0, "web log",  "web"),
+            self._match("abc-123", "transaction_id", 1002.0, "db log",   "database"),
+        ]
+        result = cross_container_timelines(matches, trace_window_seconds=60)
+        assert len(result) == 1
+        tl = result[0]
+        assert sorted(tl["containers"]) == ["database", "web"]
+        assert sorted(tl["id_patterns"]) == ["request_id", "transaction_id"]
+        assert tl["event_count"] == 2
+
+    def test_events_sorted_chronologically(self):
+        matches = [
+            self._match("abc-123", "request_id", 1005.0, "late",  "web"),
+            self._match("abc-123", "request_id", 1000.0, "early", "db"),
+        ]
+        result = cross_container_timelines(matches, trace_window_seconds=60)
+        assert result[0]["events"][0]["message"] == "early"
+        assert result[0]["events"][1]["message"] == "late"
+
+    def test_spread_exceeds_window_dropped(self):
+        """Events > trace_window_seconds apart are dropped as a collision."""
+        matches = [
+            self._match("short-id", "request_id", 0.0,    "first",  "web"),
+            self._match("short-id", "request_id", 200.0,  "second", "db"),
+        ]
+        result = cross_container_timelines(matches, trace_window_seconds=60)
+        assert result == []
+
+    def test_spread_within_window_kept(self):
+        matches = [
+            self._match("abc-123", "request_id", 0.0,  "first",  "web"),
+            self._match("abc-123", "request_id", 59.0, "second", "db"),
+        ]
+        result = cross_container_timelines(matches, trace_window_seconds=60)
+        assert len(result) == 1
+
+    def test_each_event_has_container_field(self):
+        matches = [
+            self._match("abc-123", "request_id", 1000.0, "line", "web"),
+        ]
+        result = cross_container_timelines(matches, trace_window_seconds=60)
+        assert result[0]["events"][0]["container"] == "web"
+
+    def test_different_ids_produce_separate_timelines(self):
+        matches = [
+            self._match("req-1", "request_id", 1000.0, "line1", "web"),
+            self._match("req-2", "request_id", 2000.0, "line2", "web"),
+        ]
+        result = cross_container_timelines(matches, trace_window_seconds=60)
+        assert len(result) == 2
+
+    def test_empty_input_returns_empty(self):
+        assert cross_container_timelines([], trace_window_seconds=60) == []
+
+    def test_results_sorted_by_first_seen(self):
+        matches = [
+            self._match("late-req",  "request_id", 2000.0, "late",  "web"),
+            self._match("early-req", "request_id", 1000.0, "early", "web"),
+        ]
+        result = cross_container_timelines(matches, trace_window_seconds=60)
+        assert result[0]["id_value"] == "early-req"
+        assert result[1]["id_value"] == "late-req"

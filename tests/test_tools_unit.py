@@ -886,11 +886,13 @@ _TRACE_FLOW_PARAMETERS_REQUIRED_KEYS = frozenset({
     "tail",
     "min_events",
     "max_requests",
+    "trace_window_seconds",
 })
 
 _TIMELINE_REQUIRED_KEYS = frozenset({
-    "request_id",
-    "container",
+    "id_value",
+    "id_patterns",
+    "containers",
     "event_count",
     "first_seen",
     "last_seen",
@@ -899,6 +901,7 @@ _TIMELINE_REQUIRED_KEYS = frozenset({
 })
 
 _TIMELINE_EVENT_REQUIRED_KEYS = frozenset({
+    "container",
     "timestamp",
     "pattern_name",
     "message",
@@ -934,14 +937,25 @@ class TestToolTraceRequestFlowContract:
         assert out["timelines"] == []
         assert out["request_count"] == 0
 
+    def _fake_timeline(self, id_value="abc-123", event_count=3, events=None):
+        return {
+            "id_value": id_value,
+            "id_patterns": ["request_id"],
+            "containers": ["svc"],
+            "event_count": event_count,
+            "first_seen": "2026-03-13T10:00:00.000Z",
+            "last_seen": "2026-03-13T10:00:01.000Z",
+            "duration_ms": 1000.0,
+            "events": events or [],
+        }
+
     def test_success_path_has_required_top_level_keys(self):
         c = _FakeContainer("/svc")
         client = _mock_client(list_containers=[c])
         with patch("docker_log_analyzer.tools._docker_client", return_value=client), \
              patch("docker_log_analyzer.tools._fetch_logs_with_cache", return_value=([], False)), \
              patch("docker_log_analyzer.tools.extract_ids", return_value=[]), \
-             patch("docker_log_analyzer.tools.group_by_request", return_value={}), \
-             patch("docker_log_analyzer.tools.build_timelines", return_value=[]):
+             patch("docker_log_analyzer.tools.cross_container_timelines", return_value=[]):
             out = tools.tool_trace_request_flow()
         assert _TRACE_FLOW_REQUIRED_KEYS <= out.keys(), (
             f"Missing keys: {_TRACE_FLOW_REQUIRED_KEYS - out.keys()}"
@@ -953,8 +967,7 @@ class TestToolTraceRequestFlowContract:
         with patch("docker_log_analyzer.tools._docker_client", return_value=client), \
              patch("docker_log_analyzer.tools._fetch_logs_with_cache", return_value=([], False)), \
              patch("docker_log_analyzer.tools.extract_ids", return_value=[]), \
-             patch("docker_log_analyzer.tools.group_by_request", return_value={}), \
-             patch("docker_log_analyzer.tools.build_timelines", return_value=[]):
+             patch("docker_log_analyzer.tools.cross_container_timelines", return_value=[]):
             out = tools.tool_trace_request_flow()
         assert _TRACE_FLOW_PARAMETERS_REQUIRED_KEYS <= out["parameters"].keys(), (
             f"Missing parameters keys: {_TRACE_FLOW_PARAMETERS_REQUIRED_KEYS - out['parameters'].keys()}"
@@ -963,20 +976,10 @@ class TestToolTraceRequestFlowContract:
     def test_each_timeline_has_required_keys(self):
         c = _FakeContainer("/svc")
         client = _mock_client(list_containers=[c])
-        fake_timeline = {
-            "request_id": "abc-123",
-            "container": "svc",
-            "event_count": 3,
-            "first_seen": "2026-03-13T10:00:00.000Z",
-            "last_seen": "2026-03-13T10:00:01.000Z",
-            "duration_ms": 1000.0,
-            "events": [],
-        }
         with patch("docker_log_analyzer.tools._docker_client", return_value=client), \
              patch("docker_log_analyzer.tools._fetch_logs_with_cache", return_value=(["line"], False)), \
-             patch("docker_log_analyzer.tools.extract_ids", return_value=[("abc-123", "request_id", 1.0, "line")]), \
-             patch("docker_log_analyzer.tools.group_by_request", return_value={"abc-123": [(1.0, "request_id", "line")]}), \
-             patch("docker_log_analyzer.tools.build_timelines", return_value=[fake_timeline]):
+             patch("docker_log_analyzer.tools.extract_ids", return_value=[]), \
+             patch("docker_log_analyzer.tools.cross_container_timelines", return_value=[self._fake_timeline()]):
             out = tools.tool_trace_request_flow(min_events=1)
         assert len(out["timelines"]) == 1
         assert _TIMELINE_REQUIRED_KEYS <= out["timelines"][0].keys(), (
@@ -987,24 +990,16 @@ class TestToolTraceRequestFlowContract:
         c = _FakeContainer("/svc")
         client = _mock_client(list_containers=[c])
         fake_event = {
+            "container": "svc",
             "timestamp": "2026-03-13T10:00:00.000Z",
             "pattern_name": "request_id",
             "message": "GET /api/order request_id=abc-123",
         }
-        fake_timeline = {
-            "request_id": "abc-123",
-            "container": "svc",
-            "event_count": 2,
-            "first_seen": "2026-03-13T10:00:00.000Z",
-            "last_seen": "2026-03-13T10:00:01.000Z",
-            "duration_ms": 1000.0,
-            "events": [fake_event],
-        }
         with patch("docker_log_analyzer.tools._docker_client", return_value=client), \
              patch("docker_log_analyzer.tools._fetch_logs_with_cache", return_value=(["line"], False)), \
              patch("docker_log_analyzer.tools.extract_ids", return_value=[]), \
-             patch("docker_log_analyzer.tools.group_by_request", return_value={}), \
-             patch("docker_log_analyzer.tools.build_timelines", return_value=[fake_timeline]):
+             patch("docker_log_analyzer.tools.cross_container_timelines",
+                   return_value=[self._fake_timeline(events=[fake_event])]):
             out = tools.tool_trace_request_flow(min_events=1)
         assert len(out["timelines"][0]["events"]) == 1
         assert _TIMELINE_EVENT_REQUIRED_KEYS <= out["timelines"][0]["events"][0].keys(), (
@@ -1014,48 +1009,26 @@ class TestToolTraceRequestFlowContract:
     def test_min_events_filters_single_occurrence_requests(self):
         c = _FakeContainer("/svc")
         client = _mock_client(list_containers=[c])
-        single_event_timeline = {
-            "request_id": "noise-001",
-            "container": "svc",
-            "event_count": 1,
-            "first_seen": None,
-            "last_seen": None,
-            "duration_ms": None,
-            "events": [{"timestamp": None, "pattern_name": "request_id", "message": "line"}],
-        }
         with patch("docker_log_analyzer.tools._docker_client", return_value=client), \
              patch("docker_log_analyzer.tools._fetch_logs_with_cache", return_value=(["line"], False)), \
              patch("docker_log_analyzer.tools.extract_ids", return_value=[]), \
-             patch("docker_log_analyzer.tools.group_by_request", return_value={}), \
-             patch("docker_log_analyzer.tools.build_timelines", return_value=[single_event_timeline]):
+             patch("docker_log_analyzer.tools.cross_container_timelines",
+                   return_value=[self._fake_timeline(event_count=1)]):
             out = tools.tool_trace_request_flow(min_events=2)
-        # The single-event timeline must be filtered out.
         assert out["timelines"] == []
         assert out["request_count"] == 0
 
     def test_max_requests_truncates_output(self):
         c = _FakeContainer("/svc")
         client = _mock_client(list_containers=[c])
-        timelines = [
-            {
-                "request_id": f"req-{i}",
-                "container": "svc",
-                "event_count": 5,
-                "first_seen": None,
-                "last_seen": None,
-                "duration_ms": None,
-                "events": [],
-            }
-            for i in range(10)
-        ]
+        timelines = [self._fake_timeline(id_value=f"req-{i}") for i in range(10)]
         with patch("docker_log_analyzer.tools._docker_client", return_value=client), \
              patch("docker_log_analyzer.tools._fetch_logs_with_cache", return_value=(["line"], False)), \
              patch("docker_log_analyzer.tools.extract_ids", return_value=[]), \
-             patch("docker_log_analyzer.tools.group_by_request", return_value={}), \
-             patch("docker_log_analyzer.tools.build_timelines", return_value=timelines):
+             patch("docker_log_analyzer.tools.cross_container_timelines", return_value=timelines):
             out = tools.tool_trace_request_flow(min_events=1, max_requests=3)
         assert len(out["timelines"]) == 3
-        assert out["request_count"] == 10  # total before truncation
+        assert out["request_count"] == 10
 
     def test_cache_hits_populated_for_nonempty_container_list(self):
         c = _FakeContainer("/svc")
@@ -1063,8 +1036,7 @@ class TestToolTraceRequestFlowContract:
         with patch("docker_log_analyzer.tools._docker_client", return_value=client), \
              patch("docker_log_analyzer.tools._fetch_logs_with_cache", return_value=([], True)), \
              patch("docker_log_analyzer.tools.extract_ids", return_value=[]), \
-             patch("docker_log_analyzer.tools.group_by_request", return_value={}), \
-             patch("docker_log_analyzer.tools.build_timelines", return_value=[]):
+             patch("docker_log_analyzer.tools.cross_container_timelines", return_value=[]):
             out = tools.tool_trace_request_flow()
         assert "svc" in out["cache_hits"]
         assert out["cache_hits"]["svc"] is True
@@ -1076,10 +1048,8 @@ class TestToolTraceRequestFlowContract:
         with patch("docker_log_analyzer.tools._docker_client", return_value=client), \
              patch("docker_log_analyzer.tools._fetch_logs_with_cache", return_value=(lines, False)), \
              patch("docker_log_analyzer.tools.extract_ids", return_value=[]) as extract_mock, \
-             patch("docker_log_analyzer.tools.group_by_request", return_value={}), \
-             patch("docker_log_analyzer.tools.build_timelines", return_value=[]):
+             patch("docker_log_analyzer.tools.cross_container_timelines", return_value=[]):
             tools.tool_trace_request_flow(tail=2, min_events=1)
-
         passed_lines = extract_mock.call_args.args[0]
         assert passed_lines == ["line-4", "line-5"]
 

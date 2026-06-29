@@ -32,7 +32,7 @@ from .dependency_mapper import build_graph, find_cascade_candidates
 from .log_pattern_analyzer import PatternDetector
 from .logger import logger
 from .error_classifier import classify_lines, aggregate_stats, VALID_CATEGORIES
-from .request_tracer import RequestIdPattern, extract_ids, group_by_request, build_timelines
+from .request_tracer import RequestIdPattern, extract_ids, cross_container_timelines
 from .root_cause_analyzer import rank_root_causes
 from .secret_detector import SecretDetector
 from .patterns import DOCKER_TS_RE, ERROR_PATTERN_RE
@@ -986,27 +986,27 @@ def tool_trace_request_flow(
     since = now - timedelta(hours=24)
 
     cache_hits: dict[str, bool] = {}
-    all_timelines: list[dict] = []
+    # Collect all matches globally — (id_value, pattern_name, unix_ts, line, container)
+    all_matches: list[tuple[str, str, float | None, str, str]] = []
 
     for c in targets:
         cname = _container_name(c)
         lines, was_cached = _fetch_logs_with_cache(c, cname, since, now, use_cache=use_cache)
         cache_hits[cname] = was_cached
-        # Respect per-container tail by limiting to the most recent lines,
-        # even when the cache API returns a larger time window.
         if tail <= 0:
             lines = []
         else:
             lines = lines[-tail:]
         if not lines or not patterns:
             continue
-        matches = extract_ids(lines, patterns)
-        grouped = group_by_request(matches)
-        timelines = build_timelines(grouped, container_name=cname)
-        all_timelines.extend(timelines)
+        for id_value, pattern_name, unix_ts, line in extract_ids(lines, patterns):
+            all_matches.append((id_value, pattern_name, unix_ts, line, cname))
+
+    # Cross-container grouping by ID value within the trace time window.
+    timelines = cross_container_timelines(all_matches, settings.trace_window_seconds)
 
     # Filter by min_events, sort by event_count descending, truncate.
-    filtered = [t for t in all_timelines if t["event_count"] >= min_events]
+    filtered = [t for t in timelines if t["event_count"] >= min_events]
     filtered.sort(key=lambda t: t["event_count"], reverse=True)
     total = len(filtered)
 
@@ -1016,7 +1016,12 @@ def tool_trace_request_flow(
         "request_count": total,
         "containers_scanned": [_container_name(c) for c in targets],
         "cache_hits": cache_hits,
-        "parameters": {"tail": tail, "min_events": min_events, "max_requests": max_requests},
+        "parameters": {
+            "tail": tail,
+            "min_events": min_events,
+            "max_requests": max_requests,
+            "trace_window_seconds": settings.trace_window_seconds,
+        },
     }
 
 

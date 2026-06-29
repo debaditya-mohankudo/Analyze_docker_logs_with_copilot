@@ -44,7 +44,8 @@ class RequestIdPattern:
 # ---------------------------------------------------------------------------
 
 _FAST_PATH_RE = re.compile(
-    r"request[_-]?id|trace[_-]?id|correlation[_-]?id|req[_-]?id|x[_-]?request",
+    r"request[_-]?id|trace[_-]?id|correlation[_-]?id|req[_-]?id|x[_-]?request"
+    r"|transaction[_-]?id|txn[_-]?id|tx[_-]?id",
     re.IGNORECASE,
 )
 
@@ -218,5 +219,88 @@ def build_timelines(
         })
 
     # Sort by first_seen ascending (None-first fallback).
+    timelines.sort(key=lambda t: (t["first_seen"] is None, t["first_seen"] or ""))
+    return timelines
+
+
+def cross_container_timelines(
+    all_matches: list[tuple[str, str, Optional[float], str, str]],
+    trace_window_seconds: int = 60,
+) -> list[dict]:
+    """Group matches by ID value across all containers and pattern names.
+
+    Args:
+        all_matches: Flat list of ``(id_value, pattern_name, unix_ts, line, container)``
+                     collected across all containers.
+        trace_window_seconds: Max seconds between first and last event for a group to
+                     be treated as one trace. Groups with wider spread are dropped as
+                     accidental value collisions.
+
+    Returns:
+        List of unified cross-container timeline dicts, sorted by first_seen ascending.
+        Each dict has keys: id_value, id_patterns, containers, event_count,
+        first_seen, last_seen, duration_ms, events.
+    """
+    from datetime import datetime, timezone
+    from collections import defaultdict
+
+    def _to_iso(unix_ts: Optional[float]) -> Optional[str]:
+        if unix_ts is None:
+            return None
+        return datetime.fromtimestamp(unix_ts, tz=timezone.utc).strftime(
+            "%Y-%m-%dT%H:%M:%S.%f"
+        )[:-3] + "Z"
+
+    # Group all matches by id_value.
+    buckets: dict[str, list[tuple[str, str, Optional[float], str, str]]] = defaultdict(list)
+    for match in all_matches:
+        buckets[match[0]].append(match)
+
+    timelines: list[dict] = []
+
+    for id_value, events in buckets.items():
+        timestamps = [ts for _, _, ts, _, _ in events if ts is not None]
+
+        # Drop groups whose time spread exceeds the window — likely coincidental collision.
+        if len(timestamps) >= 2:
+            spread = max(timestamps) - min(timestamps)
+            if spread > trace_window_seconds:
+                continue
+
+        first_ts = min(timestamps) if timestamps else None
+        last_ts = max(timestamps) if timestamps else None
+        duration_ms = (
+            round((last_ts - first_ts) * 1000, 3)
+            if first_ts is not None and last_ts is not None
+            else None
+        )
+
+        # Sort events chronologically.
+        sorted_events = sorted(events, key=lambda e: (e[2] is None, e[2] or 0.0))
+
+        id_patterns = sorted(set(e[1] for e in sorted_events))
+        containers = sorted(set(e[4] for e in sorted_events))
+
+        timeline_events = [
+            {
+                "container": container,
+                "timestamp": _to_iso(ts),
+                "pattern_name": pattern_name,
+                "message": line[:500],
+            }
+            for _, pattern_name, ts, line, container in sorted_events
+        ]
+
+        timelines.append({
+            "id_value": id_value,
+            "id_patterns": id_patterns,
+            "containers": containers,
+            "event_count": len(sorted_events),
+            "first_seen": _to_iso(first_ts),
+            "last_seen": _to_iso(last_ts),
+            "duration_ms": duration_ms,
+            "events": timeline_events,
+        })
+
     timelines.sort(key=lambda t: (t["first_seen"] is None, t["first_seen"] or ""))
     return timelines
