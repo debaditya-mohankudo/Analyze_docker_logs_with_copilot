@@ -22,6 +22,7 @@ from .cache_manager import (
     read_cached_logs_for_window,
     write_cached_logs_for_date,
     get_cache_info,
+    clear_cache,
 )
 from .investigation_planner import generate_plan
 from .coderepo import analyse_code_context
@@ -1261,3 +1262,36 @@ def tool_analyze_code_context(
         context_lines=ctx_lines,
         max_frames=max_f,
     )
+
+
+def tool_cache_info(container_name: Optional[str] = None) -> dict:
+    """Return a summary of the local log cache (.cache/logs/).
+
+    Reports per-container: number of cached parquet files, dates covered, total log
+    lines, disk size, and last sync time. Useful for checking cache staleness before
+    running analysis tools.
+
+    Args:
+        container_name: Specific container to inspect, or None for all containers.
+    """
+    try:
+        info = get_cache_info(container_name=container_name)
+        return {"status": "success", **info}
+    except Exception as exc:
+        return {"status": "error", "error": str(exc)}
+
+
+def tool_clear_cache(container_name: Optional[str] = None) -> dict:
+    """Clear the local log cache (.cache/logs/).
+
+    Removes cached Parquet files and updates metadata. After clearing, the next
+    analysis tool call will fetch fresh logs from the Docker API.
+
+    Args:
+        container_name: Specific container to clear, or None to clear all containers.
+    """
+    try:
+        result = clear_cache(container_name=container_name)
+        return {"status": "success", **result}
+    except Exception as exc:
+        return {"status": "error", "error": str(exc)}

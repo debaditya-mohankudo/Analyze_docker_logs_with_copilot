@@ -220,34 +220,107 @@ def _update_metadata(container_name: str, date_val: date, line_count: int) -> No
     _atomic_write(METADATA_FILE, json.dumps(metadata, indent=2) + "\n")
 
 
-def get_cache_info(container_name: str) -> Optional[dict]:
-    """Get cache metadata for a container."""
-    if not METADATA_FILE.exists():
-        return None
+def _container_cache_summary(container_name: str, metadata: dict) -> dict:
+    """Build a per-container summary dict with disk usage and metadata."""
+    container_dir = CACHE_DIR / container_name
+    parquet_files = sorted(container_dir.glob("*.parquet")) if container_dir.exists() else []
+    total_bytes = sum(f.stat().st_size for f in parquet_files)
+    dates = [f.stem for f in parquet_files]  # YYYY-MM-DD stems
 
-    try:
-        with open(METADATA_FILE) as f:
-            metadata = json.load(f)
-        return metadata.get(container_name)
-    except (json.JSONDecodeError, IOError):
-        return None
+    meta_entries = metadata.get(container_name, {})
+    total_lines = sum(v.get("line_count", 0) for v in meta_entries.values())
+    synced_ats = [v.get("synced_at", "") for v in meta_entries.values() if v.get("synced_at")]
+    last_synced = max(synced_ats) if synced_ats else None
+
+    return {
+        "container": container_name,
+        "parquet_files": len(parquet_files),
+        "dates_cached": dates,
+        "total_lines": total_lines,
+        "size_bytes": total_bytes,
+        "size_kb": round(total_bytes / 1024, 1),
+        "last_synced": last_synced,
+    }
 
 
-def clear_cache(container_name: Optional[str] = None) -> None:
+def get_cache_info(container_name: Optional[str] = None) -> dict:
     """
-    Clear cache (all containers or specific container).
+    Return cache summary for one container or all containers.
 
     Args:
-        container_name: Clear specific container, or None for all
+        container_name: Specific container name, or None for all containers.
+
+    Returns:
+        Dict with 'containers' list and 'total_size_bytes' summary.
     """
+    metadata: dict = {}
+    if METADATA_FILE.exists():
+        try:
+            with open(METADATA_FILE) as f:
+                metadata = json.load(f)
+        except (json.JSONDecodeError, IOError):
+            metadata = {}
+
+    # Discover containers from directory structure (metadata may be incomplete)
+    known = set(metadata.keys())
+    if CACHE_DIR.exists():
+        known |= {d.name for d in CACHE_DIR.iterdir() if d.is_dir()}
+
     if container_name:
-        cache_dir = CACHE_DIR / container_name
-        if cache_dir.exists():
-            import shutil
-            shutil.rmtree(cache_dir)
-            logger.info(f"Cleared cache for {container_name}")
+        if container_name not in known:
+            return {"containers": [], "total_size_bytes": 0, "total_size_kb": 0.0}
+        summaries = [_container_cache_summary(container_name, metadata)]
     else:
-        import shutil
+        summaries = [_container_cache_summary(c, metadata) for c in sorted(known)]
+
+    total_bytes = sum(s["size_bytes"] for s in summaries)
+    return {
+        "containers": summaries,
+        "total_size_bytes": total_bytes,
+        "total_size_kb": round(total_bytes / 1024, 1),
+    }
+
+
+def clear_cache(container_name: Optional[str] = None) -> dict:
+    """
+    Clear log cache for one container or all containers.
+
+    Args:
+        container_name: Clear specific container, or None for all.
+
+    Returns:
+        Dict with cleared containers and bytes freed.
+    """
+    import shutil
+
+    cleared = []
+    bytes_freed = 0
+
+    if container_name:
+        container_dir = CACHE_DIR / container_name
+        if container_dir.exists():
+            bytes_freed = sum(f.stat().st_size for f in container_dir.rglob("*") if f.is_file())
+            shutil.rmtree(container_dir)
+            cleared.append(container_name)
+            logger.info(f"Cleared cache for {container_name} ({bytes_freed} bytes)")
+        # Remove container from metadata.json
+        if METADATA_FILE.exists():
+            try:
+                with open(METADATA_FILE) as f:
+                    metadata = json.load(f)
+                metadata.pop(container_name, None)
+                _atomic_write(METADATA_FILE, json.dumps(metadata, indent=2) + "\n")
+            except (json.JSONDecodeError, IOError):
+                pass
+    else:
         if CACHE_DIR.exists():
+            bytes_freed = sum(f.stat().st_size for f in CACHE_DIR.rglob("*") if f.is_file())
+            cleared = [d.name for d in CACHE_DIR.iterdir() if d.is_dir()]
             shutil.rmtree(CACHE_DIR)
-            logger.info("Cleared all cache")
+            logger.info(f"Cleared all cache ({bytes_freed} bytes)")
+
+    return {
+        "cleared_containers": cleared,
+        "bytes_freed": bytes_freed,
+        "kb_freed": round(bytes_freed / 1024, 1),
+    }

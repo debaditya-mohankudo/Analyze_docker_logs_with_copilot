@@ -54,6 +54,8 @@ from .tools import (
     tool_analyze_code_context,
     tool_trace_request_flow,
     tool_classify_errors,
+    tool_cache_info,
+    tool_clear_cache,
 )
 
 
@@ -425,6 +427,32 @@ async def classify_errors(
         tail=tail,
         categories=categories,
     )
+
+
+@mcp.tool()
+async def cache_info(container_name: str | None = None) -> dict:
+    """Show a summary of the local log cache (.cache/logs/): cached containers,
+    dates covered, total log lines, disk size, and last sync time. Use this to
+    check whether cached logs are fresh before running analysis tools, or to
+    understand how much disk space the cache is using.
+
+    Args:
+        container_name: Specific container to inspect. Omit for all containers.
+    """
+    return tool_cache_info(container_name=container_name)
+
+
+@mcp.tool()
+async def clear_cache(container_name: str | None = None) -> dict:
+    """Clear the local log cache (.cache/logs/). After clearing, the next
+    analysis tool call will fetch fresh logs from the Docker API instead of
+    using stale cached data. Use this when logs look wrong or the cache is
+    too large.
+
+    Args:
+        container_name: Specific container to clear. Omit to clear all containers.
+    """
+    return tool_clear_cache(container_name=container_name)
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────

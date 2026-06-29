@@ -291,25 +291,32 @@ class TestAtomicWriteParquet:
 # ---------------------------------------------------------------------------
 
 class TestGetCacheInfo:
-    def test_returns_none_when_no_metadata(self, isolated_cache):
-        assert cm.get_cache_info("web-app") is None
+    def test_returns_empty_containers_when_no_cache(self, isolated_cache):
+        result = cm.get_cache_info("web-app")
+        assert result["containers"] == []
+        assert result["total_size_bytes"] == 0
 
-    def test_returns_metadata_after_write(self, isolated_cache):
+    def test_returns_summary_after_write(self, isolated_cache):
         ts = _utc(2026, 3, 6, 10, 0, 0)
         cm.write_cached_logs_for_date("web-app", [_make_log_line(ts, "x")], ts.date())
-        info = cm.get_cache_info("web-app")
-        assert info is not None
-        assert "2026-03-06" in info
+        result = cm.get_cache_info("web-app")
+        assert len(result["containers"]) == 1
+        c = result["containers"][0]
+        assert c["container"] == "web-app"
+        assert "2026-03-06" in c["dates_cached"]
+        assert c["parquet_files"] == 1
 
-    def test_returns_none_for_unknown_container(self, isolated_cache):
+    def test_returns_empty_for_unknown_container(self, isolated_cache):
         ts = _utc(2026, 3, 6, 10, 0, 0)
         cm.write_cached_logs_for_date("web-app", [_make_log_line(ts, "x")], ts.date())
-        assert cm.get_cache_info("other-container") is None
+        result = cm.get_cache_info("other-container")
+        assert result["containers"] == []
 
-    def test_returns_none_on_corrupted_metadata(self, isolated_cache):
+    def test_returns_empty_on_corrupted_metadata(self, isolated_cache):
         isolated_cache.mkdir(parents=True, exist_ok=True)
         (isolated_cache / "metadata.json").write_text("{bad json")
-        assert cm.get_cache_info("web-app") is None
+        result = cm.get_cache_info("web-app")
+        assert result["containers"] == []
 
 
 class TestClearCache:
