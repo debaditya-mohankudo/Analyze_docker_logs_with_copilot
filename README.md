@@ -78,6 +78,8 @@ Pre-configured in [`.vscode/mcp.json`](.vscode/mcp.json). Open in VSCode → swi
 uv run python -c "from docker_log_analyzer.mcp_server import run; print('OK')"
 ```
 
+> **Remote desktop / non-local Docker?** See **[doc/WIKI_OPERATIONS.md](doc/WIKI_OPERATIONS.md)** for remote Docker host configuration, SSH tunnelling, and environment variable setup.
+
 ---
 
 ## Architecture
