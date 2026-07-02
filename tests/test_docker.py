@@ -82,6 +82,23 @@ class TestDockerClient:
             with pytest.raises(RuntimeError, match="Cannot connect to Docker daemon"):
                 docker_mod._docker_client()
 
+    def test_passes_configured_docker_host_to_client(self, monkeypatch):
+        """settings.docker_host must reach DockerClient(host=...) so remote/SSH
+        targets work without exporting DOCKER_HOST into the server process."""
+        monkeypatch.setattr(docker_mod.settings, "docker_host", "ssh://dev@staging.example.com")
+        fake = _mock_docker_client()
+        with patch("docker_log_analyzer.docker.DockerClient", return_value=fake) as mock_cls:
+            docker_mod._docker_client()
+        mock_cls.assert_called_once_with(host="ssh://dev@staging.example.com")
+
+    def test_empty_docker_host_passes_none(self, monkeypatch):
+        """Empty docker_host must not be forwarded as a literal '--host ""'."""
+        monkeypatch.setattr(docker_mod.settings, "docker_host", "")
+        fake = _mock_docker_client()
+        with patch("docker_log_analyzer.docker.DockerClient", return_value=fake) as mock_cls:
+            docker_mod._docker_client()
+        mock_cls.assert_called_once_with(host=None)
+
 
 # ---------------------------------------------------------------------------
 # _fetch_logs

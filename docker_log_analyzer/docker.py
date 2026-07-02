@@ -11,6 +11,7 @@ from python_on_whales import DockerClient
 from python_on_whales.exceptions import DockerException, NoSuchContainer
 
 from .cache_manager import read_cached_logs_for_window
+from .config import settings
 from .logger import logger
 
 # ── Module-level paths ──────────────────────────────────────────────────────
@@ -22,9 +23,16 @@ COMPOSE_FILE = _REPO_ROOT / "docker-compose.test.yml"
 # ── Docker helpers ──────────────────────────────────────────────────────────
 
 def _docker_client() -> DockerClient:
-    """Connect to Docker daemon; raise RuntimeError with readable message on failure."""
+    """Connect to Docker daemon; raise RuntimeError with readable message on failure.
+
+    Uses settings.docker_host (DOCKER_HOST env var / .env) when set, so a
+    remote or SSH-tunneled daemon can be targeted without exporting DOCKER_HOST
+    into the server process's own environment. Falls back to python_on_whales's
+    default resolution (local socket) when docker_host is empty.
+    """
+    host = settings.docker_host or None
     try:
-        client = DockerClient()
+        client = DockerClient(host=host)
         client.system.info()
         return client
     except DockerException as exc:
