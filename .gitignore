@@ -8,6 +8,7 @@ env/
 venv/
 ENV/
 .venv
+.venv2/
 
 # Environment variables
 .env
@@ -34,3 +35,6 @@ htmlcov/
 # OS
 .DS_Store
 Thumbs.db
+
+# Local scratch
+Review/

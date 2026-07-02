@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from docker_log_analyzer.config import settings
 from docker_log_analyzer.request_tracer import (
     _FAST_PATH_RE,
     _build_fast_path,
@@ -277,3 +278,150 @@ class TestCrossContainerTimelines:
         result = cross_container_timelines(matches, trace_window_seconds=60)
         assert result[0]["id_value"] == "early-req"
         assert result[1]["id_value"] == "late-req"
+
+
+# ---------------------------------------------------------------------------
+# Default request_id_patterns from config.py — strict UUID + loose fallbacks
+# ---------------------------------------------------------------------------
+
+def _default_patterns() -> list[RequestIdPattern]:
+    return [
+        RequestIdPattern(name=name, pattern=pat)
+        for name, pat in settings.request_id_patterns.items()
+    ]
+
+
+class TestDefaultPatternsConfig:
+    """All patterns built from Settings.request_id_patterns must compile
+    and expose exactly one capture group."""
+
+    @pytest.mark.parametrize("name", [
+        "request_id", "trace_id", "correlation_id", "transaction_id", "session_id",
+        "request_id_loose", "trace_id_loose", "correlation_id_loose",
+        "transaction_id_loose", "session_id_loose",
+    ])
+    def test_all_expected_pattern_names_present(self, name):
+        assert name in settings.request_id_patterns
+
+    def test_all_patterns_compile_without_error(self):
+        patterns = _default_patterns()
+        assert len(patterns) == len(settings.request_id_patterns)
+
+
+class TestStrictUuidPatterns:
+    """Strict patterns must match well-formed UUIDs and reject non-UUID IDs."""
+
+    UUID = "8f2a1c3e-4b5d-4e6f-9a0b-1c2d3e4f5a6b"
+
+    @pytest.mark.parametrize("name,keyword", [
+        ("request_id", "request_id"),
+        ("trace_id", "trace_id"),
+        ("correlation_id", "correlation_id"),
+        ("transaction_id", "transaction_id"),
+        ("session_id", "session_id"),
+    ])
+    def test_strict_pattern_matches_uuid(self, name, keyword):
+        pattern = settings.request_id_patterns[name]
+        line = f"INFO {keyword}={self.UUID} handled"
+        matches = extract_ids([line], [RequestIdPattern(name=name, pattern=pattern)])
+        assert len(matches) == 1
+        assert matches[0][0] == self.UUID
+
+    @pytest.mark.parametrize("name,keyword", [
+        ("request_id", "request_id"),
+        ("trace_id", "trace_id"),
+        ("correlation_id", "correlation_id"),
+        ("transaction_id", "transaction_id"),
+        ("session_id", "session_id"),
+    ])
+    def test_strict_pattern_rejects_non_uuid(self, name, keyword):
+        pattern = settings.request_id_patterns[name]
+        line = f"INFO {keyword}=req-8xk2p9 handled"
+        matches = extract_ids([line], [RequestIdPattern(name=name, pattern=pattern)])
+        assert matches == []
+
+
+class TestLooseFallbackPatterns:
+    """Loose patterns must catch non-UUID ID formats the strict patterns miss:
+    short numeric IDs, base62/nanoid IDs, and raw hex trace IDs."""
+
+    @pytest.mark.parametrize("name,keyword", [
+        ("request_id_loose", "request_id"),
+        ("trace_id_loose", "trace_id"),
+        ("correlation_id_loose", "correlation_id"),
+        ("transaction_id_loose", "transaction_id"),
+        ("session_id_loose", "session_id"),
+    ])
+    @pytest.mark.parametrize("id_value", [
+        "42891",                              # short numeric
+        "req-8xk2p9",                         # dash-separated alnum
+        "V1StGXR8_Z5jdHi6BmyT",               # base62/nanoid style
+        "8f14e45fceea167a5a36dedd4bad3bd9",   # raw 32-char hex (no dashes)
+    ])
+    def test_loose_pattern_matches_non_uuid_formats(self, name, keyword, id_value):
+        pattern = settings.request_id_patterns[name]
+        line = f"INFO {keyword}={id_value} handled"
+        matches = extract_ids([line], [RequestIdPattern(name=name, pattern=pattern)])
+        assert len(matches) == 1
+        assert matches[0][0] == id_value
+
+    def test_loose_pattern_also_matches_uuid(self):
+        """A UUID satisfies the loose [\\w-]{6,64} shape too — both strict and
+        loose patterns fire on the same line, tagged with different pattern_name."""
+        uuid = "8f2a1c3e-4b5d-4e6f-9a0b-1c2d3e4f5a6b"
+        line = f"INFO request_id={uuid} handled"
+        patterns = [
+            RequestIdPattern(name="request_id", pattern=settings.request_id_patterns["request_id"]),
+            RequestIdPattern(name="request_id_loose", pattern=settings.request_id_patterns["request_id_loose"]),
+        ]
+        matches = extract_ids([line], patterns)
+        assert len(matches) == 2
+        assert {m[1] for m in matches} == {"request_id", "request_id_loose"}
+        assert all(m[0] == uuid for m in matches)
+
+
+class TestLooseFallbackCrossContainerCorrelation:
+    """End-to-end: a non-UUID ID that only the loose patterns catch must still
+    correlate across containers via cross_container_timelines, exactly like a
+    strict UUID match would."""
+
+    def test_loose_id_correlates_across_containers(self):
+        patterns = _default_patterns()
+        gateway_lines = [
+            "2026-03-13T10:00:00.000Z INFO request_id=req-8xk2p9 received",
+        ]
+        web_lines = [
+            "2026-03-13T10:00:00.050Z INFO request_id=req-8xk2p9 processing",
+        ]
+        db_lines = [
+            "2026-03-13T10:00:00.090Z INFO transaction_id=req-8xk2p9 committed",
+        ]
+
+        all_matches = []
+        for lines, container in [
+            (gateway_lines, "gateway"),
+            (web_lines, "web-app"),
+            (db_lines, "database"),
+        ]:
+            for id_value, pattern_name, unix_ts, line in extract_ids(lines, patterns):
+                all_matches.append((id_value, pattern_name, unix_ts, line, container))
+
+        timelines = cross_container_timelines(all_matches, trace_window_seconds=120)
+
+        assert len(timelines) == 1
+        tl = timelines[0]
+        assert tl["id_value"] == "req-8xk2p9"
+        assert sorted(tl["containers"]) == ["database", "gateway", "web-app"]
+        assert tl["event_count"] == 3
+
+    def test_non_uuid_id_dropped_without_loose_patterns(self):
+        """Sanity check: with only strict patterns, the same scenario yields
+        no matches at all, since 'req-8xk2p9' is not UUID-shaped."""
+        strict_only = [
+            RequestIdPattern(name=n, pattern=p)
+            for n, p in settings.request_id_patterns.items()
+            if not n.endswith("_loose")
+        ]
+        line = "2026-03-13T10:00:00.000Z INFO request_id=req-8xk2p9 received"
+        matches = extract_ids([line], strict_only)
+        assert matches == []

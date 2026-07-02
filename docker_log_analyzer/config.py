@@ -98,11 +98,22 @@ class Settings(BaseSettings):
             "correlation_id": r"(?:correlation[_-]?id|corr[_-]?id)[=:\s]+([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})",
             "transaction_id": r"(?:transaction[_-]?id|txn[_-]?id|tx[_-]?id)[=:\s]+([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})",
             "session_id":     r"(?:session[_-]?id|sess[_-]?id)[=:\s]+([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})",
+            # Loose fallbacks: same keywords, no UUID shape required. Catches
+            # short numeric IDs, base62/nanoid IDs, and raw hex trace IDs that
+            # the strict UUID patterns above miss. Lower precision — matches
+            # any token of 4-64 word/hyphen characters after the keyword.
+            "request_id_loose":     r"(?:request[_-]?id|req[_-]?id|x[_-]?request[_-]?id)[=:\s]+([\w-]{4,64})",
+            "trace_id_loose":       r"(?:trace[_-]?id|traceid)[=:\s]+([\w-]{4,64})",
+            "correlation_id_loose": r"(?:correlation[_-]?id|corr[_-]?id)[=:\s]+([\w-]{4,64})",
+            "transaction_id_loose": r"(?:transaction[_-]?id|txn[_-]?id|tx[_-]?id)[=:\s]+([\w-]{4,64})",
+            "session_id_loose":     r"(?:session[_-]?id|sess[_-]?id)[=:\s]+([\w-]{4,64})",
         },
         description=(
             "Named regex patterns (each with exactly one capture group) used by "
             "trace_request_flow to extract request/trace/correlation IDs from log lines. "
-            "Example: {\"request_id\": \"requestId=([\\\\w-]+)\"}"
+            "Example: {\"request_id\": \"requestId=([\\\\w-]+)\"}. Strict UUID patterns "
+            "are tried first for precision; _loose variants catch non-UUID ID formats "
+            "(numeric, base62, raw hex) at the cost of a higher false-collision risk."
         ),
     )
     trace_window_seconds: int = Field(
