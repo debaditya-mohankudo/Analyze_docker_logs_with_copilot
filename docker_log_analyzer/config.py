@@ -27,6 +27,27 @@ class Settings(BaseSettings):
         default="INFO",
         description="Logging level: DEBUG, INFO, WARNING, ERROR, CRITICAL",
     )
+    log_file_enabled: bool = Field(
+        default=True,
+        description=(
+            "Write structured JSONL logs of this server's own process to "
+            "log_file_path, in addition to the existing stderr text log. "
+            "For debugging the analyzer itself — separate from Docker "
+            "container logs the tools analyze."
+        ),
+    )
+    log_file_path: str = Field(
+        default=".cache/app_logs/docker-log-analyzer.jsonl",
+        description="Path to the rotating JSONL log file (relative to cwd unless absolute).",
+    )
+    log_file_max_bytes: int = Field(
+        default=10_000_000,
+        description="Rotate the JSONL log file after it reaches this size in bytes.",
+    )
+    log_file_backup_count: int = Field(
+        default=3,
+        description="Number of rotated JSONL log files to retain.",
+    )
 
     # Docker Configuration
     docker_host: str = Field(
@@ -192,4 +213,10 @@ settings = Settings()
 
 # Configure logger with loaded settings
 logger.set_level(getattr(logging, settings.log_level))
+if settings.log_file_enabled:
+    logger.enable_file_logging(
+        settings.log_file_path,
+        settings.log_file_max_bytes,
+        settings.log_file_backup_count,
+    )
 logger.info(f"Configuration loaded: log_level={settings.log_level}, docker_host={settings.docker_host}")
