@@ -13,6 +13,10 @@ version: '3.8'
 # Spike schedule: web-app and database share SPIKE_INTERVAL=90s so their
 # errors spike at the same time → high correlation score.
 # cache has SPIKE_INTERVAL=120s → lower correlation with the other two.
+#
+# ssh-target is a separate SSH-reachable Docker-in-Docker daemon used only by
+# tests/test_remote_docker_integration.py, to exercise ssh:// remote log
+# collection without a real remote host.
 
 services:
 
@@ -62,6 +66,22 @@ services:
       SPIKE_INTERVAL: "120"     # different cadence → lower correlation
       SPIKE_DURATION: "8"
       SPIKE_ERROR_RATE: "0.75"
+    restart: unless-stopped
+
+  # SSH-reachable Docker-in-Docker target — lets integration tests exercise
+  # ssh:// remote log collection against a real (if local) Docker daemon,
+  # without needing a genuine remote Linux box or macOS Remote Login enabled.
+  # authorized_keys is generated per test session by tests/conftest.py and is
+  # never committed (.cache/ is gitignored).
+  ssh-target:
+    build:
+      context: ./ssh_docker_target
+    container_name: test-ssh-target
+    privileged: true
+    ports:
+      - "127.0.0.1:2222:22"
+    volumes:
+      - ./.cache/ssh_test/authorized_keys:/root/.ssh/authorized_keys:ro
     restart: unless-stopped
 
   # Node.js / Apache logs — simulates a BFF / gateway

@@ -4,12 +4,18 @@ Integration tests for remote Docker configuration.
 These tests verify that MCP tools work correctly when DOCKER_HOST is configured
 to point to a remote Docker daemon. Tests can run with:
 1. Local Unix socket (default)
-2. SSH tunneling to localhost (requires SSH daemon)
+2. SSH to the ssh-target container — a genuinely separate Docker-in-Docker
+   daemon reachable only via `ssh://root@localhost:2222` (see
+   docker-compose.test.yml + ssh_docker_target/). This stands in for a real
+   pre-authenticated remote Linux box without needing one.
 3. TCP connections
 
 Prerequisites:
-- Docker running locally
-- For SSH tests: SSH daemon on localhost or remote host
+- Docker running locally, able to run privileged containers (for ssh-target's
+  inner dockerd)
+- tests/conftest.py starts ssh-target and populates its inner daemon with the
+  log-generator containers automatically; SSH tests skip individually if that
+  setup fails (see ssh_target_ready fixture)
 
 Run all integration tests:
   pytest tests/test_remote_docker_integration.py -m integration -v
@@ -28,6 +34,11 @@ from python_on_whales.exceptions import DockerException
 
 from docker_log_analyzer.config import settings
 
+# ssh-target: SSH-reachable Docker-in-Docker container defined in
+# docker-compose.test.yml, populated with the log-generator services by
+# tests/conftest.py's setup_integration_containers fixture.
+SSH_TARGET = "ssh://root@localhost:2222"
+
 
 def _patch_docker_host(monkeypatch, host):
     """Patch the live settings singleton, not just os.environ.
@@ -42,211 +53,143 @@ def _patch_docker_host(monkeypatch, host):
 
 
 class TestRemoteDockerViaSSH:
-    """Test MCP tools work with remote Docker via SSH."""
+    """Test MCP tools work with remote Docker via SSH, against the real
+    ssh-target Docker-in-Docker container (not a mock)."""
 
     @pytest.mark.integration
     @pytest.mark.serial
-    def test_ssh_localhost_docker_connection(self, docker_client):
-        """Should establish connection to Docker via SSH on localhost.
-
-        This verifies the SSH tunnel works (using 'ssh://localhost' which
-        connects to the local Docker daemon via SSH).
-        """
-        # Note: 'ssh://localhost' is a valid Docker URL that tunnels through SSH
-        # to localhost's Docker daemon. This requires SSH to be available.
-        try:
-            client = DockerClient(host="ssh://localhost")
-            info = client.system.info()
-            assert info is not None
-            assert "Containers" in info
-        except DockerException as e:
-            pytest.skip(f"SSH to localhost unavailable: {e}")
+    def test_ssh_docker_connection(self, ssh_target_ready):
+        """Should establish connection to the ssh-target's inner Docker
+        daemon over SSH."""
+        if not ssh_target_ready:
+            pytest.skip("ssh-target inner daemon not ready")
+        client = DockerClient(host=SSH_TARGET)
+        info = client.system.info()
+        assert info is not None
+        assert info.containers >= 0
 
     @pytest.mark.integration
     @pytest.mark.serial
-    def test_list_containers_via_ssh_localhost(self, monkeypatch):
-        """Should list containers when DOCKER_HOST=ssh://localhost.
+    def test_list_containers_via_ssh(self, monkeypatch, ssh_target_ready):
+        """Should list containers when docker_host points at the ssh-target
+        via SSH — verifies list_containers tool works with remote Docker."""
+        if not ssh_target_ready:
+            pytest.skip("ssh-target inner daemon not ready")
+        _patch_docker_host(monkeypatch, SSH_TARGET)
+        from docker_log_analyzer.tools import tool_list_containers
 
-        This verifies list_containers tool works with remote Docker.
-        Note: This requires SSH daemon running with Docker socket access.
-        """
-        _patch_docker_host(monkeypatch, "ssh://localhost")
-        try:
-            from docker_log_analyzer.tools import tool_list_containers
-
-            result = tool_list_containers()
-            # If SSH not available, should return error gracefully
-            if result.get("status") == "error":
-                pytest.skip(f"SSH connection failed: {result.get('error')}")
-            assert isinstance(result, dict)
-            assert "containers" in result
-            assert isinstance(result["containers"], list)
-        except (DockerException, Exception) as e:
-            pytest.skip(f"SSH connection not available: {e}")
+        result = tool_list_containers()
+        assert result["status"] == "success"
+        assert isinstance(result["containers"], list)
 
     @pytest.mark.integration
     @pytest.mark.serial
-    def test_list_containers_includes_test_containers(self, monkeypatch, setup_integration_containers):
-        """Should list test containers when they're running via SSH.
+    def test_list_containers_includes_test_containers(self, monkeypatch, ssh_target_ready):
+        """Should list the log-generator containers actually running inside
+        ssh-target's own inner daemon (not the host's copies)."""
+        if not ssh_target_ready:
+            pytest.skip("ssh-target inner daemon not ready")
+        _patch_docker_host(monkeypatch, SSH_TARGET)
+        from docker_log_analyzer.tools import tool_list_containers
 
-        This verifies list_containers returns expected test containers.
-        Note: This requires SSH daemon configured. Test skips if SSH unavailable.
-        """
-        _patch_docker_host(monkeypatch, "ssh://localhost")
-        try:
-            from docker_log_analyzer.tools import tool_list_containers
+        result = tool_list_containers()
+        assert result["status"] == "success"
+        container_names = [c["name"] for c in result["containers"]]
 
-            result = tool_list_containers()
-            if result.get("status") == "error":
-                pytest.skip(f"SSH connection failed: {result.get('error')}")
-            assert result["status"] == "ok"
-            containers = result["containers"]
-            container_names = [c["name"] for c in containers]
-
-            # Should contain our test containers
-            expected_containers = ["test-web-app", "test-database", "test-gateway", "test-cache"]
-            for expected in expected_containers:
-                assert expected in container_names, f"{expected} not in {container_names}"
-        except (DockerException, Exception) as e:
-            pytest.skip(f"SSH connection not available: {e}")
+        expected_containers = ["test-web-app", "test-database", "test-gateway", "test-cache"]
+        for expected in expected_containers:
+            assert expected in container_names, f"{expected} not in {container_names}"
 
     @pytest.mark.integration
     @pytest.mark.serial
-    def test_analyze_patterns_via_ssh_localhost(self, monkeypatch, setup_integration_containers):
-        """Should analyze patterns in container logs via SSH.
+    def test_analyze_patterns_via_ssh(self, monkeypatch, ssh_target_ready):
+        """Should analyze patterns in container logs fetched over SSH."""
+        if not ssh_target_ready:
+            pytest.skip("ssh-target inner daemon not ready")
+        _patch_docker_host(monkeypatch, SSH_TARGET)
+        from docker_log_analyzer.tools import tool_analyze_patterns
 
-        This verifies analyze_patterns tool works with remote Docker.
-        Note: This requires SSH daemon configured. Test skips if SSH unavailable.
-        """
-        _patch_docker_host(monkeypatch, "ssh://localhost")
-        try:
-            from docker_log_analyzer.tools import tool_analyze_patterns
-
-            result = tool_analyze_patterns(
-                container_name="test-web-app",
-                tail=100,
-                force_refresh=True,
-                use_cache=False,
-            )
-            if result.get("status") == "error":
-                pytest.skip(f"SSH connection failed: {result.get('error')}")
-            assert result["status"] == "ok"
-            assert "timestamp_format" in result
-            assert "detected_language" in result
-            assert "log_levels" in result
-        except (DockerException, Exception) as e:
-            pytest.skip(f"SSH connection not available: {e}")
+        result = tool_analyze_patterns(
+            container_name="test-web-app",
+            tail=100,
+            force_refresh=True,
+            use_cache=False,
+        )
+        assert result["status"] == "success"
+        container_result = result["results"]["test-web-app"]
+        assert "timestamp_format" in container_result
+        assert "language" in container_result
+        assert "log_levels" in container_result
 
     @pytest.mark.integration
     @pytest.mark.serial
-    def test_analyze_error_spikes_via_ssh_localhost(self, monkeypatch, setup_integration_containers):
-        """Should detect error spikes via SSH connection.
+    def test_analyze_error_spikes_via_ssh(self, monkeypatch, ssh_target_ready):
+        """Should detect error spikes in logs fetched over SSH."""
+        if not ssh_target_ready:
+            pytest.skip("ssh-target inner daemon not ready")
+        _patch_docker_host(monkeypatch, SSH_TARGET)
+        from docker_log_analyzer.tools import tool_analyze_error_spikes
 
-        This verifies analyze_error_spikes tool works with remote Docker.
-        Note: This requires SSH daemon configured. Test skips if SSH unavailable.
-        """
-        _patch_docker_host(monkeypatch, "ssh://localhost")
-        try:
-            from docker_log_analyzer.tools import tool_analyze_error_spikes
-
-            result = tool_analyze_error_spikes(
-                container_name="test-web-app",
-                tail=500,
-                spike_threshold=2.0,
-                use_cache=False,
-            )
-            if result.get("status") == "error":
-                pytest.skip(f"SSH connection failed: {result.get('error')}")
-            assert result["status"] == "ok"
-            assert "spikes_detected" in result
-            assert "spike_count" in result
-            assert "buckets" in result
-        except (DockerException, Exception) as e:
-            pytest.skip(f"SSH connection not available: {e}")
+        result = tool_analyze_error_spikes(
+            container_name="test-web-app",
+            tail=500,
+            spike_threshold=2.0,
+            use_cache=False,
+        )
+        assert result["status"] == "success"
+        assert "spikes" in result
+        assert "spike_count" in result
 
     @pytest.mark.integration
     @pytest.mark.serial
-    def test_analyze_correlations_via_ssh_localhost(self, monkeypatch, setup_integration_containers):
-        """Should correlate containers via SSH connection.
+    def test_analyze_correlations_via_ssh(self, monkeypatch, ssh_target_ready):
+        """Should correlate containers using logs fetched over SSH."""
+        if not ssh_target_ready:
+            pytest.skip("ssh-target inner daemon not ready")
+        _patch_docker_host(monkeypatch, SSH_TARGET)
+        from docker_log_analyzer.tools import tool_analyze_correlations
 
-        This verifies analyze_correlations tool works with remote Docker.
-        Note: This requires SSH daemon configured. Test skips if SSH unavailable.
-        """
-        _patch_docker_host(monkeypatch, "ssh://localhost")
-        try:
-            from docker_log_analyzer.tools import tool_analyze_correlations
-
-            result = tool_analyze_correlations(
-                time_window_seconds=60,
-                tail=500,
-                use_cache=False,
-            )
-            if result.get("status") == "error":
-                pytest.skip(f"SSH connection failed: {result.get('error')}")
-            assert result["status"] == "ok"
-            assert "correlations" in result
-            assert isinstance(result["correlations"], list)
-        except (DockerException, Exception) as e:
-            pytest.skip(f"SSH connection not available: {e}")
+        result = tool_analyze_correlations(
+            time_window_seconds=60,
+            tail=500,
+            use_cache=False,
+        )
+        assert result["status"] == "success"
+        assert isinstance(result["correlations"], list)
 
     @pytest.mark.integration
     @pytest.mark.serial
-    def test_detect_data_leaks_via_ssh_localhost(self, monkeypatch, setup_integration_containers):
-        """Should detect secrets via SSH connection.
+    def test_detect_data_leaks_via_ssh(self, monkeypatch, ssh_target_ready):
+        """Should detect secrets in logs fetched over SSH."""
+        if not ssh_target_ready:
+            pytest.skip("ssh-target inner daemon not ready")
+        _patch_docker_host(monkeypatch, SSH_TARGET)
+        from docker_log_analyzer.tools import tool_detect_data_leaks
 
-        This verifies detect_data_leaks tool works with remote Docker.
-        Note: This requires SSH daemon configured. Test skips if SSH unavailable.
-        """
-        _patch_docker_host(monkeypatch, "ssh://localhost")
-        try:
-            from docker_log_analyzer.tools import tool_detect_data_leaks
-
-            import asyncio
-            result = asyncio.run(tool_detect_data_leaks(
-                duration_seconds=30,
-                container_names=["test-web-app"],
-                severity_filter="all",
-                use_cache=False,
-            ))
-            if result.get("status") == "error":
-                pytest.skip(f"SSH connection failed: {result.get('error')}")
-            assert result["status"] == "ok"
-            assert "scan_results" in result
-        except (DockerException, Exception) as e:
-            pytest.skip(f"SSH connection not available: {e}")
+        result = tool_detect_data_leaks(
+            duration_seconds=30,
+            container_names=["test-web-app"],
+            severity_filter="all",
+            use_cache=False,
+        )
+        assert result["status"] == "success"
+        assert "findings" in result
 
 
 class TestRemoteDockerWithCustomSSHConfig:
-    """Test remote Docker with custom SSH configuration."""
+    """Test remote Docker with custom SSH configuration (custom port)."""
 
     @pytest.mark.integration
     @pytest.mark.serial
-    def test_ssh_with_custom_port(self):
-        """Should support SSH URLs with custom ports.
-
-        Note: This test uses standard port 22. For non-standard ports,
-        SSH config in ~/.ssh/config should define custom ports.
-        """
-        # Example of what users would do for custom SSH port
-        ssh_url = "ssh://localhost:22"
-        try:
-            client = DockerClient(host=ssh_url)
-            info = client.system.info()
-            assert info is not None
-        except DockerException as e:
-            pytest.skip(f"SSH on custom port unavailable: {e}")
-
-    @pytest.mark.integration
-    @pytest.mark.serial
-    def test_ssh_without_explicit_port_uses_default(self):
-        """Should use SSH default port (22) when not specified."""
-        ssh_url = "ssh://localhost"
-        try:
-            client = DockerClient(host=ssh_url)
-            info = client.system.info()
-            assert info is not None
-        except DockerException as e:
-            pytest.skip(f"SSH connection failed: {e}")
+    def test_ssh_with_custom_port(self, ssh_target_ready):
+        """Should support SSH URLs with a non-default port — ssh-target
+        listens on 2222, exercising the same URL shape a real remote host
+        behind a non-standard SSH port would need."""
+        if not ssh_target_ready:
+            pytest.skip("ssh-target inner daemon not ready")
+        client = DockerClient(host=SSH_TARGET)
+        info = client.system.info()
+        assert info is not None
 
 
 class TestRemoteDockerFallbacks:
@@ -286,31 +229,27 @@ class TestRemoteDockerEnvironmentVariables:
         tool call actually uses it (they are different concerns: settings
         is a singleton created once at import time, so env-var changes
         after that point don't reach it — see _patch_docker_host above)."""
-        with patch.dict(os.environ, {"DOCKER_HOST": "ssh://localhost"}, clear=False):
+        with patch.dict(os.environ, {"DOCKER_HOST": SSH_TARGET}, clear=False):
             from docker_log_analyzer.config import Settings
 
             fresh_settings = Settings()
-            assert fresh_settings.docker_host == "ssh://localhost"
+            assert fresh_settings.docker_host == SSH_TARGET
 
     @pytest.mark.integration
-    def test_docker_host_actually_used_by_tools(self, monkeypatch, setup_integration_containers):
+    def test_docker_host_actually_used_by_tools(self, monkeypatch, ssh_target_ready):
         """Tools should respect settings.docker_host end-to-end: patching the
         live singleton (not just os.environ) must change which host
         _docker_client() connects to. This is the wiring test that would
         have caught the gap where docker.py ignored settings.docker_host
         entirely and only local-socket calls ever succeeded silently."""
-        # First, verify we can connect to localhost via SSH at all.
-        try:
-            client = DockerClient(host="ssh://localhost")
-            client.system.info()
-        except DockerException:
-            pytest.skip("SSH to localhost not available")
+        if not ssh_target_ready:
+            pytest.skip("ssh-target inner daemon not ready")
 
-        _patch_docker_host(monkeypatch, "ssh://localhost")
+        _patch_docker_host(monkeypatch, SSH_TARGET)
         from docker_log_analyzer.tools import tool_list_containers
 
         result = tool_list_containers()
-        assert result["status"] == "ok"
+        assert result["status"] == "success"
         assert "containers" in result
 
     @pytest.mark.integration
@@ -318,11 +257,11 @@ class TestRemoteDockerEnvironmentVariables:
         """DOCKER_HOST should override the default local socket (parsing only)."""
         original_host = os.environ.get("DOCKER_HOST")
         try:
-            with patch.dict(os.environ, {"DOCKER_HOST": "ssh://localhost"}, clear=False):
+            with patch.dict(os.environ, {"DOCKER_HOST": SSH_TARGET}, clear=False):
                 from docker_log_analyzer.config import Settings
 
                 fresh_settings = Settings()
-                assert fresh_settings.docker_host == "ssh://localhost"
+                assert fresh_settings.docker_host == SSH_TARGET
                 assert fresh_settings.docker_host != "unix:///var/run/docker.sock"
         finally:
             if original_host:
@@ -348,15 +287,12 @@ class TestRemoteDockerDocumentation:
         This tests with local Docker. For SSH testing, configure SSH daemon
         and set DOCKER_HOST=ssh://your-host manually.
         """
-        try:
-            from docker_log_analyzer.tools import tool_list_containers
+        from docker_log_analyzer.tools import tool_list_containers
 
-            result = tool_list_containers()
-            assert result["status"] == "ok"
-            assert "containers" in result
-            print(f"✓ README example works: list_containers returned {len(result['containers'])} containers")
-        except (DockerException, Exception) as e:
-            pytest.skip(f"Docker unavailable: {e}")
+        result = tool_list_containers()
+        assert result["status"] == "success"
+        assert "containers" in result
+        print(f"✓ README example works: list_containers returned {len(result['containers'])} containers")
 
     @pytest.mark.integration
     @pytest.mark.serial
@@ -372,17 +308,14 @@ class TestRemoteDockerDocumentation:
         This tests with local Docker to verify the pattern works.
         For actual SSH testing, set DOCKER_HOST=ssh://your-host manually.
         """
-        try:
-            from docker_log_analyzer.tools import tool_analyze_patterns
+        from docker_log_analyzer.tools import tool_analyze_patterns
 
-            result = tool_analyze_patterns(
-                container_name="test-web-app",
-                tail=100,
-                force_refresh=True,
-                use_cache=False,
-            )
-            assert result["status"] == "ok"
-            assert "detected_language" in result
-            print(f"✓ README example works: analyze_patterns detected {result['detected_language']}")
-        except (DockerException, Exception) as e:
-            pytest.skip(f"Test container unavailable: {e}")
+        result = tool_analyze_patterns(
+            container_name="test-web-app",
+            tail=100,
+            force_refresh=True,
+            use_cache=False,
+        )
+        assert result["status"] == "success"
+        detected_language = result["results"]["test-web-app"]["language"]
+        print(f"✓ README example works: analyze_patterns detected {detected_language}")

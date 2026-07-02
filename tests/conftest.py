@@ -12,6 +12,10 @@ Run all (unit + integration, Docker must be running):
   uv run pytest tests/
 """
 
+import subprocess
+import time
+from pathlib import Path
+
 import pytest
 
 from python_on_whales import DockerClient
@@ -46,37 +50,176 @@ def docker_client():
 
 _containers_started = False
 
+# ── ssh-target keypair (used by test_remote_docker_integration.py) ──────────
+# Ephemeral, gitignored under .cache/ — never baked into the repo. Generated
+# fresh per session if missing, so `ssh://root@localhost:2222` (the DinD
+# target defined in docker-compose.test.yml) is reachable non-interactively
+# without touching the developer's real ~/.ssh/config.
+_SSH_TEST_DIR = Path(__file__).parent.parent / ".cache" / "ssh_test"
+_SSH_TEST_PORT = 2222
+_SSH_TEST_HOST_ALIAS = f"[localhost]:{_SSH_TEST_PORT}"
+
+
+@pytest.fixture(scope="session")
+def ssh_test_keypair():
+    """Generate (or reuse) an ed25519 keypair for the ssh-target container and
+    register it with the running ssh-agent so key-based auth succeeds without
+    prompting. docker's ssh:// transport does not itself pass -o BatchMode, so
+    agent + known_hosts must already be satisfied before any connection is
+    attempted (see caller in setup_integration_containers for the known_hosts
+    half of this).
+    """
+    _SSH_TEST_DIR.mkdir(parents=True, exist_ok=True)
+    key_path = _SSH_TEST_DIR / "id_ed25519"
+    pub_path = _SSH_TEST_DIR / "id_ed25519.pub"
+    auth_keys_path = _SSH_TEST_DIR / "authorized_keys"
+
+    if not key_path.exists():
+        subprocess.run(
+            [
+                "ssh-keygen", "-t", "ed25519", "-N", "", "-f", str(key_path),
+                "-C", "docker-log-analyzer-test",
+            ],
+            check=True, capture_output=True,
+        )
+    key_path.chmod(0o600)
+    auth_keys_path.write_text(pub_path.read_text())
+
+    add_result = subprocess.run(["ssh-add", str(key_path)], capture_output=True)
+
+    yield {"key_path": key_path, "port": _SSH_TEST_PORT}
+
+    if add_result.returncode == 0:
+        subprocess.run(["ssh-add", "-d", str(key_path)], capture_output=True)
+
+
+def _wait_for_ssh_target_and_trust_host_key(port: int, timeout: int = 30) -> None:
+    """Poll the ssh-target container's SSH port and seed known_hosts once it's
+    up. The container's host key is baked in at image build time (Dockerfile
+    runs ssh-keygen -A), so it's stable across up/down cycles but changes on
+    rebuild — stale known_hosts entries are dropped first to avoid a
+    'REMOTE HOST IDENTIFICATION HAS CHANGED' failure blocking the whole suite.
+    """
+    subprocess.run(
+        ["ssh-keygen", "-R", _SSH_TEST_HOST_ALIAS],
+        capture_output=True,
+    )
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        scan = subprocess.run(
+            ["ssh-keyscan", "-p", str(port), "-T", "2", "localhost"],
+            capture_output=True, text=True,
+        )
+        if scan.returncode == 0 and scan.stdout.strip():
+            known_hosts = Path.home() / ".ssh" / "known_hosts"
+            known_hosts.parent.mkdir(parents=True, exist_ok=True)
+            with open(known_hosts, "a") as f:
+                f.write(scan.stdout)
+            return
+        time.sleep(1)
+
+
+# Services started *inside* the ssh-target's inner DinD daemon (over SSH),
+# so `docker -H ssh://root@localhost:2222 ps` shows real, independent
+# containers with the same names the analyzer tools look for — not the
+# host's own copies. ssh-target itself is deliberately excluded to avoid
+# recursively composing itself inside its own inner daemon.
+_LOG_GENERATOR_SERVICES = ["web-app", "database", "cache", "gateway"]
+
+
+def _start_log_generators_over_ssh(compose_file: Path, port: int, timeout: int = 90) -> bool:
+    """Bring up the log-generator services inside ssh-target's inner Docker
+    daemon, reachable only via SSH. Returns True on success, False if the
+    inner daemon isn't ready yet or the build/up fails — callers should treat
+    False as "SSH integration tests will skip" rather than a hard failure,
+    since ssh-target is not required for the rest of the integration suite.
+    """
+    deadline = time.monotonic() + timeout
+    last_exc = None
+    while time.monotonic() < deadline:
+        try:
+            inner = DockerClient(
+                host=f"ssh://root@localhost:{port}",
+                compose_files=[str(compose_file)],
+            )
+            inner.compose.up(services=_LOG_GENERATOR_SERVICES, detach=True, build=True)
+            return True
+        except DockerException as exc:
+            last_exc = exc
+            time.sleep(2)
+    if last_exc is not None:
+        print(f"ssh-target inner daemon not ready, SSH integration tests will skip: {last_exc}")
+    return False
+
+
+def _stop_log_generators_over_ssh(compose_file: Path, port: int) -> None:
+    try:
+        inner = DockerClient(
+            host=f"ssh://root@localhost:{port}",
+            compose_files=[str(compose_file)],
+        )
+        inner.compose.down()
+    except DockerException:
+        pass
+
 
 @pytest.fixture(scope="session", autouse=True)
-def setup_integration_containers(request):
+def setup_integration_containers(request, ssh_test_keypair):
     """Start test containers at session start for integration tests, stop at end.
-    
+
     Integration tests are run locally before commits. This fixture is for local development.
     """
     global _containers_started
-    
+
     # Check if integration tests are being run
     has_integration = any(
         item.get_closest_marker("integration")
         for item in request.session.items
     )
-    
+
     if not has_integration:
         yield
         return
-    
+
+    from docker_log_analyzer.docker import COMPOSE_FILE
     from docker_log_analyzer.tools import tool_start_test_containers, tool_stop_test_containers
-    
-    # Start containers
+
+    # Start containers (ssh_test_keypair fixture has already written
+    # .cache/ssh_test/authorized_keys, which ssh-target bind-mounts)
     result = tool_start_test_containers(rebuild=False)
     if result["status"] == "error":
         pytest.skip(f"Failed to start test containers: {result.get('error')}")
-    
+
+    port = ssh_test_keypair["port"]
+    _wait_for_ssh_target_and_trust_host_key(port)
+
+    # Best-effort: populate the ssh-target's own inner daemon with the same
+    # log-generator containers, so SSH-based tests see real, independently
+    # reachable "test-web-app" etc. rather than the host's copies. Failure
+    # here only disables SSH-specific tests (they skip individually); it
+    # must not block the rest of the integration suite.
+    global _ssh_target_ready
+    _ssh_target_ready = _start_log_generators_over_ssh(COMPOSE_FILE, port)
+
     _containers_started = True
     yield
-    
+
+    if _ssh_target_ready:
+        _stop_log_generators_over_ssh(COMPOSE_FILE, port)
+
     # Stop containers after all tests
     tool_stop_test_containers()
+
+
+_ssh_target_ready = False
+
+
+@pytest.fixture(scope="session")
+def ssh_target_ready():
+    """True once the ssh-target inner daemon has the log-generator containers
+    running and reachable over SSH. SSH-dependent tests should skip (not
+    fail) when this is False — e.g. privileged containers unavailable."""
+    return _ssh_target_ready
 
 
 # ── Synthetic log helpers ─────────────────────────────────────────────────────
