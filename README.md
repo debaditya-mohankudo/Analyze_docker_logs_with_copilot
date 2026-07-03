@@ -85,6 +85,8 @@ uv run python -c "from docker_log_analyzer.mcp_server import run; print('OK')"
 
 > **Remote desktop / non-local Docker?** See **[doc/WIKI_OPERATIONS.md](doc/WIKI_OPERATIONS.md)** for remote Docker host configuration, SSH tunnelling, and environment variable setup.
 
+Configuration is a Pydantic `Settings` singleton in [`docker_log_analyzer/config.py`](docker_log_analyzer/config.py), loaded from environment variables or a `.env` file at the repo root. See [`.env.example`](.env.example) for all available settings and their defaults.
+
 ---
 
 ## Architecture
