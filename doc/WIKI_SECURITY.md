@@ -1,3 +1,8 @@
+---
+tags: [security, secret, credential, redact, pii, path-traversal, confinement]
+last_updated: 2026-07-03
+---
+
 # Wiki Hub: Security
 
 Canonical reference for all security constraints, guardrails, and patterns in Docker Log Analyzer.
@@ -27,11 +32,16 @@ Every finding contains:
 |-------|------|-------------|
 | `severity` | `critical` \| `high` \| `medium` | Classified by pattern |
 | `pattern_name` | string | Named pattern that fired (e.g. `AWS_SECRET_KEY`) |
-| `matched_text` | string | **Redacted** form only — raw value never returned |
-| `redacted_text` | string | Same value with sensitive portion replaced by `***REDACTED***` |
 | `line_number` | int | 1-based line number within the scanned log |
-| `timestamp` | string | ISO-8601 UTC timestamp from the log line |
-| `recommendation` | string | Remediation suggestion |
+| `timestamp` | string? | Extracted from the log line if available, else `null` |
+| `context_before` | string | Log content immediately preceding the match, for triage context |
+| `context_after` | string | Log content immediately following the match |
+| `matched_text_redacted` | string | **Redacted** form only — raw secret value never returned |
+| `recommendation` | string | Remediation suggestion, populated from the pattern's own recommendation at scan time |
+
+(Backed by the `Finding` dataclass in `secret_detector.py` — there is no
+separate `matched_text` field; only the already-redacted value is ever
+constructed or returned.)
 
 ### Rules (CRITICAL)
 
@@ -42,19 +52,30 @@ Every finding contains:
 
 ### Severity levels and patterns (20 total)
 
+Pattern names below are the exact `pattern_name` values returned in findings
+(the human-readable `name=` in each `SecretPattern`, per `secret_detector.py`).
+
 | Pattern | Severity |
 |---------|----------|
-| `AWS_SECRET_KEY`, `AWS_ACCESS_KEY` | critical |
-| `GITHUB_TOKEN` | critical |
-| `CREDIT_CARD`, `SSN`, `PRIVATE_KEY` | critical |
-| `STRIPE_SECRET_KEY` | critical |
-| `GENERIC_API_KEY`, `JWT_TOKEN`, `DATABASE_URL`, `BASIC_AUTH`, `PASSWORD_VAR` | high |
-| `GOOGLE_API_KEY`, `STRIPE_PUBLISHABLE_KEY`, `AZURE_STORAGE_KEY`, `OAUTH_CLIENT_SECRET` | high |
-| `EMAIL_ADDRESS`, `PHONE_NUMBER` | medium |
-| `BASE64_SECRET`, `SESSION_COOKIE` | medium |
+| `AWS Access Key ID`, `AWS Secret Access Key` | critical |
+| `Private Key Header` | critical |
+| `GitHub Token` | critical |
+| `Stripe Secret Key` | critical |
+| `Generic API Key`, `Bearer Token`, `Database URL with Credentials`, `Slack Token`, `JWT Token` | high |
+| `Google API Key`, `Stripe Publishable Key`, `Azure Storage Account Key`, `OAuth Client Secret` | high |
+| `Password Assignment`, `Email Address`, `Credit Card Number` | medium |
+| `Secret Assignment`, `Base64 Encoded Secret`, `Session Cookie` | medium |
 
-**Severity filter behavior:** `critical` returns only critical findings; `high` returns
-critical + high; `medium` returns all three; `all` returns everything.
+There is **no SSN or phone-number pattern** — despite PII detection being
+mentioned in the module's own docstring, only email and credit-card patterns
+are currently implemented for PII.
+
+**Severity filter behavior:** only `critical`, `high`, and `all` are recognized
+filter values (`secret_detector.scan_logs`) — `critical` returns only critical
+findings, `high` returns critical + high, `all` returns everything (critical +
+high + medium). There is no `"medium"` filter key; passing `"medium"` or any
+other unrecognized string silently falls back to `all` behavior rather than
+raising an error.
 
 ### Adding a new secret pattern
 
@@ -175,7 +196,7 @@ This test lives in `tests/test_coderepo.py :: TestFindFileInRepo`.
 
 security, secret, credential, redact, PII, path traversal, repo root, confinement,
 find_file_in_repo, SecretDetector, detect_data_leaks, AWS, GitHub token, credit card,
-SSN, private key, JWT, severity, critical, high, medium, Docker socket, read-only,
+private key, JWT, severity, critical, high, medium, Docker socket, read-only,
 safe output, no stdout
 
 **[negative keywords / not-this-doc]**

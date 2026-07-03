@@ -1,3 +1,8 @@
+---
+tags: [architecture, design, module, stateless, cache, polars, algorithm, confidence, mcp-server]
+last_updated: 2026-07-03
+---
+
 # Wiki Hub: Architecture
 
 Use this hub for system design, module structure, key algorithms, and implementation rationale.
@@ -33,7 +38,7 @@ Authoritative source for all constraints: [../CLAUDE.md](../CLAUDE.md)
 
 ```text
 docker_log_analyzer/
-  mcp_server.py           # Tool registration and FastMCP wiring (16 tools)
+  mcp_server.py           # Tool registration and FastMCP wiring (18 tools)
   tools.py                # Tool implementations (tool_* functions, pattern/correlation cache)
   docker.py               # Docker helpers: client, log fetching, _fetch_logs_with_cache()
   spike_detector.py       # Polars rolling-window spike detection (1-min buckets)
@@ -44,17 +49,19 @@ docker_log_analyzer/
   root_cause_analyzer.py  # Score-based root cause ranking (fan-in, cascade, spike timing)
   request_tracer.py       # Request ID extraction + cross-container timeline builder
   error_classifier.py     # Regex-based semantic error classification (9 categories)
+  investigation_planner.py # Symptom → signal classification → ordered tool-call plan
+  coderepo.py             # Stack-trace parsing + repo-relative source file resolution
   patterns.py             # Shared compiled regexes (DOCKER_TS_RE, ERROR_PATTERN_RE)
   cache_manager.py        # Atomic Parquet log cache (write + multi-day read)
   config.py               # Pydantic BaseSettings singleton (settings.*)
-  logger.py               # LoggerWithRunID singleton (run_id in every log line)
+  logger.py               # LoggerWithRunID singleton (run_id in every log line) + JsonlFormatter
 ```
 
 ---
 
 ## MCP Server Internals
 
-- **`@mcp.tool()` decorator** — each tool is an `async def` in `mcp_server.py` decorated with `@mcp.tool()`; it delegates immediately to the corresponding `tool_*()` function in `tools.py`. No registry object, no wrapper functions.
+- **`@mcp.tool()` decorator** — each tool is a plain `def` in `mcp_server.py` decorated with `@mcp.tool()`; it delegates immediately to the corresponding `tool_*()` function in `tools.py`. No registry object, no wrapper functions, no `async` (nothing in the tool path awaits I/O — Docker calls are synchronous via `python_on_whales`).
 - **`_fetch_logs_with_cache(container, name, since, until, use_cache)`** — lives in `docker.py`; shared by all log-reading tools; returns `(lines, was_cached)`.
 - **No tool-to-tool calls** — `analyze_correlations` and `map_service_dependencies` both call `correlate()` directly from `correlator.py`. MCP tool calls are never chained internally.
 - **Error handling** — all tools return `{"status": "error", "error": "..."}` on failure; server never crashes.
@@ -108,24 +115,23 @@ container by root-cause likelihood.
 **Algorithm steps:**
 
 1. **Fan-in** — invert the graph; for each container count how many others depend on it → `score += count × WEIGHT_DEPENDENT`
-2. **Cascade** — for each cascade candidate where C is `"from"` → `score += correlation_score × WEIGHT_CASCADE`
-3. **Spike timing** — build `{container → first_spike_ts}` from spikes (ISO-8601 strings, `None`-guarded); for each cascade pair where origin spiked before receiver → `score += WEIGHT_SPIKE_FIRST`
+2. **Cascade** — for each cascade candidate where C is `"from"` (skipped if `from` isn't a known container — guards against unresolved external hostnames) → `score += correlation_score × WEIGHT_CASCADE`
+3. **Spike timing + magnitude** — build `{container → first_spike_bucket}` from spikes (ISO-8601 prefixes, sort lexicographically); for each cascade pair where origin spiked before receiver → `score += WEIGHT_SPIKE_FIRST × log1p(max_ratio)`, weighting by how severe the origin's spike was, not just its timing
 4. **Fan-out penalty** — for each outbound dependency edge in graph → `score += WEIGHT_DEPENDENCY`
-5. Sort by score descending; return `[{"container": str, "score": float}]`
+5. Floor every score at 0.0 (fan-out penalty can produce negatives, which are confusing in a ranking context) and attach an `evidence` list of human-readable strings per container explaining each contribution
+6. Sort by score descending; return `[{"container": str, "score": float, "evidence": [str, ...]}]`; returns `[]` for empty/no-signal input rather than raising
 
 **Key correctness fix (Issue A):** spike timestamps are ISO-8601 strings. Missing containers
 use `None` sentinel — comparison is skipped when either side is absent. The original proposal
 used `0` as default, which is a Python 3 type error when compared against a string.
 
-**Pending TODOs (see `root_cause_analyzer.py`):**
-
-- Issue C: evidence list per container (explains *why* each container scored high)
-- Issue D: structured response for empty inputs
-- Issue E: floor scores at 0.0 (fan-out penalty can produce negatives)
-- Issue F: weight spike timing by error density (`max_error_rate` from spike output)
-- Issue G: guard against unresolved external hostnames appearing as cascade origins
-
-Full scoring design review: [WIKI_REVIEW_ROOT_CAUSE_ANALYZER.md](WIKI_REVIEW_ROOT_CAUSE_ANALYZER.md)
+All originally-proposed follow-ups (Issues C–G: evidence list, empty-input
+handling, score flooring, magnitude-weighted spike timing, external-hostname
+guard) are implemented — none are outstanding. See
+[WIKI_PROPOSAL_ROOT_CAUSE_ANALYZER.md](WIKI_PROPOSAL_ROOT_CAUSE_ANALYZER.md)
+for the original proposal and
+[WIKI_REVIEW_ROOT_CAUSE_ANALYZER.md](WIKI_REVIEW_ROOT_CAUSE_ANALYZER.md) for
+the scoring design review.
 
 ---
 

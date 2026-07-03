@@ -1,3 +1,8 @@
+---
+tags: [review, dependency-mapper, code-review, historical]
+last_updated: 2026-07-03
+---
+
 # Code Review: dependency_mapper.py
 
 **Date:** 2026-03-07

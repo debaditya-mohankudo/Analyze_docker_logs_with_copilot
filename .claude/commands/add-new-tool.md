@@ -42,6 +42,10 @@ Do not proceed until all answers are collected.
    - root_cause_analyzer.py
    - log_pattern_analyzer.py
    - secret_detector.py
+   - request_tracer.py
+   - error_classifier.py
+   - investigation_planner.py
+   - coderepo.py
    - cache_manager.py
    - patterns.py
    - None of the above (new logic entirely)
@@ -86,7 +90,7 @@ def tool_<name>(
 
     Returns:
         dict with keys:
-            status     - "ok" | "error"
+            status     - "success" | "error"
             <key>      - <description of each output field>
     """
     try:
@@ -101,7 +105,7 @@ def tool_<name>(
         # No mutation of shared state.
 
         return {
-            "status": "ok",
+            "status": "success",
             # ... result fields
         }
 
@@ -136,7 +140,7 @@ def <name>(
 
 Rules:
 - `mcp_server.py` contains ONLY wiring — no logic (CLAUDE.md §2)
-- Import `tool_<name>` from `tools.py` at the top of the file if not already a wildcard import
+- Add `tool_<name>` to the existing `from .tools import (...)` block at the top of the file (relative import, matching every other tool)
 
 ---
 
@@ -156,7 +160,7 @@ Order follows CLAUDE.md §4.0: wiring -> isolation -> error contract -> determin
 """
 from unittest.mock import MagicMock
 import pytest
-from tools import tool_<name>
+from docker_log_analyzer.tools import tool_<name>
 
 
 class TestStatelessWiring:
@@ -178,7 +182,7 @@ class TestToolIsolation:
     def test_callable_standalone(self, mock_docker):
         # Do NOT call any other tool_*() before this
         result = tool_<name>(<args>)
-        assert result["status"] in ("ok", "error")
+        assert result["status"] in ("success", "error")
 
 
 class TestErrorContract:
@@ -209,9 +213,9 @@ class TestDeterminism:
 class TestFeatures:
     """Feature-level tests — only added after all four design checks above pass."""
 
-    def test_ok_status_on_valid_input(self, mock_docker):
+    def test_success_status_on_valid_input(self, mock_docker):
         result = tool_<name>(<valid_args>)
-        assert result["status"] == "ok"
+        assert result["status"] == "success"
 
     def test_output_fields_present(self, mock_docker):
         result = tool_<name>(<valid_args>)
@@ -219,19 +223,30 @@ class TestFeatures:
             assert key in result, f"Missing field: {key}"
 ```
 
-If `mock_docker` is not already in `tests/conftest.py`, add it:
+This project uses `python_on_whales.DockerClient`, **not** the `docker-py`
+SDK (`docker.from_env()`) — mocking the wrong library produces tests that
+pass without ever exercising the real code path. If `mock_docker` is not
+already in `tests/conftest.py`, add it patching
+`docker_log_analyzer.tools._docker_client` (the actual import point used by
+`tool_*()` functions):
 
 ```python
+from unittest.mock import patch, MagicMock
+
 @pytest.fixture
-def mock_docker(monkeypatch):
-    mock = MagicMock()
-    mock.containers.get.return_value.logs.return_value = (
-        b"2024-01-01T00:00:00Z INFO service started\n"
-        b"2024-01-01T00:00:01Z ERROR connection refused\n"
+def mock_docker():
+    fake_client = MagicMock()
+    fake_container = MagicMock()
+    fake_container.logs.return_value = (
+        "2026-03-04T10:00:00.000Z INFO service started\n"
+        "2026-03-04T10:00:01.000Z ERROR connection refused\n"
     )
-    monkeypatch.setattr("docker.from_env", lambda: mock)
-    return mock
+    fake_client.container.list.return_value = [fake_container]
+    with patch("docker_log_analyzer.tools._docker_client", return_value=fake_client):
+        yield fake_client
 ```
+
+See `tests/test_tools_unit.py` for real examples of this pattern already in use.
 
 ### 5b. Integration test (only if Docker-dependent)
 
@@ -239,14 +254,14 @@ Create `tests/test_tool_<name>_integration.py`:
 
 ```python
 import pytest
-from tools import tool_<name>
+from docker_log_analyzer.tools import tool_<name>
 
 
 @pytest.mark.integration
 class TestIntegration:
     def test_live_container(self, live_container):
         result = tool_<name>(container=live_container)
-        assert result["status"] == "ok"
+        assert result["status"] == "success"
 ```
 
 ---

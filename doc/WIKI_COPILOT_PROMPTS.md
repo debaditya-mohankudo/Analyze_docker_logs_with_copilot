@@ -1,3 +1,8 @@
+---
+tags: [copilot, prompt, natural-language, agent-mode, vscode, workflow, triage]
+last_updated: 2026-07-03
+---
+
 # Wiki Hub: Copilot Prompts
 
 Natural language prompts for VSCode Copilot Chat (Agent mode). Each section maps to one or more MCP tools.
@@ -187,9 +192,20 @@ For tool parameter details, see [WIKI_TOOLS.md](WIKI_TOOLS.md).
 
 ---
 
+## Cache management
+
+- "How much log data is cached right now?"
+- "Show me cache coverage for test-database."
+- "Clear the log cache for test-web-app — I want fresh logs."
+- "Wipe the entire log cache and start over."
+
+**Tools used:** `cache_info`, `clear_cache`
+
+---
+
 ## Retrieval keywords
 
-copilot, prompt, natural language, agent mode, vscode, workflow, triage, investigation, discovery, spike, correlation, dependency, root cause, secret, cache, capture, test containers, get_last_errors, analyze_root_causes, analyze_patterns, analyze_error_spikes, trace_request_flow, classify_errors, request tracing, error classification, request ID, trace ID, database errors, network errors
+copilot, prompt, natural language, agent mode, vscode, workflow, triage, investigation, discovery, spike, correlation, dependency, root cause, secret, cache, capture, test containers, get_last_errors, analyze_root_causes, analyze_patterns, analyze_error_spikes, trace_request_flow, classify_errors, request tracing, error classification, request ID, trace ID, database errors, network errors, cache_info, clear_cache, cache management
 
 **[negative keywords / not-this-doc]**
 parameters, return shapes, algorithm internals, module design, CI, coverage, configuration, environment variables

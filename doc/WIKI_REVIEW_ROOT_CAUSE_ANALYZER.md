@@ -1,9 +1,17 @@
+---
+tags: [review, root-cause, code-review, historical, implemented]
+last_updated: 2026-07-03
+---
+
 # Code Review: root_cause_analyzer.py
 
-**Date:** 2026-03-07
+**Date:** 2026-03-07 (review); **Status as of 2026-07-03:** both accepted
+follow-ups (Issue F — spike magnitude weighting, Issue G — external-node
+guard) are now **implemented** in `root_cause_analyzer.py` — not merely
+TODO-commented as originally planned. No `TODO` comments remain in the module.
 **Module:** `docker_log_analyzer/root_cause_analyzer.py`
 **Reviewer:** External analysis
-**Status:** 5 issues assessed — 1 accepted (new enhancement), 3 rejected or already handled, 1 partially valid
+**Status:** 5 issues assessed — 1 accepted (implemented as Issue F), 3 rejected or already handled, 1 partially valid (implemented as Issue G)
 
 ---
 
@@ -138,8 +146,10 @@ a 5-error one, distorting rankings unpredictably.
 implemented.** It requires no new dependencies and is directly available from
 existing spike data.
 
-**Action:** Track as Issue F. Add `# TODO (Issue F)` comment to
-`root_cause_analyzer.py`.
+**Action:** ✅ Implemented as Issue F. `rank_root_causes()` now computes
+`max_ratio` per container from spike records and weights the spike-timing
+bonus by `log1p(max_ratio)` — exactly the approach outlined above, not just a
+TODO comment.
 
 ---
 
@@ -216,8 +226,10 @@ for cascade in cascades:
 The `if known_containers` check preserves behaviour when graph is empty (unit tests
 with `graph={}` pass cascades directly and should still be scored).
 
-**Action:** Track as Issue G. Add `# TODO (Issue G)` comment to
-`root_cause_analyzer.py`.
+**Action:** ✅ Implemented as Issue G. `rank_root_causes()` now builds
+`known_containers` (graph keys + all edge targets) and skips any cascade
+whose `origin` isn't in that set — exactly the guard outlined above, not just
+a TODO comment.
 
 ---
 
@@ -225,8 +237,8 @@ with `graph={}` pass cascades directly and should still be scored).
 
 | Priority | Issue | Type | Verdict | Action |
 |----------|-------|------|---------|--------|
-| 1 | Issue 3 — error density signal | ENHANCE MED | **Accept** | Implement as Issue F (TODO comment added) |
-| 2 | Issue 5 (6.2) — external node guard | ROBUSTNESS LOW | Partially valid | Implement as Issue G (TODO comment added) |
+| 1 | Issue 3 — error density signal | ENHANCE MED | **Accept** | ✅ Implemented as Issue F (`log1p(max_ratio)` magnitude weighting) |
+| 2 | Issue 5 (6.2) — external node guard | ROBUSTNESS LOW | Partially valid | ✅ Implemented as Issue G (`known_containers` guard) |
 | 3 | Issue 1 — cascade binary vs weighted | DESIGN MED | **Reject** | No change; weight tuning noted |
 | 4 | Issue 2 — fan-out penalty direction | DESIGN LOW | **Reject** | No change; mild-penalty tuning noted |
 | 5 | Issue 4 (6.1) — missing containers | ROBUSTNESS LOW | **Reject** | Already handled by fan-out step |

@@ -1,3 +1,8 @@
+---
+tags: [test, testing, ci, coverage, unit, integration, pytest, quality]
+last_updated: 2026-07-03
+---
+
 # Wiki Hub: Quality & Testing
 
 Use this hub for test strategy, CI configuration, coverage targets, and adding new tests.
@@ -16,10 +21,10 @@ Use this hub for test strategy, CI configuration, coverage targets, and adding n
 
 | Metric | Value |
 |--------|-------|
-| Unit tests | 415 (no Docker required) |
-| Integration tests | 67 (Docker + test containers) |
-| Total | 482 |
-| CI execution (unit only) | ~0.8 s parallel via pytest-xdist |
+| Unit tests | 598 (no Docker required) |
+| Integration tests | 90 (Docker + test containers) |
+| Total | 688 |
+| CI execution (unit only) | ~1.2 s parallel via pytest-xdist |
 | Coverage (core modules) | 90–100% |
 
 ### Run commands
@@ -48,18 +53,22 @@ uv run pytest tests/test_dependency_mapper.py -v
 | `test_spike_detector.py` | 16 | unit | Rolling-window spike detection, Docker timestamp parsing, edge cases |
 | `test_correlator.py` | 17 | unit | Correlation scoring, event extraction, empty/single container |
 | `test_correlation_cache.py` | 14 | unit | Cache key stability, TTL expiry, TTL=0 disable, cache miss/hit flow, use_cache=false bypass |
-| `test_pattern_detector.py` | 45 | unit | Timestamp formats (ISO/syslog/epoch/Apache), language detection, framework detection, log levels, health checks |
+| `test_pattern_detector.py` | 46 | unit | Timestamp formats (ISO/syslog/epoch/Apache), language detection, framework detection, log levels, health checks |
 | `test_secret_detector.py` | 45 | unit | 20 secret patterns, redaction, severity filtering, remediation, Docker timestamp regex |
 | `test_dependency_mapper.py` | 36 | unit | HTTP/HTTPS/DB/gRPC/DNS/TCP/name-mention extraction, graph builder, cascade direction, hit_count, transitive |
 | `test_root_cause_analyzer.py` | 27 | unit | Fan-in scoring, cascade scoring, spike timing bonus, combined signals, zero-score exclusion |
-| `test_tools_unit.py` | 54 | unit | tools.py helper functions, Docker/cache/time parsing helpers, sync/async tool error branches, lifecycle and sync paths; wrapper-level design-principle tests for `tool_analyze_code_context` |
-| `test_cache_manager.py` | 25 | unit | Parquet write/read, schema validation, window filtering, multi-day, corrupt file, atomic write cleanup, metadata, clear cache |
-| `test_docker.py` | 16 | unit | `_docker_client`, `_fetch_logs`, `_fetch_logs_window`, `_fetch_logs_with_cache` helpers |
-| `test_patterns.py` | 24 | unit | DOCKER_TS_RE and ERROR_PATTERN_RE regex: matches, non-matches, edge cases |
+| `test_tools_unit.py` | 87 | unit | tools.py helper functions, Docker/cache/time parsing helpers, tool error branches, lifecycle and cache paths; wrapper-level design-principle tests for `tool_analyze_code_context`, `cache_info`, `clear_cache` |
+| `test_cache_manager.py` | 26 | unit | Parquet write/read, schema validation, window filtering, multi-day, corrupt file, atomic write cleanup, metadata, clear cache |
+| `test_cache_tools.py` | 8 | unit | `tool_cache_info` / `tool_clear_cache` wrapper contracts |
+| `test_docker.py` | 18 | unit | `_docker_client` (incl. `settings.docker_host` wiring), `_fetch_logs`, `_fetch_logs_window`, `_fetch_logs_with_cache` helpers |
+| `test_patterns.py` | 27 | unit | DOCKER_TS_RE and ERROR_PATTERN_RE regex: matches, non-matches, edge cases |
 | `test_investigation_planner.py` | 40 | unit | Signal classification, focus modes, plan generation, Markdown file output, container scoping; single-container correlation skip, explicit-scope list_containers skip |
-| `test_coderepo.py` | 39 | unit | Stack trace parsers (Python/Java/Go/Node.js), repo resolution, file finding, code context extraction |
-| `test_mcp_integration.py` | 53 | integration | All 16 MCP tools, live Docker, field presence, value ranges, error cases |
-| `test_remote_docker_integration.py` | 14 | integration | Remote Docker via SSH/TCP, graceful fallback when unavailable (12 auto-skip) |
+| `test_coderepo.py` | 44 | unit | Stack trace parsers (Python/Java/Go/Node.js), repo resolution, file finding, code context extraction |
+| `test_error_classifier.py` | 57 | unit | Semantic error categorization (database, network, timeout, auth, etc.), category filtering, summary aggregation |
+| `test_request_tracer.py` | 65 | unit | ID extraction (strict UUID + loose fallback patterns), fast-path prefilter, cross-container timeline grouping, window-based collision dropping |
+| `test_logger.py` | 8 | unit | JsonlFormatter, rotating file-handler wiring, idempotency, caller-attribution (`stacklevel`) correctness |
+| `test_mcp_integration.py` | 76 | integration | All 18 MCP tools, live Docker, field presence, value ranges, error cases |
+| `test_remote_docker_integration.py` | 14 | integration | Remote Docker via SSH against a real Docker-in-Docker target (`ssh-target`), graceful fallback when unavailable |
 
 ---
 
@@ -81,25 +90,36 @@ CI must run: `pytest tests/ -m "not integration"`
 
 | Module | Coverage | Notes |
 |--------|----------|-------|
-| `config.py` | 100% | Config parsing, DOCKER_HOST, validators |
 | `__init__.py` | 100% | Package init |
-| `secret_detector.py` | 96% | 20 patterns, redaction, recommendations |
-| `spike_detector.py` | 95% | Rolling-window, timestamp parsing |
-| `correlator.py` | 94% | Pairwise correlation, event extraction |
-| `dependency_mapper.py` | ~90% | Graph builder, cascade candidates |
-| `cache_manager.py` | ~95% | Parquet write/read, atomic write, corrupt file handling, metadata, clear cache |
-| `tools.py` | 93% | Helper branches + sync/async tool contract and error-path unit coverage |
-| `logger.py` | 76% | LoggerWithRunID singleton |
-| `log_pattern_analyzer.py` | 55% | Pattern detection (regex heuristics) |
-| `mcp_server.py` | 22% (unit); improved via integration | Tool implementations |
+| `correlator.py` | 100% | Pairwise correlation, event extraction |
+| `docker.py` | 100% | `_docker_client` (incl. `docker_host` wiring), log fetch helpers |
+| `error_classifier.py` | 100% | Semantic error categorization |
+| `spike_detector.py` | 100% | Rolling-window, timestamp parsing |
+| `secret_detector.py` | 99% | 20 patterns, redaction, recommendations |
+| `coderepo.py` | 99% | Stack trace parsers, repo resolution, code context |
+| `request_tracer.py` | 99% | ID extraction (strict + loose), cross-container timelines |
+| `root_cause_analyzer.py` | 97% | Fan-in/cascade/spike-timing scoring |
+| `config.py` | 96% | Config parsing, DOCKER_HOST, validators |
+| `investigation_planner.py` | 98% | Signal classification, plan generation |
+| `cache_manager.py` | 94% | Parquet write/read, atomic write, corrupt file handling, metadata, clear cache |
+| `dependency_mapper.py` | 94% | Graph builder, cascade candidates |
+| `logger.py` | 88% | LoggerWithRunID singleton, JsonlFormatter, file-handler wiring |
+| `patterns.py` | 89% | Shared regex patterns |
+| `tools.py` | 89% | Helper branches + tool contract and error-path unit coverage |
+| `mcp_server.py` | 57% (unit); improved via integration | Tool registration wiring |
+| `log_pattern_analyzer.py` | 59% | Pattern detection (regex heuristics) |
 
-Target: core modules ≥ 90% (per [../CLAUDE.md](../CLAUDE.md) §4).
+Target: core modules ≥ 90% (per [../CLAUDE.md](../CLAUDE.md) §4) — `logger.py`,
+`patterns.py`, `tools.py`, `mcp_server.py`, and `log_pattern_analyzer.py`
+currently fall short; the wiring-critical paths in each are still covered
+(see per-file breakdown above), the gaps are mostly in defensive/rarely-hit
+branches.
 
 ### Recent Coverage Uplift: `tools.py`
 
-- Added `tests/test_tools_unit.py` (54 unit tests) to cover helper and tool branches without Docker.
-- Includes wrapper-level design-principle tests for `tool_analyze_code_context` (Docker wiring, error contract, frame parsing, language auto-detection).
-- Measured result: `docker_log_analyzer/tools.py` is now **93%** covered in unit scope.
+- `tests/test_tools_unit.py` (87 unit tests) covers helper and tool branches without Docker.
+- Includes wrapper-level design-principle tests for `tool_analyze_code_context`, `tool_cache_info`, and `tool_clear_cache` (Docker wiring, error contract, frame parsing, language auto-detection).
+- Measured result: `docker_log_analyzer/tools.py` is **89%** covered in unit scope.
 
 Reproduce:
 
@@ -112,13 +132,16 @@ uv run pytest tests/test_tools_unit.py tests/test_correlation_cache.py -q \
 
 ## CI Configuration
 
-`.github/workflows/tests.yml`:
+`.github/workflows/tests.yml` defines a single `tests` job:
 
-- **Unit job:** runs on every `push` + `pull_request` to `main`; command: `pytest tests/ -m "not integration"`
-- **Integration job:** runs on `push` only (after PR merge); requires Docker-in-Docker runner
-- **Skip condition:** markdown-only changes (`**.md`) skip CI automatically
-- **Reproducibility:** `uv.lock` cached via `cache-dependency-path` for fast installs
-- **Parallelism:** `pytest-xdist` for unit tests (`-n auto`)
+- **Trigger:** `push` and `pull_request` to `main`
+- **Skip condition:** paths-ignore on `**/*.md` and `.history` — markdown-only changes skip CI automatically
+- **Command:** `pytest tests/ -m "not integration" --cov=docker_log_analyzer --cov-report=term-missing -n auto --durations=10`
+- **Parallelism:** `pytest-xdist` (`-n auto`)
+- **Caching:** `astral-sh/setup-uv@v5` with `enable-cache: true` (not a manual `cache-dependency-path` step)
+- **There is no separate integration-test CI job.** Integration tests (needing
+  Docker + the `ssh-target` DinD container) are local-only — run them yourself
+  with `pytest tests/` before pushing; CI only runs the unit-marked suite.
 
 ---
 
@@ -129,7 +152,9 @@ Defined in [`tests/conftest.py`](../tests/conftest.py):
 | Fixture | Scope | What it provides |
 |---------|-------|-----------------|
 | `docker_client` | session | `DockerClient` instance; auto-skips if Docker unavailable |
-| `setup_integration_containers` | session, autouse | Starts test containers before integration tests; stops after |
+| `setup_integration_containers` | session, autouse | Starts test containers before integration tests; populates `ssh-target`'s inner Docker-in-Docker daemon with the same log-generator containers over SSH; stops/tears down after |
+| `ssh_test_keypair` | session | Generates (or reuses) an ephemeral ed25519 keypair for `ssh-target`, registers it with the running ssh-agent |
+| `ssh_target_ready` | session | `True` once `ssh-target`'s inner daemon is populated and reachable over SSH; SSH-dependent tests should skip (not fail) when `False` |
 | `spike_logs_single` | function | 14 log lines: 3 baseline buckets + 1 spike bucket (ratio 4.0) |
 | `spike_logs_uniform` | function | 12 log lines: uniform errors, no spike |
 | `corr_aligned_logs` | function | web + db errors within 30s → high correlation |

@@ -1,3 +1,8 @@
+---
+tags: [trace_request_flow, request-tracer, correlation-id, trace-id, session-id, cross-container]
+last_updated: 2026-07-03
+---
+
 # Trace Request Flow
 
 `trace_request_flow` is a deterministic MCP tool that correlates
@@ -169,3 +174,21 @@ format if you observe this.
 Use `analyze_correlations` to find which containers tend to fail together;
 use `trace_request_flow` to find the exact causal path a single request took
 through those containers, when the logs carry an ID.
+
+---
+
+## Retrieval keywords
+
+trace_request_flow, request tracer, request id, trace id, correlation id, transaction id, session id, cross-container timeline, UUID, loose pattern, strict pattern, id_value, id_patterns, trace_window_seconds, request_id_patterns
+
+**[negative keywords / not-this-doc]**
+time-window correlation algorithm internals (see analyze_correlations), CI, coverage, cache strategy
+
+---
+
+## See also
+
+- Tool parameter reference: [WIKI_TOOLS.md § trace_request_flow](WIKI_TOOLS.md#15-trace_request_flow)
+- Time-proximity correlation (complementary tool): [WIKI_ARCHITECTURE.md § Correlation](WIKI_ARCHITECTURE.md#correlation-correlatorpy)
+- Architecture hub: [WIKI_ARCHITECTURE.md](WIKI_ARCHITECTURE.md)
+- Home: [WIKI_HOME.md](WIKI_HOME.md)

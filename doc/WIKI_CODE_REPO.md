@@ -1,3 +1,8 @@
+---
+tags: [code-repo, stack-trace, analyze_code_context, coderepo, source, deep-dive]
+last_updated: 2026-07-03
+---
+
 # Code Repository Context — analyze_code_context
 
 `analyze_code_context` is a deterministic MCP tool that bridges container error
@@ -194,3 +199,21 @@ PLAN:
 - **Graceful degradation** — works without a repo configured (returns frames, warns about missing context)
 - **Language auto-detection** — `PatternDetector.detect_language()` is called on the fetched lines; no prior `analyze_patterns` call required
 - **Basename fallback** — Java's short file names (e.g. `Service.java`) are found via `rglob` when relative resolution fails
+
+---
+
+## Retrieval keywords
+
+code context, stack trace, analyze_code_context, coderepo, repo_paths, container_repo_map, parse_frames, find_file_in_repo, extract_code_context, source code, deep dive, repository resolution
+
+**[negative keywords / not-this-doc]**
+path confinement security rules, secret detection, CI, coverage, cache strategy
+
+---
+
+## See also
+
+- Tool parameter reference: [WIKI_TOOLS.md § analyze_code_context](WIKI_TOOLS.md#14-analyze_code_context)
+- Path confinement security rules: [WIKI_SECURITY.md § Repository Path Confinement](WIKI_SECURITY.md#2-repository-path-confinement-coderepopy)
+- Architecture hub: [WIKI_ARCHITECTURE.md](WIKI_ARCHITECTURE.md)
+- Home: [WIKI_HOME.md](WIKI_HOME.md)

@@ -1,7 +1,29 @@
+---
+tags: [proposal, enhancements, historical, trace_request_flow, classify_errors]
+last_updated: 2026-07-03
+---
+
 # Proposed Enhancements — Docker Log Analyzer MCP Server
 
 **Date:** 2026-03-13
 **Status:** Enhancements 1 & 2 implemented (2026-03-13) — Enhancement 3 deferred
+
+> **Historical note (2026-07-03):** the tool signatures and JSON schemas below
+> are the *original design*, not the shipped API. `trace_request_flow` in
+> particular changed substantially during implementation — different
+> parameter names (`min_events`/`max_requests` vs. proposed
+> `request_id`/`failed_only`/`limit`), a completely different response shape
+> (`id_value`/`containers`/`events` vs. proposed `request_id`/`containers_touched`/`timeline`/`status`),
+> and no `failed_only` filtering concept at all. Neither tool is `async def`
+> as shown here — all MCP tools in this project are plain `def`. For the
+> **authoritative current signature**, see
+> [WIKI_TOOLS.md § trace_request_flow](WIKI_TOOLS.md#15-trace_request_flow) /
+> [WIKI_TRACE_REQUEST_FLOW.md](WIKI_TRACE_REQUEST_FLOW.md) and
+> [WIKI_TOOLS.md § classify_errors](WIKI_TOOLS.md#16-classify_errors) — not this page.
+> The cross-tool integrations described under "Integration with Existing
+> Tools" (root-cause category weighting, spike-bucket dominant category,
+> plan_investigation category keywords) were **not implemented** — only the
+> two standalone tools shipped.
 
 ---
 

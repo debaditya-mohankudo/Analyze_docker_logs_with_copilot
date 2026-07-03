@@ -1,3 +1,8 @@
+---
+tags: [setup, install, quick-start, configuration, environment-variable, docker-host, ssh, remote, cache, sync, copilot, operations]
+last_updated: 2026-07-03
+---
+
 # Wiki Hub: Operations
 
 Use this hub for setup, configuration, cache management, remote Docker, Copilot prompts, and day-to-day usage.
@@ -24,7 +29,7 @@ Use this hub for setup, configuration, cache management, remote Docker, Copilot 
 
 ```bash
 git clone <repository-url>
-cd Analyze_docker_log_w_llm
+cd Analyze_docker_logs_with_copilot
 uv sync
 ```
 
@@ -56,8 +61,12 @@ Add to `~/.ssh/config`:
 Host staging.example.com
     User dev
     IdentityFile ~/.ssh/your_key_file
-    StrictHostKeyChecking no
+    StrictHostKeyChecking accept-new
 ```
+
+`accept-new` auto-trusts a host's key on first connect but still rejects a
+*changed* key (protects against MITM on subsequent connections) — prefer
+this over `StrictHostKeyChecking no`, which disables the check entirely.
 
 ### Test the connection
 
@@ -90,40 +99,58 @@ Optional environment variables (`.env` file or shell):
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `DOCKER_HOST` | `unix:///var/run/docker.sock` | Docker daemon socket or SSH URL |
+| `DOCKER_HOST` | `unix:///var/run/docker.sock` | Docker daemon socket or SSH URL — actually wired into every tool's `DockerClient(host=...)` call |
 | `LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` |
+| `LOG_FILE_ENABLED` | `true` | Also write this server's own operational log as rotating JSONL (separate from container logs the tools analyze) |
+| `LOG_FILE_PATH` | `.cache/app_logs/docker-log-analyzer.jsonl` | Path to the rotating JSONL log file |
+| `LOG_FILE_MAX_BYTES` | `10000000` | Rotate the JSONL log after this size |
+| `LOG_FILE_BACKUP_COUNT` | `3` | Rotated JSONL files to retain |
 | `CONTAINER_LABEL_FILTER` | `""` | Filter containers by label (e.g., `env=prod`) |
 | `DEFAULT_TAIL_LINES` | `500` | Default log lines to fetch |
 | `DEFAULT_SPIKE_TAIL_LINES` | `1000` | Log lines for spike detection |
 | `DEFAULT_SPIKE_THRESHOLD` | `2.0` | Spike ratio threshold (current / baseline) |
 | `DEFAULT_CORRELATION_WINDOW_SECONDS` | `30` | Co-occurrence window for correlation |
 | `CORRELATION_CACHE_TTL_MINUTES` | `30` | TTL for correlation result cache (0 = disabled) |
-| `USE_LOGS_CACHE` | `true` | Enable cache-first strategy |
-| `CACHE_MAX_AGE_MINUTES` | `60` | Max cache age before re-fetching from Docker API |
+| `REPO_PATHS` | `[]` | Local repo roots searched by `analyze_code_context` to resolve stack-trace files |
+| `CONTAINER_REPO_MAP` | `{}` | Explicit container→repo-path overrides; takes precedence over `REPO_PATHS` auto-detection |
+| `CODE_CONTEXT_LINES` | `10` | Source lines shown before/after the error line in `analyze_code_context` |
+| `MAX_STACK_FRAMES` | `10` | Max stack frames extracted per error event |
+| `REQUEST_ID_PATTERNS` | see `config.py` | Named regex patterns used by `trace_request_flow` — see [WIKI_TRACE_REQUEST_FLOW.md](WIKI_TRACE_REQUEST_FLOW.md) |
+| `TRACE_WINDOW_SECONDS` | `120` | Max spread between first/last event for one request ID before it's dropped as an accidental collision |
 
 All settings are validated at startup via Pydantic BaseSettings. See [../docker_log_analyzer/config.py](../docker_log_analyzer/config.py).
+
+There is **no global cache-disable toggle or TTL setting** — `use_cache` is a
+per-call parameter on each tool (default `True`), and the log cache itself has
+no expiry concept; see below.
 
 ---
 
 ## Log Cache Strategy
 
-All log-reading tools use a **cache-first strategy**:
+All log-reading tools use a **cache-first strategy**, keyed by exact
+time-window coverage — **there is no age-based expiry**. A cached day-file is
+used as long as it fully covers the requested `[since, until]` window,
+regardless of how old it is; a cache miss (missing or incomplete window) falls
+back to the Docker API and writes a fresh Parquet file. See
+[cache_manager.py](../docker_log_analyzer/cache_manager.py).
 
 ```
 Tool call (e.g., analyze_error_spikes)
   ↓
-Check .cache/logs/<container>/YYYY-MM-DD.parquet
+Check .cache/logs/<container>/YYYY-MM-DD.parquet for every day in the window
   ↓
-  ├─ Hit (recent)  → Use cached logs → Instant response ⚡
-  ├─ Miss          → Fetch from Docker API → Cache result
-  └─ Stale (>60m)  → Re-fetch from Docker API
+  ├─ All days present, window fully covered → Use cached logs → Instant response ⚡
+  └─ Any day missing/incomplete             → Fetch from Docker API → Cache result
 ```
 
 ### Sync for maximum speed
 
 ```bash
-# Sync last 4 hours for all containers
-uv run docker-log-analyzer-mcp sync_docker_logs --since "4 hours ago"
+# Sync last 4 hours for all containers — since/until take ISO-8601 UTC only
+# (natural language like "4 hours ago" is resolved by Copilot upstream, not
+# parsed by this tool); since defaults to 24h ago, until defaults to now.
+uv run docker-log-analyzer-mcp sync_docker_logs --since "2026-07-03T00:00:00Z"
 
 # All tools now read from cache (instant):
 uv run docker-log-analyzer-mcp analyze_patterns

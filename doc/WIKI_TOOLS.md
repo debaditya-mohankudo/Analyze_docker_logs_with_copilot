@@ -1,6 +1,11 @@
+---
+tags: [tool, mcp, parameters, returns, reference, contract, schema]
+last_updated: 2026-07-03
+---
+
 # Wiki Hub: MCP Tools Reference
 
-Canonical reference for all 16 MCP tools — parameters, return shapes, and behavior.
+Canonical reference for all 18 MCP tools — parameters, return shapes, and behavior.
 
 ---
 
@@ -77,6 +82,8 @@ Confidence guidance:
 | 14 | [analyze_code_context](#14-analyze_code_context) | Parse stack traces + surface source code around error lines |
 | 15 | [trace_request_flow](#15-trace_request_flow) | Trace individual request IDs across container boundaries |
 | 16 | [classify_errors](#16-classify_errors) | Categorise errors into semantic classes (database, network, timeout, etc.) |
+| 17 | [cache_info](#17-cache_info) | Summarize the local log cache — files, dates, size, last sync per container |
+| 18 | [clear_cache](#18-clear_cache) | Delete cached Parquet log files, forcing fresh fetches |
 
 ---
 
@@ -856,7 +863,15 @@ Traces individual request flows across container boundaries by extracting reques
 REQUEST_ID_PATTERNS={"request_id": "request[_-]?id[=:]([\\w-]+)", "trace_id": "traceId=([\\w-]+)"}
 ```
 
-Default patterns detect `request_id`, `trace_id`, and `correlation_id` in KV (`request_id=<id>`), header (`X-Request-Id: <id>`), and JSON (`"requestId":"<id>"`) formats.
+Default patterns cover 5 ID concepts — `request_id`, `trace_id`,
+`correlation_id`, `transaction_id`, `session_id` — each with two variants:
+a **strict** pattern requiring a well-formed UUID value, and a **loose**
+`*_loose` fallback accepting any 4–64 char alphanumeric/hyphen token (short
+numeric IDs, base62/nanoid IDs, raw hex trace IDs). Both match
+`key[=:\s]+value` separators (`key=value`, `key: value`, `key:value`,
+header-style `X-Request-Id: <id>`) — **not** quoted-JSON-key format like
+`"requestId":"<id>"`, since the closing quote breaks the separator match.
+Full detail: [WIKI_TRACE_REQUEST_FLOW.md](WIKI_TRACE_REQUEST_FLOW.md).
 
 **Returns:**
 
@@ -866,14 +881,16 @@ Default patterns detect `request_id`, `trace_id`, and `correlation_id` in KV (`r
   "request_count": 3,
   "timelines": [
     {
-      "request_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
-      "container": "gateway",
+      "id_value": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+      "id_patterns": ["request_id", "trace_id"],
+      "containers": ["gateway", "web-app", "database"],
       "event_count": 4,
       "first_seen": "2026-03-13T10:01:00.123Z",
       "last_seen": "2026-03-13T10:01:00.465Z",
       "duration_ms": 342.0,
       "events": [
         {
+          "container": "gateway",
           "timestamp": "2026-03-13T10:01:00.123Z",
           "pattern_name": "request_id",
           "message": "POST /api/order request_id=f47ac10b-58cc-4372-a567-0e02b2c3d479 status=200"
@@ -889,11 +906,21 @@ Default patterns detect `request_id`, `trace_id`, and `correlation_id` in KV (`r
 
 **Field notes:**
 
+- Cross-container stitching is already done for you: each timeline is grouped
+  by the literal ID **value**, regardless of which pattern or container
+  produced it — `containers` lists every container the ID appeared in, and
+  `events` (each tagged with its own `container` field) is the merged,
+  chronologically-sorted timeline across all of them. No manual grouping needed.
 - `request_count` — total timelines found before `max_requests` truncation
-- `duration_ms` — milliseconds between the first and last event for that request ID in this container; `null` if no parseable timestamps
+- `id_patterns` — every pattern name that matched this ID value (e.g. both
+  `request_id` and `transaction_id` if the same UUID appeared under both keys)
+- A timeline is dropped entirely if its events span more than
+  `TRACE_WINDOW_SECONDS` (default 120s) — treated as an accidental ID collision
+  rather than one real request
+- `duration_ms` — milliseconds between the first and last event across all
+  containers for that ID; `null` if no parseable timestamps
 - `first_seen` / `last_seen` — ISO-8601 UTC with millisecond precision; `null` if no timestamps
-- `events` — sorted chronologically; capped at 500 characters per message
-- Each timeline entry is scoped to **one container**. To reconstruct a full cross-container request trace, group the returned `timelines` by `request_id`.
+- `events` — sorted chronologically across containers; capped at 500 characters per message
 
 **Differentiation from `analyze_correlations`:**
 
@@ -1004,7 +1031,75 @@ Classifies error log lines into semantic categories using rule-based regex match
 
 ---
 
-tool, MCP, parameters, returns, list_containers, analyze_patterns, analyze_error_spikes, detect_data_leaks, analyze_correlations, sync_docker_logs, capture_logs, map_service_dependencies, analyze_root_causes, get_last_errors, plan_investigation, start_test_containers, stop_test_containers, trace_request_flow, classify_errors, reference, contract, schema, tail, use_cache, confidence, hit_count, cascade, dependency, spike, correlation, secret, pattern, root cause, scoring, fan-in, fan-out, last error, fatal, panic, triage, investigation, planner, symptoms, signals, focus, request id, trace id, correlation id, request tracing, error classification, semantic, category, database, network, timeout, auth, oom, disk, rate limit, configuration, application
+## 17. cache_info
+
+Reports the current state of the local log cache (`.cache/logs/`) — files present, dates covered, total lines, disk usage, and last sync time, per container. Useful for checking cache coverage/staleness before running analysis tools, or diagnosing why a tool returned fewer logs than expected.
+
+**Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `container_name` | string? | `None` | Specific container to inspect; omit for all cached containers |
+
+**Returns:**
+
+```json
+{
+  "status": "success",
+  "containers": [
+    {
+      "container": "test-web-app",
+      "parquet_files": 3,
+      "dates_cached": ["2026-07-01", "2026-07-02", "2026-07-03"],
+      "total_lines": 15234,
+      "size_bytes": 204800,
+      "size_kb": 200.0,
+      "last_synced": "2026-07-03T04:12:00+00:00"
+    }
+  ],
+  "total_size_bytes": 204800,
+  "total_size_kb": 200.0
+}
+```
+
+**Notes:**
+
+- Discovers containers from both `metadata.json` and the on-disk directory structure, so it still reports correctly if metadata is missing/corrupted
+- There is no age/staleness field in the response — the cache itself has no TTL concept (see [WIKI_OPERATIONS.md § Log Cache Strategy](WIKI_OPERATIONS.md#log-cache-strategy)); `last_synced` is informational only
+- Returns an empty `containers` list (not an error) if the requested `container_name` has never been cached
+
+---
+
+## 18. clear_cache
+
+Deletes cached Parquet log files for one or all containers, forcing the next analysis tool call to fetch fresh logs from the Docker API.
+
+**Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `container_name` | string? | `None` | Specific container to clear; omit to clear the entire log cache |
+
+**Returns:**
+
+```json
+{
+  "status": "success",
+  "cleared_containers": ["test-web-app"],
+  "bytes_freed": 204800,
+  "kb_freed": 200.0
+}
+```
+
+**Notes:**
+
+- Also removes the container's entry from `metadata.json` when clearing a single container
+- Idempotent — clearing a container with no cache returns `cleared_containers: []`, `bytes_freed: 0`, not an error
+- Equivalent to the shell commands in [WIKI_OPERATIONS.md § Clear cache](WIKI_OPERATIONS.md#clear-cache), but callable directly from Copilot Agent Mode without a terminal
+
+---
+
+tool, MCP, parameters, returns, list_containers, analyze_patterns, analyze_error_spikes, detect_data_leaks, analyze_correlations, sync_docker_logs, capture_logs, map_service_dependencies, analyze_root_causes, get_last_errors, plan_investigation, start_test_containers, stop_test_containers, trace_request_flow, classify_errors, cache_info, clear_cache, reference, contract, schema, tail, use_cache, confidence, hit_count, cascade, dependency, spike, correlation, secret, pattern, root cause, scoring, fan-in, fan-out, last error, fatal, panic, triage, investigation, planner, symptoms, signals, focus, request id, trace id, correlation id, request tracing, error classification, semantic, category, database, network, timeout, auth, oom, disk, rate limit, configuration, application, cache info, clear cache, cache size, cache staleness
 
 **[negative keywords / not-this-doc]**
 algorithm internals, module design, CI, coverage, test suite, setup, installation, Copilot prompts

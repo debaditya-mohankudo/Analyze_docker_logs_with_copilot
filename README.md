@@ -1,3 +1,8 @@
+---
+tags: [docker, log, analyzer, mcp, copilot, agent, quick-start, readme]
+last_updated: 2026-07-03
+---
+
 # Docker Log Analyzer – MCP Server
 
 A stateless, **LLM-free** Docker log analysis tool exposed as an [MCP](https://modelcontextprotocol.io) server for **VSCode Copilot Agent Mode**. No Kafka, no OpenAI API key — all analysis runs locally using regex and [Polars](https://pola.rs).
@@ -67,7 +72,7 @@ Full prompt reference: **[doc/WIKI_COPILOT_PROMPTS.md](doc/WIKI_COPILOT_PROMPTS.
 
 ```bash
 git clone <repository-url>
-cd Analyze_docker_log_w_llm
+cd Analyze_docker_logs_with_copilot
 uv sync
 ```
 
@@ -84,7 +89,7 @@ uv run python -c "from docker_log_analyzer.mcp_server import run; print('OK')"
 
 ## Architecture
 
-VSCode Copilot Chat (Agent Mode) → MCP stdio → 16 stateless tool calls → Docker SDK → JSON.
+VSCode Copilot Chat (Agent Mode) → MCP stdio → 18 stateless tool calls → Docker SDK → JSON.
 
 Full module map and algorithm details: **[doc/WIKI_ARCHITECTURE.md](doc/WIKI_ARCHITECTURE.md)**.
 
@@ -95,11 +100,12 @@ Full module map and algorithm details: **[doc/WIKI_ARCHITECTURE.md](doc/WIKI_ARC
 | Page | Purpose |
 | ---- | ------- |
 | [doc/WIKI_HOME.md](doc/WIKI_HOME.md) | Navigation hub and agent routing table |
-| [doc/WIKI_TOOLS.md](doc/WIKI_TOOLS.md) | All 16 tools — parameters, return shapes, behavior |
+| [doc/WIKI_TOOLS.md](doc/WIKI_TOOLS.md) | All 18 tools — parameters, return shapes, behavior |
 | [doc/WIKI_OPERATIONS.md](doc/WIKI_OPERATIONS.md) | Setup, config, remote Docker, cache, Copilot prompts |
 | [doc/WIKI_ARCHITECTURE.md](doc/WIKI_ARCHITECTURE.md) | Module map, algorithms, design decisions |
 | [doc/WIKI_QUALITY.md](doc/WIKI_QUALITY.md) | Test suite, CI, coverage, adding tests |
 | [doc/WIKI_SECURITY.md](doc/WIKI_SECURITY.md) | Secret detection, redaction rules, path confinement guardrails |
+| [doc/WIKI_TRACE_REQUEST_FLOW.md](doc/WIKI_TRACE_REQUEST_FLOW.md) | Request/trace/correlation ID tracing across containers |
 | [CLAUDE.md](CLAUDE.md) | Architecture rules and contributor constraints |
 
 ---
@@ -114,7 +120,7 @@ uv run pytest tests/ -m "not integration"
 uv run pytest tests/
 ```
 
-319 unit tests + integration suite. See [doc/WIKI_QUALITY.md](doc/WIKI_QUALITY.md).
+598 unit tests + integration suite. See [doc/WIKI_QUALITY.md](doc/WIKI_QUALITY.md).
 
 ---
 

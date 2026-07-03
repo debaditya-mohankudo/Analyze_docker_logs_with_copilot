@@ -1,3 +1,8 @@
+---
+tags: [proposal, performance, regex, implemented, historical]
+last_updated: 2026-07-03
+---
+
 # Proposal: Regex Pre-compilation & Fast-Path Optimisations
 
 **Status:** IMPLEMENTED (2026-03-12)

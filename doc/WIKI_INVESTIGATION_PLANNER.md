@@ -1,3 +1,8 @@
+---
+tags: [investigation, planner, symptoms, signals, focus, plan_investigation]
+last_updated: 2026-07-03
+---
+
 # Investigation Planner
 
 `plan_investigation` is a deterministic, rule-based MCP tool that acts as a
@@ -68,9 +73,9 @@ Steps are generated in a fixed priority order:
 
 | Priority | Action                    | Triggered by |
 |----------|---------------------------|--------------|
-| 1        | `list_containers`         | Always |
+| 1        | `list_containers`         | Only when `containers` is **not** explicitly passed (scope discovery is skipped if the caller already scoped it) |
 | 2        | `analyze_patterns`        | crash, pattern, root_cause, general |
-| 3        | `get_last_errors`         | crash, cascade, root_cause, general |
+| 3        | `get_last_errors`         | crash, cascade, root_cause, general — **only emitted when `containers` is explicitly scoped**; the broad no-scope flow relies on `analyze_patterns` + `analyze_error_spikes` to identify the culprit container first |
 | 4        | `analyze_error_spikes`    | spike, crash, performance, root_cause, general |
 | 5        | `analyze_correlations`    | cascade, spike, root_cause, general |
 | 6        | `map_service_dependencies`| cascade, root_cause, general |
@@ -160,3 +165,20 @@ The `.cache/` directory is gitignored. Plans are ephemeral — regenerate as nee
 - **File output, not inline** — plans can be long; writing to `.md` avoids bloating the MCP response
 - **Stateless** — no cross-call state; each call generates an independent plan file
 - **Composable** — the returned `plan` list of dicts can be iterated by Copilot to execute each step automatically
+
+---
+
+## Retrieval keywords
+
+investigation, planner, plan_investigation, symptoms, signals, focus, root_cause, security, performance, general, classify_symptoms, generate_plan, plan file, markdown, DevOps, triage plan
+
+**[negative keywords / not-this-doc]**
+algorithm internals for other tools, tool parameter reference, CI, coverage, cache strategy
+
+---
+
+## See also
+
+- Tool parameter reference: [WIKI_TOOLS.md § plan_investigation](WIKI_TOOLS.md#13-plan_investigation)
+- Architecture hub: [WIKI_ARCHITECTURE.md](WIKI_ARCHITECTURE.md)
+- Home: [WIKI_HOME.md](WIKI_HOME.md)

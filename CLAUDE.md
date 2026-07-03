@@ -82,10 +82,14 @@ MCP stdio server (mcp_server.py)   ← @mcp.tool() registrations
               ├── root_cause_analyzer.py  fan-in + cascade scoring
               ├── log_pattern_analyzer.py  timestamp/language/level detection
               ├── secret_detector.py    20-pattern secret/PII scanner
+              ├── request_tracer.py     request/trace/correlation ID extraction + timelines
+              ├── error_classifier.py   semantic error categorization
+              ├── investigation_planner.py  symptom → signal → ordered tool-call plan
+              ├── coderepo.py           stack-trace parsing + repo-relative source resolution
               ├── cache_manager.py      Parquet log cache (.cache/logs/)
               ├── patterns.py           shared compiled regexes
               ├── config.py             Pydantic BaseSettings singleton
-              └── logger.py             LoggerWithRunID singleton
+              └── logger.py             LoggerWithRunID singleton + JsonlFormatter
 ```
 
 Tool implementations live in `tools.py`. `mcp_server.py` contains only `@mcp.tool()` wiring.
@@ -96,11 +100,12 @@ Tool implementations live in `tools.py`. `mcp_server.py` contains only `@mcp.too
 
 ### 3.1 Log Fetching (Cache-First Strategy)
 
-All tools use cache-first pattern:
+All tools use cache-first pattern, keyed by exact time-window coverage —
+**there is no age-based expiry/TTL setting**:
 
-1. Check `.cache/logs/<container>/<YYYY-MM-DD>.parquet`
-2. If fresh (< CACHE_MAX_AGE_MINUTES), use cached logs
-3. Otherwise, fetch fresh from Docker API
+1. Check `.cache/logs/<container>/<YYYY-MM-DD>.parquet` for every day in the requested window
+2. If every day in the window is present, use cached logs regardless of age
+3. Otherwise (any day missing/incomplete), fetch fresh from Docker API and write a fresh Parquet file
 
 **Log Caching Rules:**
 - Keyed by: container name + date
@@ -113,7 +118,9 @@ All tools use cache-first pattern:
 
 **sync_docker_logs tool:**
 - Explicitly caches logs for time window
-- Accepts relative ("2 hours ago") or ISO-8601 timestamps
+- Accepts ISO-8601 UTC timestamps only (e.g. `"2026-03-04T10:00:00Z"`) — natural
+  language like "2 hours ago" is resolved by the Copilot agent upstream, not
+  parsed by this tool; `since` defaults to 24h ago, `until` defaults to now
 - Enables offline analysis after containers stop
 - Enables instant bug reproduction (no 2-min wait)
 

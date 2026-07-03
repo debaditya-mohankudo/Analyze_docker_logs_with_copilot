@@ -1,3 +1,8 @@
+---
+tags: [docker, log, analyzer, mcp, tool, container, copilot, agent, wiki, navigation, index, home, routing]
+last_updated: 2026-07-03
+---
+
 # Documentation Wiki Home
 
 Canonical entry point for all Docker Log Analyzer documentation. Organized by intent — each section points to one source of truth.
@@ -24,6 +29,7 @@ Use this table to answer questions with minimal hops.
 | "How does secret detection / redaction work?" | [WIKI_SECURITY.md](WIKI_SECURITY.md) | — | [WIKI_SECURITY.md](WIKI_SECURITY.md) |
 | "What are the path confinement / security guardrails?" | [WIKI_SECURITY.md](WIKI_SECURITY.md) | — | [WIKI_SECURITY.md](WIKI_SECURITY.md) |
 | "How do I add a secret pattern?" | [WIKI_SECURITY.md § Adding a new secret pattern](WIKI_SECURITY.md#adding-a-new-secret-pattern) | — | [WIKI_SECURITY.md](WIKI_SECURITY.md) |
+| "How does request/trace/correlation ID tracing work?" | [WIKI_TRACE_REQUEST_FLOW.md](WIKI_TRACE_REQUEST_FLOW.md) | [WIKI_TOOLS.md § trace_request_flow](WIKI_TOOLS.md#15-trace_request_flow) | [WIKI_TRACE_REQUEST_FLOW.md](WIKI_TRACE_REQUEST_FLOW.md) |
 
 ---
 
@@ -57,8 +63,9 @@ Use this table to answer questions with minimal hops.
 | Hub | Purpose |
 |-----|---------|
 | [WIKI_ARCHITECTURE.md](WIKI_ARCHITECTURE.md) | System design, modules, algorithms, confidence model |
-| [WIKI_TOOLS.md](WIKI_TOOLS.md) | All 16 MCP tools — parameters, return shapes, behavior |
+| [WIKI_TOOLS.md](WIKI_TOOLS.md) | All 18 MCP tools — parameters, return shapes, behavior |
 | [WIKI_INVESTIGATION_PLANNER.md](WIKI_INVESTIGATION_PLANNER.md) | Investigation planner — signal detection, plan steps, file output |
+| [WIKI_TRACE_REQUEST_FLOW.md](WIKI_TRACE_REQUEST_FLOW.md) | Request/trace/correlation ID tracing across containers |
 | [WIKI_CODE_REPO.md](WIKI_CODE_REPO.md) | Code repo context — stack trace parsing, file resolution, code deep-dive |
 | [WIKI_COPILOT_PROMPTS.md](WIKI_COPILOT_PROMPTS.md) | Natural language prompts organized by workflow |
 | [WIKI_OPERATIONS.md](WIKI_OPERATIONS.md) | Setup, configuration, cache, remote Docker |
@@ -69,15 +76,16 @@ Use this table to answer questions with minimal hops.
 
 | Proposal                                                                     | Status      | Purpose                                                                                         |
 |------------------------------------------------------------------------------|-------------|--------------------------------------------------------------------------------------------------|
-| [WIKI_PROPOSAL_ROOT_CAUSE_ANALYZER.md](WIKI_PROPOSAL_ROOT_CAUSE_ANALYZER.md) | IN PROGRESS | Rank containers by root-cause likelihood (tool #11); Issues A+B done, C/D/E pending             |
+| [WIKI_PROPOSAL_ROOT_CAUSE_ANALYZER.md](WIKI_PROPOSAL_ROOT_CAUSE_ANALYZER.md) | IMPLEMENTED | Rank containers by root-cause likelihood (tool #11, `analyze_root_causes`); all Issues A–G resolved |
 | [WIKI_PROPOSAL_PERF_OPTIMIZATION.md](WIKI_PROPOSAL_PERF_OPTIMIZATION.md)     | IMPLEMENTED | Regex pre-compilation + fast-path guards: language detection, dependency mapper, secret scanner |
+| [WIKI_ARROW_MIGRATION.md](WIKI_ARROW_MIGRATION.md)                           | DEFERRED    | Evaluated replacing stdlib `datetime` with `arrow`; net friction outweighs gains today          |
 
 ## Code Reviews
 
 | Review                                                                   | Date       | Module                   | Open issues                      |
 | ------------------------------------------------------------------------ | ---------- | ------------------------ | -------------------------------- |
 | [WIKI_REVIEW_DEPENDENCY_MAPPER.md](WIKI_REVIEW_DEPENDENCY_MAPPER.md)     | 2026-03-07 | `dependency_mapper.py`   | 3 open (Mermaid, HTTP-from, k8s) |
-| [WIKI_REVIEW_ROOT_CAUSE_ANALYZER.md](WIKI_REVIEW_ROOT_CAUSE_ANALYZER.md) | 2026-03-07 | `root_cause_analyzer.py` | 2 open (Issues F, G)             |
+| [WIKI_REVIEW_ROOT_CAUSE_ANALYZER.md](WIKI_REVIEW_ROOT_CAUSE_ANALYZER.md) | 2026-03-07 | `root_cause_analyzer.py` | 0 open — Issues F, G implemented |
 
 ---
 

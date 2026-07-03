@@ -1,9 +1,17 @@
+---
+tags: [proposal, root-cause, implemented, historical]
+last_updated: 2026-07-03
+---
+
 # Proposal: rank_root_causes Tool
 
-**Date:** 2026-03-07
-**Status:** Partially implemented — Issues A and B done; Issues C, D, E pending (TODO comments in module)
+**Date:** 2026-03-07 (proposal); **Status as of 2026-07-03: fully implemented** —
+Issues A–E below are all done, and follow-on Issues F/G (spike-magnitude
+weighting, external-hostname guard) identified in
+[WIKI_REVIEW_ROOT_CAUSE_ANALYZER.md](WIKI_REVIEW_ROOT_CAUSE_ANALYZER.md) are
+also done. Nothing outstanding in `root_cause_analyzer.py`.
 **Target module:** `docker_log_analyzer/root_cause_analyzer.py`
-**MCP tool:** `rank_root_causes` (would be tool #11)
+**Pure function:** `rank_root_causes()`; **MCP tool:** `analyze_root_causes` (shipped as tool #11)
 
 ---
 
@@ -98,7 +106,7 @@ WEIGHT_DEPENDENCY = -1.0    # penalty per outbound dependency (followers, not le
 
 Consider normalization in a future iteration (e.g. min-max scaling to 0-10).
 
-#### Issue C — No evidence list (MISSING, MEDIUM) — TODO in `root_cause_analyzer.py`
+#### Issue C — No evidence list (MISSING, MEDIUM) ✅ DONE
 
 The example output includes an `evidence` list per container:
 
@@ -125,19 +133,19 @@ evidence[origin].append(f"cascade correlation with {target} ({score:.2f})")
 evidence[origin].append(f"error spike occurred before {target}")
 ```
 
-#### Issue D — No handling of empty inputs (ROBUSTNESS, MEDIUM) — TODO in `root_cause_analyzer.py`
+#### Issue D — No handling of empty inputs (ROBUSTNESS, MEDIUM) ✅ DONE
 
 If `graph`, `cascades`, or `spikes` is empty, the function returns an empty
 list. This is technically correct but unhelpful.
 
-**Fix:** Return a structured result with a message:
+**Fix, as implemented:** `rank_root_causes()` itself still just returns `[]`
+for empty input — the structured `{"status": ..., "root_causes": [], "message": ...}`
+wrapper lives one layer up, in `tool_analyze_root_causes()` (`tools.py`), which
+returns `"message": "No running containers."` when there are no targets. This
+is the correct boundary: the pure scoring function stays a simple list-in/list-out
+transform, and the MCP-facing status contract is the tool wrapper's job.
 
-```python
-if not scores:
-    return {"status": "success", "root_causes": [], "message": "No root cause signals found"}
-```
-
-#### Issue E — Score can go negative (UX, LOW) — TODO in `root_cause_analyzer.py`
+#### Issue E — Score can go negative (UX, LOW) ✅ DONE
 
 The dependency penalty (`-1 per outbound dep`) can make scores negative for
 leaf services. Negative scores are confusing in a ranking context.
@@ -184,7 +192,7 @@ Output: [{"container": str, "score": float, "evidence": [str, ...]}]
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `container_names` | list[str] | null | Filter to specific containers (null = all running) |
+| `containers` | list[str] | null | Filter to specific containers (null = all running) — named `containers`, not `container_names`, in the shipped tool |
 | `tail` | int | 500 | Log lines per container (passed to sub-tools) |
 | `time_window_seconds` | int | 3600 | Time window for analysis |
 | `include_transitive` | bool | false | Include transitive edges in dependency graph |

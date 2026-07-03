@@ -1,3 +1,8 @@
+---
+tags: [arrow, datetime, proposal, deferred, migration, historical]
+last_updated: 2026-07-03
+---
+
 # Arrow Migration Plan: `datetime` → `arrow`
 
 Evaluate replacing Python's `datetime` stdlib with the [`arrow`](https://arrow.readthedocs.io) library.
@@ -10,6 +15,15 @@ Evaluate replacing Python's `datetime` stdlib with the [`arrow`](https://arrow.r
 friction points where arrow objects cannot be used directly (Polars, python-on-whales,
 Pydantic). Net result is more boilerplate, not less. Revisit if a second use-case emerges
 that needs human-readable time parsing or timezone arithmetic at scale.
+
+> **Historical note:** this analysis was written against the codebase as of
+> 2026-03-07, when `_parse_time_arg()` (natural-language "2 hours ago" parsing
+> in `docker.py`) still existed. It was removed the same day and replaced by
+> the 5-line `_parse_iso()` in `tools.py` (ISO-8601 only — natural language is
+> now resolved by the Copilot agent before calling any tool; see Decision Log).
+> References to `_parse_time_arg()` below are preserved as the historical
+> record of what motivated this friction point — that function no longer
+> exists. The overall **defer** recommendation is unaffected.
 
 ---
 
@@ -115,4 +129,16 @@ Migrate if **any** of the following becomes true:
 
 ---
 
-*Keywords: arrow, datetime, timezone, migration, timedelta, fromisoformat, Polars, python-on-whales*
+## Retrieval keywords
+
+arrow, datetime, timezone, migration, timedelta, fromisoformat, polars, python-on-whales, deferred, proposal
+
+**[negative keywords / not-this-doc]**
+architecture, tool params, CI, coverage, cache strategy, Copilot prompts
+
+---
+
+## See also
+
+- Architecture hub: [WIKI_ARCHITECTURE.md](WIKI_ARCHITECTURE.md)
+- Home: [WIKI_HOME.md](WIKI_HOME.md)
