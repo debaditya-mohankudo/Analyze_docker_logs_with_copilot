@@ -61,14 +61,27 @@ _SSH_TEST_HOST_ALIAS = f"[localhost]:{_SSH_TEST_PORT}"
 
 
 @pytest.fixture(scope="session")
-def ssh_test_keypair():
+def ssh_test_keypair(request):
     """Generate (or reuse) an ed25519 keypair for the ssh-target container and
     register it with the running ssh-agent so key-based auth succeeds without
     prompting. docker's ssh:// transport does not itself pass -o BatchMode, so
     agent + known_hosts must already be satisfied before any connection is
     attempted (see caller in setup_integration_containers for the known_hosts
     half of this).
+
+    No-ops when no integration tests are selected — pytest resolves fixture
+    dependencies eagerly, so without this check ssh-keygen would still run
+    (and race under parallel xdist workers) on every unit-only run, even
+    though setup_integration_containers itself skips its own body.
     """
+    has_integration = any(
+        item.get_closest_marker("integration")
+        for item in request.session.items
+    )
+    if not has_integration:
+        yield None
+        return
+
     _SSH_TEST_DIR.mkdir(parents=True, exist_ok=True)
     key_path = _SSH_TEST_DIR / "id_ed25519"
     pub_path = _SSH_TEST_DIR / "id_ed25519.pub"
