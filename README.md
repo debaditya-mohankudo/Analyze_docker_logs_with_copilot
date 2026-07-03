@@ -85,7 +85,36 @@ uv run python -c "from docker_log_analyzer.mcp_server import run; print('OK')"
 
 > **Remote desktop / non-local Docker?** See **[doc/WIKI_OPERATIONS.md](doc/WIKI_OPERATIONS.md)** for remote Docker host configuration, SSH tunnelling, and environment variable setup.
 
-Configuration is a Pydantic `Settings` singleton in [`docker_log_analyzer/config.py`](docker_log_analyzer/config.py), loaded from environment variables or a `.env` file at the repo root. See [`.env.example`](.env.example) for all available settings and their defaults.
+Configuration is a Pydantic `Settings` singleton in [`docker_log_analyzer/config.py`](docker_log_analyzer/config.py), loaded from environment variables or a `.env` file at the repo root. Copy [`.env.example`](.env.example) to `.env` and edit as needed.
+
+---
+
+## Configuration
+
+Optional environment variables (`.env` file or shell):
+
+| Variable | Default | Description |
+| -------- | ------- | ----------- |
+| `DOCKER_HOST` | `unix:///var/run/docker.sock` | Docker daemon socket or SSH URL — wired into every tool's `DockerClient(host=...)` call |
+| `LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` |
+| `LOG_FILE_ENABLED` | `true` | Also write this server's own operational log as rotating JSONL (separate from container logs the tools analyze) |
+| `LOG_FILE_PATH` | `.cache/app_logs/docker-log-analyzer.jsonl` | Path to the rotating JSONL log file |
+| `LOG_FILE_MAX_BYTES` | `10000000` | Rotate the JSONL log after this size |
+| `LOG_FILE_BACKUP_COUNT` | `3` | Rotated JSONL files to retain |
+| `CONTAINER_LABEL_FILTER` | `""` | Filter containers by label (e.g., `env=prod`) |
+| `DEFAULT_TAIL_LINES` | `500` | Default log lines to fetch |
+| `DEFAULT_SPIKE_TAIL_LINES` | `1000` | Log lines for spike detection |
+| `DEFAULT_SPIKE_THRESHOLD` | `2.0` | Spike ratio threshold (current / baseline) |
+| `DEFAULT_CORRELATION_WINDOW_SECONDS` | `30` | Co-occurrence window for correlation |
+| `CORRELATION_CACHE_TTL_MINUTES` | `30` | TTL for correlation result cache (0 = disabled) |
+| `REPO_PATHS` | `[]` | Local repo roots searched by `analyze_code_context` to resolve stack-trace files |
+| `CONTAINER_REPO_MAP` | `{}` | Explicit container→repo-path overrides; takes precedence over `REPO_PATHS` auto-detection |
+| `CODE_CONTEXT_LINES` | `10` | Source lines shown before/after the error line in `analyze_code_context` |
+| `MAX_STACK_FRAMES` | `10` | Max stack frames extracted per error event |
+| `REQUEST_ID_PATTERNS` | see `config.py` | Named regex patterns used by `trace_request_flow` — see [doc/WIKI_TRACE_REQUEST_FLOW.md](doc/WIKI_TRACE_REQUEST_FLOW.md) |
+| `TRACE_WINDOW_SECONDS` | `120` | Max spread between first/last event for one request ID before it's dropped as an accidental collision |
+
+All settings are validated at startup via Pydantic BaseSettings. There is **no global cache-disable toggle or TTL setting** — `use_cache` is a per-call tool parameter (default `True`); see [doc/WIKI_OPERATIONS.md](doc/WIKI_OPERATIONS.md) for cache strategy details.
 
 ---
 
