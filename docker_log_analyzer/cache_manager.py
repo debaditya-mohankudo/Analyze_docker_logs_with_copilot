@@ -292,7 +292,20 @@ def clear_cache(container_name: Optional[str] = None) -> dict:
         function only runs on a full clear, not a per-container one, to
         avoid an expensive full-file rewrite on every call).
     """
-    conn = _connect()
+    try:
+        conn = _connect()
+    except sqlite3.DatabaseError as e:
+        # Corrupt/non-SQLite file — read_cached_logs_for_window() already treats
+        # this as a cache miss, but without this fallback a full clear would
+        # raise here and leave the bad file in place forever (no in-tool
+        # recovery path). A full clear can remove the file(s) directly without
+        # needing to open them; a single-container clear can't target just one
+        # container from an unreadable file, so that case still errors.
+        if container_name is None:
+            return _remove_db_files_directly()
+        logger.error(f"Cache clear error: cannot open {DB_PATH} to clear '{container_name}': {e}")
+        raise
+
     try:
         if container_name:
             size_row = conn.execute(
@@ -324,6 +337,30 @@ def clear_cache(container_name: Optional[str] = None) -> dict:
 
     return {
         "cleared_containers": cleared,
+        "bytes_freed": bytes_freed,
+        "kb_freed": round(bytes_freed / 1024, 1),
+    }
+
+
+def _remove_db_files_directly() -> dict:
+    """Unlink the DB file and its WAL/SHM sidecars without opening them.
+
+    Used as clear_cache()'s recovery path when the DB file is corrupt/not a
+    valid SQLite file — the only way to actually clear it.
+    """
+    bytes_freed = 0
+    if DB_PATH.exists():
+        bytes_freed += DB_PATH.stat().st_size
+        DB_PATH.unlink()
+    for suffix in ("-wal", "-shm"):
+        sidecar = DB_PATH.with_name(DB_PATH.name + suffix)
+        if sidecar.exists():
+            bytes_freed += sidecar.stat().st_size
+            sidecar.unlink()
+
+    logger.info(f"Cleared corrupt cache file ({bytes_freed} bytes)")
+    return {
+        "cleared_containers": [],
         "bytes_freed": bytes_freed,
         "kb_freed": round(bytes_freed / 1024, 1),
     }

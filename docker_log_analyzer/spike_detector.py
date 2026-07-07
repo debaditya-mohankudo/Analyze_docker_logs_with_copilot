@@ -6,7 +6,7 @@ Algorithm:
   2. Count errors per 1-minute bucket (buckets with zero errors are absent,
      not zero-filled — the rolling window below operates over the sequence
      of error-containing buckets, not literal calendar minutes)
-  3. Compute rolling baseline = mean of the previous BASELINE_BUCKETS buckets
+  3. Compute rolling baseline = mean of the previous `window_minutes` buckets
   4. Flag any bucket where error_count > baseline × spike_threshold
 
 All analysis is stateless and local – no external API calls. This operates
@@ -18,9 +18,10 @@ sorted dict is sufficient at dev-scale line counts; no Polars/SQL needed.
 from collections import Counter, deque
 from typing import List, Optional
 
-from .patterns import DOCKER_TS_RE, ERROR_PATTERN_RE, parse_timestamp
-
-BASELINE_BUCKETS = 3  # rolling look-back window
+# DOCKER_TS_RE is unused directly in this module — it's re-exported here so
+# tests/test_spike_detector.py can import it alongside detect_spikes without
+# reaching into patterns.py separately (existing convention, predates this file).
+from .patterns import DOCKER_TS_RE, ERROR_PATTERN_RE, parse_timestamp  # noqa: F401
 
 
 def _parse_docker_timestamp(line: str) -> Optional[str]:

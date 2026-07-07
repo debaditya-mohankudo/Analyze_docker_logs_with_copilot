@@ -330,3 +330,23 @@ class TestClearCache:
         result = cm.clear_cache("nope")
         assert result["cleared_containers"] == []
         assert result["bytes_freed"] == 0
+
+    def test_clear_all_recovers_from_corrupt_db_file(self, isolated_cache):
+        """Full clear must remove a corrupt/non-SQLite file, not raise."""
+        isolated_cache.parent.mkdir(parents=True, exist_ok=True)
+        isolated_cache.write_bytes(b"this is not a valid sqlite file")
+
+        result = cm.clear_cache()
+
+        assert result["cleared_containers"] == []
+        assert result["bytes_freed"] > 0
+        assert not isolated_cache.exists()
+
+    def test_clear_specific_container_raises_on_corrupt_db_file(self, isolated_cache):
+        """A single-container clear can't target one container from an
+        unreadable file — it should raise rather than silently no-op."""
+        isolated_cache.parent.mkdir(parents=True, exist_ok=True)
+        isolated_cache.write_bytes(b"this is not a valid sqlite file")
+
+        with pytest.raises(Exception):
+            cm.clear_cache("web-app")
