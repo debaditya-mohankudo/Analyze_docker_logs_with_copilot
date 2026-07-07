@@ -330,7 +330,11 @@ def clear_cache(container_name: Optional[str] = None) -> dict:
             conn.execute("DELETE FROM logs")
             conn.execute("DELETE FROM cache_days")
             conn.commit()
-            conn.execute("VACUUM")  # full clear — safe & cheap to reclaim real disk space here
+            # VACUUM rewrites the entire file, so it's not "cheap" for a large cache —
+            # but it's the only way to actually reclaim disk space, and a full clear
+            # is the one case where paying that cost once is worth it (per-container
+            # clears deliberately skip it; see docstring above).
+            conn.execute("VACUUM")
             logger.info(f"Cleared all cache ({bytes_freed} bytes)")
     finally:
         conn.close()

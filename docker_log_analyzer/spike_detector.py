@@ -82,11 +82,12 @@ def detect_spikes(
 
     window_size = max(1, window_minutes)
     history: deque[int] = deque(maxlen=window_size)
+    history_sum = 0  # kept in sync with history — avoids O(window_size) sum() per bucket
     spikes: List[dict] = []
 
     for bucket in buckets:
         error_count = error_counts[bucket]
-        baseline = (sum(history) / len(history)) if history else 1.0  # no history → 1.0
+        baseline = (history_sum / len(history)) if history else 1.0  # no history → 1.0
         ratio = error_count / baseline
 
         if ratio > spike_threshold:
@@ -98,6 +99,9 @@ def detect_spikes(
                 "ratio": round(ratio, 2),
             })
 
+        if len(history) == window_size:
+            history_sum -= history[0]  # about to be evicted by the deque's maxlen
+        history_sum += error_count
         history.append(error_count)
 
     return spikes
