@@ -1,22 +1,20 @@
 """
-Unit tests for cache_manager.py (Parquet log cache).
+Unit tests for cache_manager.py (SQLite log cache).
 
 Tests cover:
-- write_cached_logs_for_date() produces .parquet with correct schema
+- write_cached_logs_for_date() writes rows to logs + cache_days
 - write_cached_logs_for_date() uses datetime.now(UTC) fallback for unparseable timestamps
-- read_cached_logs_for_window() reads parquet and filters by time window
-- Cache miss returns None
-- Empty log list produces no file
-- _update_metadata() writes metadata.json
-- get_cache_info() handles missing/corrupted metadata
-- clear_cache() removes files
+- read_cached_logs_for_window() reads from SQLite and filters by time window
+- Cache miss returns None (missing day, or empty range result within a covered day)
+- Empty log list writes nothing
+- get_cache_info() handles missing/corrupted cache
+- clear_cache() removes rows
 """
 
-import json
+import sqlite3
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
-import polars as pl
 import pytest
 
 import docker_log_analyzer.cache_manager as cm
@@ -24,11 +22,10 @@ import docker_log_analyzer.cache_manager as cm
 
 @pytest.fixture(autouse=True)
 def isolated_cache(tmp_path, monkeypatch):
-    """Redirect CACHE_DIR and METADATA_FILE to a temp directory for every test."""
-    cache_dir = tmp_path / ".cache" / "logs"
-    monkeypatch.setattr(cm, "CACHE_DIR", cache_dir)
-    monkeypatch.setattr(cm, "METADATA_FILE", cache_dir / "metadata.json")
-    return cache_dir
+    """Redirect DB_PATH to a temp file for every test."""
+    db_path = tmp_path / ".cache" / "logs.db"
+    monkeypatch.setattr(cm, "DB_PATH", db_path)
+    return db_path
 
 
 # ---------------------------------------------------------------------------
@@ -44,79 +41,111 @@ def _utc(year, month, day, hour=0, minute=0, second=0) -> datetime:
     return datetime(year, month, day, hour, minute, second, tzinfo=timezone.utc)
 
 
+def _rows(db_path, container=None):
+    if not Path(db_path).exists():
+        return []
+    conn = sqlite3.connect(db_path)
+    try:
+        if container:
+            return conn.execute(
+                "SELECT container, timestamp, message, cache_date FROM logs WHERE container = ? ORDER BY id",
+                (container,),
+            ).fetchall()
+        return conn.execute(
+            "SELECT container, timestamp, message, cache_date FROM logs ORDER BY id"
+        ).fetchall()
+    finally:
+        conn.close()
+
+
+def _cache_days(db_path, container=None):
+    conn = sqlite3.connect(db_path)
+    try:
+        if container:
+            return conn.execute(
+                "SELECT container, cache_date, synced_at, line_count FROM cache_days WHERE container = ?",
+                (container,),
+            ).fetchall()
+        return conn.execute(
+            "SELECT container, cache_date, synced_at, line_count FROM cache_days"
+        ).fetchall()
+    finally:
+        conn.close()
+
+
 # ---------------------------------------------------------------------------
 # write_cached_logs_for_date
 # ---------------------------------------------------------------------------
 
 class TestWriteCachedLogsForDate:
-    def test_creates_parquet_file(self, isolated_cache):
+    def test_creates_db_file(self, isolated_cache):
         ts = _utc(2026, 3, 6, 10, 0, 0)
         logs = [_make_log_line(ts, "hello world")]
         cm.write_cached_logs_for_date("web-app", logs, ts.date())
 
-        parquet_file = isolated_cache / "web-app" / "2026-03-06.parquet"
-        assert parquet_file.exists()
+        assert isolated_cache.exists()
 
-    def test_only_parquet_file_created(self, isolated_cache):
-        ts = _utc(2026, 3, 6, 10, 0, 0)
-        logs = [_make_log_line(ts, "hello world")]
-        cm.write_cached_logs_for_date("web-app", logs, ts.date())
-
-        other_formats = list((isolated_cache / "web-app").glob("2026-03-06.*"))
-        assert all(f.suffix == ".parquet" for f in other_formats)
-
-    def test_parquet_schema(self, isolated_cache):
+    def test_writes_one_row_per_log_line(self, isolated_cache):
         ts = _utc(2026, 3, 6, 10, 0, 0)
         logs = [_make_log_line(ts, "test message")]
         cm.write_cached_logs_for_date("web-app", logs, ts.date())
 
-        df = pl.read_parquet(isolated_cache / "web-app" / "2026-03-06.parquet")
-        assert "timestamp" in df.columns
-        assert "message" in df.columns
-        assert df["timestamp"].dtype == pl.Datetime("us", "UTC")
-        assert df["message"].dtype == pl.String
+        rows = _rows(isolated_cache, "web-app")
+        assert len(rows) == 1
+        assert rows[0][0] == "web-app"
+        assert rows[0][3] == "2026-03-06"
 
     def test_message_content_preserved(self, isolated_cache):
         ts = _utc(2026, 3, 6, 10, 0, 0)
         raw_line = _make_log_line(ts, "[INFO] service started")
         cm.write_cached_logs_for_date("web-app", [raw_line], ts.date())
 
-        df = pl.read_parquet(isolated_cache / "web-app" / "2026-03-06.parquet")
-        assert df["message"][0] == raw_line
+        rows = _rows(isolated_cache, "web-app")
+        assert rows[0][2] == raw_line
 
     def test_multiple_logs_written(self, isolated_cache):
         base = _utc(2026, 3, 6, 10, 0, 0)
         logs = [_make_log_line(base + timedelta(seconds=i), f"msg {i}") for i in range(5)]
         cm.write_cached_logs_for_date("web-app", logs, base.date())
 
-        df = pl.read_parquet(isolated_cache / "web-app" / "2026-03-06.parquet")
-        assert len(df) == 5
+        rows = _rows(isolated_cache, "web-app")
+        assert len(rows) == 5
 
-    def test_empty_logs_produces_no_file(self, isolated_cache):
+    def test_empty_logs_writes_nothing(self, isolated_cache):
         from datetime import date
         cm.write_cached_logs_for_date("web-app", [], date(2026, 3, 6))
 
-        parquet_file = isolated_cache / "web-app" / "2026-03-06.parquet"
-        assert not parquet_file.exists()
+        # No DB file is even created — early-exit before any connection is opened.
+        assert not isolated_cache.exists()
 
     def test_skips_blank_lines(self, isolated_cache):
         ts = _utc(2026, 3, 6, 10, 0, 0)
         logs = [_make_log_line(ts, "real log"), "", "   "]
         cm.write_cached_logs_for_date("web-app", logs, ts.date())
 
-        df = pl.read_parquet(isolated_cache / "web-app" / "2026-03-06.parquet")
-        assert len(df) == 1
+        rows = _rows(isolated_cache, "web-app")
+        assert len(rows) == 1
 
-    def test_updates_metadata(self, isolated_cache):
+    def test_updates_cache_days(self, isolated_cache):
         ts = _utc(2026, 3, 6, 10, 0, 0)
         logs = [_make_log_line(ts, "x")]
         cm.write_cached_logs_for_date("web-app", logs, ts.date())
 
-        with open(isolated_cache / "metadata.json") as f:
-            meta = json.load(f)
-        assert "web-app" in meta
-        assert "2026-03-06" in meta["web-app"]
-        assert meta["web-app"]["2026-03-06"]["line_count"] == 1
+        days = _cache_days(isolated_cache, "web-app")
+        assert len(days) == 1
+        assert days[0][1] == "2026-03-06"
+        assert days[0][3] == 1  # line_count
+
+    def test_rewriting_same_day_overwrites_not_duplicates(self, isolated_cache):
+        ts = _utc(2026, 3, 6, 10, 0, 0)
+        cm.write_cached_logs_for_date("web-app", [_make_log_line(ts, "first")], ts.date())
+        cm.write_cached_logs_for_date("web-app", [_make_log_line(ts, "second")], ts.date())
+
+        rows = _rows(isolated_cache, "web-app")
+        assert len(rows) == 1
+        assert rows[0][2] == _make_log_line(ts, "second")
+        days = _cache_days(isolated_cache, "web-app")
+        assert len(days) == 1
 
     def test_unparseable_timestamp_uses_utc_now_fallback(self, isolated_cache):
         """Lines with no leading ISO-8601 timestamp must not be dropped."""
@@ -124,35 +153,26 @@ class TestWriteCachedLogsForDate:
         logs = ["no-timestamp-here just plain text"]
         cm.write_cached_logs_for_date("web-app", logs, date(2026, 3, 6))
 
-        df = pl.read_parquet(isolated_cache / "web-app" / "2026-03-06.parquet")
-        assert len(df) == 1
-        assert df["message"][0] == "no-timestamp-here just plain text"
-        # Timestamp must be timezone-aware UTC
-        assert df["timestamp"].dtype == pl.Datetime("us", "UTC")
+        rows = _rows(isolated_cache, "web-app")
+        assert len(rows) == 1
+        assert rows[0][2] == "no-timestamp-here just plain text"
+        assert rows[0][1] is not None  # timestamp fallback was assigned
 
     def test_explicit_offset_timestamp_is_parsed_and_written(self, isolated_cache):
         logs = ["2026-03-06T10:00:00+00:00 offset message"]
         cm.write_cached_logs_for_date("web-app", logs, _utc(2026, 3, 6, 10, 0, 0).date())
 
-        df = pl.read_parquet(isolated_cache / "web-app" / "2026-03-06.parquet")
-        assert len(df) == 1
-        assert df["message"][0] == logs[0]
-        assert df["timestamp"][0].replace(tzinfo=timezone.utc) == datetime(
-            2026, 3, 6, 10, 0, 0, tzinfo=timezone.utc
-        )
+        rows = _rows(isolated_cache, "web-app")
+        assert len(rows) == 1
+        assert rows[0][2] == logs[0]
+        assert rows[0][1] == datetime(2026, 3, 6, 10, 0, 0, tzinfo=timezone.utc).timestamp()
 
 
 # ---------------------------------------------------------------------------
-# read_cached_logs_for_window (parquet path)
+# read_cached_logs_for_window
 # ---------------------------------------------------------------------------
 
-class TestReadCachedLogsForWindowParquet:
-    def _write(self, container, logs, isolated_cache):
-        if not logs:
-            return
-        ts = _parse_ts(logs[0])
-        cm.write_cached_logs_for_date(container, logs, ts.date())
-
+class TestReadCachedLogsForWindow:
     def test_returns_logs_within_window(self, isolated_cache):
         base = _utc(2026, 3, 6, 10, 0, 0)
         logs = [_make_log_line(base + timedelta(minutes=i), f"msg {i}") for i in range(10)]
@@ -166,7 +186,7 @@ class TestReadCachedLogsForWindowParquet:
         assert result is not None
         assert len(result) == 4  # minutes 2, 3, 4, 5
 
-    def test_returns_none_on_missing_file(self, isolated_cache):
+    def test_returns_none_on_missing_container(self, isolated_cache):
         result = cm.read_cached_logs_for_window(
             "missing-container",
             since=_utc(2026, 3, 6, 10),
@@ -228,11 +248,10 @@ class TestReadCachedLogsForWindowParquet:
         assert result is not None
         assert len(result) == 1
 
-    def test_corrupt_parquet_file_returns_none(self, isolated_cache):
-        """A corrupt .parquet file must return None without raising."""
-        parquet_path = isolated_cache / "web-app" / "2026-03-06.parquet"
-        parquet_path.parent.mkdir(parents=True, exist_ok=True)
-        parquet_path.write_bytes(b"this is not a valid parquet file")
+    def test_corrupt_db_file_returns_none(self, isolated_cache):
+        """A corrupt .db file must return None without raising."""
+        isolated_cache.parent.mkdir(parents=True, exist_ok=True)
+        isolated_cache.write_bytes(b"this is not a valid sqlite file")
 
         result = cm.read_cached_logs_for_window(
             "web-app",
@@ -241,49 +260,15 @@ class TestReadCachedLogsForWindowParquet:
         )
         assert result is None
 
+    def test_results_ordered_chronologically(self, isolated_cache):
+        base = _utc(2026, 3, 6, 10, 0, 0)
+        logs = [_make_log_line(base + timedelta(minutes=i), f"msg {i}") for i in range(5)]
+        cm.write_cached_logs_for_date("web-app", logs, base.date())
 
-
-# ---------------------------------------------------------------------------
-# _atomic_write_parquet
-# ---------------------------------------------------------------------------
-
-class TestAtomicWriteParquet:
-    def test_writes_and_renames(self, tmp_path):
-        df = pl.DataFrame({"a": [1, 2, 3]})
-        dest = tmp_path / "output.parquet"
-        cm._atomic_write_parquet(dest, df)
-
-        assert dest.exists()
-        assert not (tmp_path / ".tmp-output.parquet").exists()
-
-    def test_no_tmp_file_left_on_success(self, tmp_path):
-        df = pl.DataFrame({"x": ["a", "b"]})
-        dest = tmp_path / "sub" / "out.parquet"
-        cm._atomic_write_parquet(dest, df)
-
-        tmp_files = list((tmp_path / "sub").glob(".tmp-*"))
-        assert tmp_files == []
-
-    def test_tmp_file_cleaned_up_on_failure(self, tmp_path, monkeypatch):
-        """The except branch must unlink the temp file if write_parquet raises."""
-        dest = tmp_path / "output.parquet"
-
-        def _bad_write(path, **kwargs):
-            # Simulate write_parquet creating the temp file then raising
-            Path(path).touch()
-            raise RuntimeError("simulated write failure")
-
-        df = pl.DataFrame({"a": [1]})
-        monkeypatch.setattr(df, "write_parquet", _bad_write)
-
-        with pytest.raises(RuntimeError, match="simulated write failure"):
-            cm._atomic_write_parquet(dest, df)
-
-        # Destination must not exist (rename never happened)
-        assert not dest.exists()
-        # Temp file must have been cleaned up
-        tmp_files = list(tmp_path.glob(".tmp-*"))
-        assert tmp_files == []
+        result = cm.read_cached_logs_for_window(
+            "web-app", since=base, until=base + timedelta(minutes=4)
+        )
+        assert result == logs
 
 
 # ---------------------------------------------------------------------------
@@ -304,7 +289,8 @@ class TestGetCacheInfo:
         c = result["containers"][0]
         assert c["container"] == "web-app"
         assert "2026-03-06" in c["dates_cached"]
-        assert c["parquet_files"] == 1
+        assert c["cached_days"] == 1
+        assert c["total_lines"] == 1
 
     def test_returns_empty_for_unknown_container(self, isolated_cache):
         ts = _utc(2026, 3, 6, 10, 0, 0)
@@ -312,11 +298,14 @@ class TestGetCacheInfo:
         result = cm.get_cache_info("other-container")
         assert result["containers"] == []
 
-    def test_returns_empty_on_corrupted_metadata(self, isolated_cache):
-        isolated_cache.mkdir(parents=True, exist_ok=True)
-        (isolated_cache / "metadata.json").write_text("{bad json")
-        result = cm.get_cache_info("web-app")
-        assert result["containers"] == []
+    def test_all_containers_when_none_given(self, isolated_cache):
+        ts = _utc(2026, 3, 6, 10, 0, 0)
+        cm.write_cached_logs_for_date("web-app", [_make_log_line(ts, "x")], ts.date())
+        cm.write_cached_logs_for_date("db", [_make_log_line(ts, "y")], ts.date())
+
+        result = cm.get_cache_info()
+        names = {c["container"] for c in result["containers"]}
+        assert names == {"web-app", "db"}
 
 
 class TestClearCache:
@@ -327,22 +316,37 @@ class TestClearCache:
 
         cm.clear_cache("web-app")
 
-        assert not (isolated_cache / "web-app").exists()
-        assert (isolated_cache / "db").exists()
+        assert _rows(isolated_cache, "web-app") == []
+        assert len(_rows(isolated_cache, "db")) == 1
 
     def test_clear_all(self, isolated_cache):
         ts = _utc(2026, 3, 6, 10, 0, 0)
         cm.write_cached_logs_for_date("web-app", [_make_log_line(ts, "x")], ts.date())
-        cm.clear_cache()
+        result = cm.clear_cache()
+        assert result["cleared_containers"] == ["web-app"]
+        assert _rows(isolated_cache) == []
+
+    def test_clear_unknown_container_is_noop(self, isolated_cache):
+        result = cm.clear_cache("nope")
+        assert result["cleared_containers"] == []
+        assert result["bytes_freed"] == 0
+
+    def test_clear_all_recovers_from_corrupt_db_file(self, isolated_cache):
+        """Full clear must remove a corrupt/non-SQLite file, not raise."""
+        isolated_cache.parent.mkdir(parents=True, exist_ok=True)
+        isolated_cache.write_bytes(b"this is not a valid sqlite file")
+
+        result = cm.clear_cache()
+
+        assert result["cleared_containers"] == []
+        assert result["bytes_freed"] > 0
         assert not isolated_cache.exists()
 
+    def test_clear_specific_container_raises_on_corrupt_db_file(self, isolated_cache):
+        """A single-container clear can't target one container from an
+        unreadable file — it should raise rather than silently no-op."""
+        isolated_cache.parent.mkdir(parents=True, exist_ok=True)
+        isolated_cache.write_bytes(b"this is not a valid sqlite file")
 
-# ---------------------------------------------------------------------------
-# Helpers (module-level)
-# ---------------------------------------------------------------------------
-
-def _parse_ts(log_line: str) -> datetime:
-    ts_str = log_line.split()[0]
-    if ts_str.endswith("Z"):
-        ts_str = ts_str[:-1] + "+00:00"
-    return datetime.fromisoformat(ts_str)
+        with pytest.raises(Exception):
+            cm.clear_cache("web-app")

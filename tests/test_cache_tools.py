@@ -23,7 +23,7 @@ class TestToolCacheInfo:
 
     def test_result_contains_containers_and_totals(self):
         mock_result = {
-            "containers": [{"container": "web", "parquet_files": 2, "size_bytes": 1024}],
+            "containers": [{"container": "web", "cached_days": 2, "size_bytes": 1024}],
             "total_size_bytes": 1024,
             "total_size_kb": 1.0,
         }
