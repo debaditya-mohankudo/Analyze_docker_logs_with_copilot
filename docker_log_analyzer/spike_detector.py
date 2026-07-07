@@ -1,19 +1,22 @@
 """
-spike_detector.py – Rolling-window error spike detection using Polars.
+spike_detector.py – Rolling-window error spike detection (plain Python).
 
 Algorithm:
   1. Parse Docker-prepended RFC3339 timestamps from log lines
-  2. Build a Polars DataFrame of (minute_bucket, is_error) rows
-  3. Aggregate error count per 1-minute bucket
-  4. Compute rolling baseline = mean of previous BASELINE_BUCKETS buckets
-  5. Flag any bucket where error_count > baseline × spike_threshold
+  2. Count errors per 1-minute bucket (buckets with zero errors are absent,
+     not zero-filled — the rolling window below operates over the sequence
+     of error-containing buckets, not literal calendar minutes)
+  3. Compute rolling baseline = mean of the previous BASELINE_BUCKETS buckets
+  4. Flag any bucket where error_count > baseline × spike_threshold
 
-All analysis is stateless and local – no external API calls.
+All analysis is stateless and local – no external API calls. This operates
+on an already in-memory list of log lines (not the SQLite log cache), so
+there is no persistent store to query — a plain rolling window over a
+sorted dict is sufficient at dev-scale line counts; no Polars/SQL needed.
 """
 
+from collections import Counter, deque
 from typing import List, Optional
-
-import polars as pl
 
 from .patterns import DOCKER_TS_RE, ERROR_PATTERN_RE, parse_timestamp
 
@@ -43,7 +46,8 @@ def detect_spikes(
     Args:
         log_lines: Raw log lines with Docker-prepended timestamps.
         container_name: Container label for spike event output.
-        window_minutes: Rolling baseline look-back window in minutes (1-minute buckets).
+        window_minutes: Rolling baseline look-back window, in number of prior
+            error-containing buckets (not literal calendar minutes).
         spike_threshold: Ratio (current / baseline) that constitutes a spike.
 
     Returns:
@@ -57,57 +61,42 @@ def detect_spikes(
         }
         Empty list if there are no parseable timestamps or fewer than 2 buckets.
     """
-    rows = []
+    error_counts: Counter[str] = Counter()
+    saw_parseable_line = False
+
     for line in log_lines:
         bucket = _parse_docker_timestamp(line)
         if bucket is None:
             continue
-        rows.append({
-            "minute_bucket": bucket,
-            "is_error": bool(ERROR_PATTERN_RE.search(line)),
-        })
+        saw_parseable_line = True
+        if ERROR_PATTERN_RE.search(line):
+            error_counts[bucket] += 1
 
-    if not rows:
+    if not saw_parseable_line or not error_counts:
         return []
 
-    df = pl.DataFrame(rows)
-
-    error_only = df.filter(pl.col("is_error"))
-    if error_only.is_empty():
+    buckets = sorted(error_counts.keys())
+    if len(buckets) < 2:
         return []
 
-    bucket_counts = (
-        error_only
-        .group_by("minute_bucket")
-        .agg(pl.len().alias("error_count"))
-        .sort("minute_bucket")
-    )
+    window_size = max(1, window_minutes)
+    history: deque[int] = deque(maxlen=window_size)
+    spikes: List[dict] = []
 
-    if bucket_counts.height < 2:
-        return []
+    for bucket in buckets:
+        error_count = error_counts[bucket]
+        baseline = (sum(history) / len(history)) if history else 1.0  # no history → 1.0
+        ratio = error_count / baseline
 
-    error_series = bucket_counts["error_count"].cast(pl.Float64)
-    baseline = (
-        error_series
-        .shift(1)
-        .rolling_mean(window_size=max(1, window_minutes), min_samples=1)
-    )
+        if ratio > spike_threshold:
+            spikes.append({
+                "container": container_name,
+                "bucket_minute": bucket,
+                "error_count": error_count,
+                "baseline": round(baseline, 2),
+                "ratio": round(ratio, 2),
+            })
 
-    bucket_counts = bucket_counts.with_columns([
-        baseline.fill_null(1.0).alias("baseline"),   # first bucket has no history → use 1.0
-    ]).with_columns([
-        (pl.col("error_count").cast(pl.Float64) / pl.col("baseline")).alias("ratio"),
-    ])
+        history.append(error_count)
 
-    spike_rows = bucket_counts.filter(pl.col("ratio") > spike_threshold)
-
-    return [
-        {
-            "container": container_name,
-            "bucket_minute": row["minute_bucket"],
-            "error_count": int(row["error_count"]),
-            "baseline": round(float(row["baseline"]), 2),
-            "ratio": round(float(row["ratio"]), 2),
-        }
-        for row in spike_rows.iter_rows(named=True)
-    ]
+    return spikes
