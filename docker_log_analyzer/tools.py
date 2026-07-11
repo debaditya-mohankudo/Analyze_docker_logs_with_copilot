@@ -171,7 +171,7 @@ def tool_analyze_patterns(
     """Fetch logs and run PatternDetector against one or all containers.
 
     Logs fetching strategy (cache-first):
-    1. Check .cache/logs/<container>/<YYYY-MM-DD>.parquet (24-hour window)
+    1. Check the SQLite log cache for the last settings.log_lookback_minutes minutes
     2. If cache hit, use cached logs (instant)
     3. Otherwise, fetch fresh from Docker API
 
@@ -209,7 +209,7 @@ def tool_analyze_patterns(
                 continue
 
         now = datetime.now(timezone.utc)
-        since = now - timedelta(hours=24)
+        since = now - timedelta(minutes=settings.log_lookback_minutes)
         lines, was_cached = _fetch_logs_with_cache(c, name, since, now, use_cache=use_cache)
         if not lines:
             results[name] = {"status": "no_logs"}
@@ -284,7 +284,7 @@ def tool_analyze_error_spikes(
     for c in targets:
         name = _container_name(c)
         now = datetime.now(timezone.utc)
-        since = now - timedelta(hours=24)
+        since = now - timedelta(minutes=settings.log_lookback_minutes)
         lines, was_cached = _fetch_logs_with_cache(c, name, since, now, use_cache=use_cache)
         cache_hits[name] = was_cached
         if not lines:
@@ -355,7 +355,7 @@ def tool_analyze_correlations(
     container_logs = {}
     cache_hits = {}
     now = datetime.now(timezone.utc)
-    since = now - timedelta(hours=24)
+    since = now - timedelta(minutes=settings.log_lookback_minutes)
 
     for c in running:
         name = _container_name(c)
@@ -427,7 +427,7 @@ def tool_sync_docker_logs(
 
     Args:
         container_names: Specific containers to sync. Omit for all running.
-        since: Start time as ISO-8601 UTC (e.g. "2026-03-04T10:00:00Z"). Defaults to 24 hours ago.
+        since: Start time as ISO-8601 UTC (e.g. "2026-03-04T10:00:00Z"). Defaults to settings.log_lookback_minutes ago.
         until: End time as ISO-8601 UTC. Defaults to now.
         force_refresh: Skip cache, re-fetch everything
     """
@@ -436,7 +436,7 @@ def tool_sync_docker_logs(
     except RuntimeError as exc:
         return {"status": "error", "error": str(exc)}
 
-    since_dt = _parse_iso(since) if since else datetime.now(timezone.utc) - timedelta(hours=24)
+    since_dt = _parse_iso(since) if since else datetime.now(timezone.utc) - timedelta(minutes=settings.log_lookback_minutes)
     until_dt = _parse_iso(until)
 
     if since_dt > until_dt:
@@ -742,7 +742,7 @@ def tool_map_service_dependencies(
         }
 
     now = datetime.now(timezone.utc)
-    since = now - timedelta(hours=24)
+    since = now - timedelta(minutes=settings.log_lookback_minutes)
 
     container_logs: dict[str, list[str]] = {}
     cache_hits: dict[str, bool] = {}
@@ -984,7 +984,7 @@ def tool_trace_request_flow(
             logger.warning("Skipping invalid request_id pattern '%s': %s", name, exc)
 
     now = datetime.now(timezone.utc)
-    since = now - timedelta(hours=24)
+    since = now - timedelta(minutes=settings.log_lookback_minutes)
 
     cache_hits: dict[str, bool] = {}
     # Collect all matches globally — (id_value, pattern_name, unix_ts, line, container)
@@ -1079,7 +1079,7 @@ def tool_extract_apis_and_queries(
         }
 
     now = datetime.now(timezone.utc)
-    since = now - timedelta(hours=24)
+    since = now - timedelta(minutes=settings.log_lookback_minutes)
 
     cache_hits: dict[str, bool] = {}
     detected_language: dict[str, str] = {}
@@ -1213,7 +1213,7 @@ def tool_classify_errors(
         }
 
     now = datetime.now(timezone.utc)
-    since = now - timedelta(hours=24)
+    since = now - timedelta(minutes=settings.log_lookback_minutes)
 
     cache_hits: dict[str, bool] = {}
     per_container: dict[str, dict] = {}

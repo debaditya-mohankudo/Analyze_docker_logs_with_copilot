@@ -84,6 +84,16 @@ class Settings(BaseSettings):
         default=30,
         description="TTL for correlation result cache in minutes (0 = disabled)",
     )
+    log_lookback_minutes: int = Field(
+        default=10,
+        description=(
+            "How far back analysis tools fetch container logs, in minutes. "
+            "Single shared knob for all tools that fetch a rolling 'recent logs' "
+            "window (as opposed to tool_sync_docker_logs, which takes an explicit "
+            "since/until range). Mutable at runtime like docker_host — the TUI's "
+            "window-selection screen sets this directly before running a flow."
+        ),
+    )
 
     # Code Repository Configuration
     repo_paths: List[str] = Field(
