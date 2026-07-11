@@ -1,7 +1,7 @@
 """
 MCP Server for Docker Log Pattern Analysis (non-LLM).
 
-Exposes 16 tools to VSCode Copilot Agent Mode via .vscode/mcp.json:
+Exposes 17 tools to VSCode Copilot Agent Mode via .vscode/mcp.json:
 
   list_containers           – discover running Docker containers
   analyze_patterns          – PatternDetector per container (timestamps, language, log levels)
@@ -16,6 +16,7 @@ Exposes 16 tools to VSCode Copilot Agent Mode via .vscode/mcp.json:
   plan_investigation        – generate a structured investigation plan from symptoms
   analyze_code_context      – parse stack traces + surface source code around error lines
   trace_request_flow        – trace individual request IDs across containers via log correlation
+  extract_apis_and_queries  – extract HTTP API calls and DB queries (Java/Spring/Hibernate-aware)
   classify_errors           – categorise errors into semantic classes (database, network, timeout, etc.)
   start_test_containers     – build & start test log-generator containers
   stop_test_containers      – stop and remove test log-generator containers
@@ -53,6 +54,7 @@ from .tools import (
     tool_plan_investigation,
     tool_analyze_code_context,
     tool_trace_request_flow,
+    tool_extract_apis_and_queries,
     tool_classify_errors,
     tool_cache_info,
     tool_clear_cache,
@@ -399,6 +401,31 @@ def trace_request_flow(
         tail=tail,
         min_events=min_events,
         max_requests=max_requests,
+    )
+
+
+@mcp.tool()
+def extract_apis_and_queries(
+    container_names: list[str] | None = None,
+    tail: int = 500,
+    use_cache: bool = True,
+) -> dict:
+    """Extract HTTP API calls and DB queries from container logs.
+
+    Detects each container's language via PatternDetector.detect_language and,
+    for Java containers, prefers Spring/Hibernate-specific patterns (Mapped
+    request-mapping lines, "Hibernate: select ..." query lines) before falling
+    back to generic HTTP-access-log / SQL patterns for everything else.
+
+    Args:
+        container_names: Containers to scan. Omit for all running containers.
+        tail:            Log lines to fetch per container (default 500).
+        use_cache:       Use cached logs when available (default True).
+    """
+    return tool_extract_apis_and_queries(
+        container_names=container_names,
+        tail=tail,
+        use_cache=use_cache,
     )
 
 

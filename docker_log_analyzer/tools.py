@@ -33,6 +33,7 @@ from .log_pattern_analyzer import PatternDetector
 from .logger import logger
 from .error_classifier import classify_lines, aggregate_stats, VALID_CATEGORIES
 from .request_tracer import RequestIdPattern, extract_ids, cross_container_timelines
+from .api_query_extractor import extract_api_calls, extract_queries
 from .root_cause_analyzer import rank_root_causes
 from .secret_detector import SecretDetector
 from .patterns import DOCKER_TS_RE, ERROR_PATTERN_RE
@@ -1022,6 +1023,122 @@ def tool_trace_request_flow(
             "max_requests": max_requests,
             "trace_window_seconds": settings.trace_window_seconds,
         },
+    }
+
+
+def tool_extract_apis_and_queries(
+    container_names: Optional[list[str]] = None,
+    tail: int = 500,
+    use_cache: bool = True,
+) -> dict:
+    """Extract HTTP API calls and DB queries from container logs.
+
+    Detects each container's language via PatternDetector.detect_language and,
+    when the container is Java, prefers Spring/Hibernate-specific patterns
+    before falling back to generic HTTP-access-log / SQL patterns.
+
+    Parameters
+    ----------
+    container_names : Containers to scan. Omit for all running containers.
+    tail            : Log lines to fetch per container (default 500).
+    use_cache       : Use cached logs when available (default True).
+
+    Returns
+    -------
+    JSON with:
+        status              – 'success' or 'error'
+        api_calls           – list of {container, method, path, status, timestamp, line}
+        queries             – list of {container, query, timestamp, line}
+        summary             – endpoint_counts, query_counts, detected_language per container
+        containers_scanned  – container names that were scanned
+        cache_hits          – dict of container → bool (True = served from cache)
+    """
+    try:
+        client = _docker_client()
+    except RuntimeError as exc:
+        return {"status": "error", "error": str(exc)}
+
+    if container_names:
+        targets = []
+        for name in container_names:
+            try:
+                targets.append(client.container.inspect(name))
+            except NoSuchContainer:
+                return {"status": "error", "error": f"Container '{name}' not found."}
+    else:
+        targets = client.container.list()
+
+    if not targets:
+        return {
+            "status": "success",
+            "api_calls": [],
+            "queries": [],
+            "summary": {"endpoint_counts": {}, "query_counts": {}, "detected_language": {}},
+            "containers_scanned": [],
+            "cache_hits": {},
+        }
+
+    now = datetime.now(timezone.utc)
+    since = now - timedelta(hours=24)
+
+    cache_hits: dict[str, bool] = {}
+    detected_language: dict[str, str] = {}
+    api_calls: list[dict] = []
+    queries: list[dict] = []
+    endpoint_counts: dict[str, int] = {}
+    query_counts: dict[str, int] = {}
+
+    for c in targets:
+        cname = _container_name(c)
+        lines, was_cached = _fetch_logs_with_cache(c, cname, since, now, use_cache=use_cache)
+        cache_hits[cname] = was_cached
+        lines = lines[-tail:] if tail > 0 else []
+        if not lines:
+            detected_language[cname] = "unknown"
+            continue
+
+        language, _confidence = PatternDetector.detect_language(lines)
+        detected_language[cname] = language
+
+        for method, path, status, unix_ts, line in extract_api_calls(lines, language=language):
+            api_calls.append({
+                "container": cname,
+                "method": method,
+                "path": path,
+                "status": status,
+                "timestamp": (
+                    datetime.fromtimestamp(unix_ts, tz=timezone.utc).isoformat()
+                    if unix_ts is not None else None
+                ),
+                "line": line[:500],
+            })
+            endpoint_key = f"{method} {path}"
+            endpoint_counts[endpoint_key] = endpoint_counts.get(endpoint_key, 0) + 1
+
+        for query_text, unix_ts, line in extract_queries(lines, language=language):
+            queries.append({
+                "container": cname,
+                "query": query_text[:500],
+                "timestamp": (
+                    datetime.fromtimestamp(unix_ts, tz=timezone.utc).isoformat()
+                    if unix_ts is not None else None
+                ),
+                "line": line[:500],
+            })
+            verb = query_text.strip().split()[0].upper() if query_text.strip() else "UNKNOWN"
+            query_counts[verb] = query_counts.get(verb, 0) + 1
+
+    return {
+        "status": "success",
+        "api_calls": api_calls,
+        "queries": queries,
+        "summary": {
+            "endpoint_counts": endpoint_counts,
+            "query_counts": query_counts,
+            "detected_language": detected_language,
+        },
+        "containers_scanned": [_container_name(c) for c in targets],
+        "cache_hits": cache_hits,
     }
 
 

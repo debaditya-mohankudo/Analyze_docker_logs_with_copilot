@@ -22,6 +22,7 @@ dependencies = [
     "python-dotenv>=1.0.1",
     "mcp>=0.7.0",
     "pydantic-settings>=2.0.0",
+    "textual>=0.58.0",
 ]
 
 [project.optional-dependencies]
@@ -29,12 +30,14 @@ dev = [
     "pytest>=7.4.0",
     "pytest-cov>=4.1.0",
     "pytest-xdist>=3.0.0",
+    "pytest-asyncio>=0.23.0",
     "black>=23.0.0",
     "ruff>=0.1.0",
 ]
 
 [project.scripts]
 docker-log-analyzer-mcp = "docker_log_analyzer.mcp_server:run"
+docker-log-analyzer-tui = "docker_log_analyzer.tui:run"
 
 [build-system]
 requires = ["hatchling"]
@@ -59,6 +62,7 @@ ignore = []
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-v --tb=short"
+asyncio_mode = "auto"
 markers = [
     "unit: fast tests, no Docker required",
     "integration: requires Docker daemon running",

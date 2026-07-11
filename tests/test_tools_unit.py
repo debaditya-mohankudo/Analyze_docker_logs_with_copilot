@@ -1190,4 +1190,110 @@ class TestToolClassifyErrorsContract:
              patch("docker_log_analyzer.tools._fetch_logs_with_cache", return_value=([], True)):
             out = tools.tool_classify_errors()
         assert "svc" in out["cache_hits"]
+
+
+# ---------------------------------------------------------------------------
+# tool_extract_apis_and_queries – return-structure contract tests
+# ---------------------------------------------------------------------------
+
+_EXTRACT_REQUIRED_KEYS = frozenset({
+    "status",
+    "api_calls",
+    "queries",
+    "summary",
+    "containers_scanned",
+    "cache_hits",
+})
+
+_EXTRACT_SUMMARY_REQUIRED_KEYS = frozenset({
+    "endpoint_counts",
+    "query_counts",
+    "detected_language",
+})
+
+
+class TestToolExtractApisAndQueriesContract:
+    """Guards the return-structure contract of tool_extract_apis_and_queries.
+
+    All tests are Docker-free; PatternDetector.detect_language is mocked or
+    exercised via lightweight fakes, matching TestToolTraceRequestFlowContract's style.
+    """
+
+    def test_docker_error_returns_error_status(self):
+        with patch("docker_log_analyzer.tools._docker_client", side_effect=RuntimeError("no docker")):
+            out = tools.tool_extract_apis_and_queries()
+        assert out["status"] == "error"
+        assert "error" in out
+
+    def test_container_not_found_returns_error_status(self):
+        client = _mock_client(list_containers=[])
+        with patch("docker_log_analyzer.tools._docker_client", return_value=client):
+            out = tools.tool_extract_apis_and_queries(container_names=["missing"])
+        assert out["status"] == "error"
+        assert "error" in out
+
+    def test_no_running_containers_returns_success(self):
+        client = _mock_client(list_containers=[])
+        with patch("docker_log_analyzer.tools._docker_client", return_value=client):
+            out = tools.tool_extract_apis_and_queries()
+        assert out["status"] == "success"
+        assert out["api_calls"] == []
+        assert out["queries"] == []
+        assert _EXTRACT_SUMMARY_REQUIRED_KEYS <= out["summary"].keys()
+
+    def test_success_path_has_required_top_level_keys(self):
+        c = _FakeContainer("/svc")
+        client = _mock_client(list_containers=[c])
+        with patch("docker_log_analyzer.tools._docker_client", return_value=client), \
+             patch("docker_log_analyzer.tools._fetch_logs_with_cache", return_value=([], False)):
+            out = tools.tool_extract_apis_and_queries()
+        assert _EXTRACT_REQUIRED_KEYS <= out.keys(), (
+            f"Missing keys: {_EXTRACT_REQUIRED_KEYS - out.keys()}"
+        )
+
+    def test_no_logs_records_unknown_language_and_skips_extraction(self):
+        c = _FakeContainer("/svc")
+        client = _mock_client(list_containers=[c])
+        with patch("docker_log_analyzer.tools._docker_client", return_value=client), \
+             patch("docker_log_analyzer.tools._fetch_logs_with_cache", return_value=([], False)):
+            out = tools.tool_extract_apis_and_queries()
+        assert out["summary"]["detected_language"]["svc"] == "unknown"
+        assert out["api_calls"] == []
+        assert out["queries"] == []
+
+    def test_java_container_uses_detected_language_for_extraction(self):
+        c = _FakeContainer("/svc")
+        client = _mock_client(list_containers=[c])
+        lines = ["Mapped [{GET [/api/pets/1]}] to public ...Owner"]
+        with patch("docker_log_analyzer.tools._docker_client", return_value=client), \
+             patch("docker_log_analyzer.tools._fetch_logs_with_cache", return_value=(lines, False)), \
+             patch.object(tools.PatternDetector, "detect_language", return_value=("java", 0.9)):
+            out = tools.tool_extract_apis_and_queries()
+        assert out["summary"]["detected_language"]["svc"] == "java"
+        assert len(out["api_calls"]) == 1
+        assert out["api_calls"][0]["method"] == "GET"
+        assert out["api_calls"][0]["path"] == "/api/pets/1"
+
+    def test_endpoint_and_query_counts_aggregated(self):
+        c = _FakeContainer("/svc")
+        client = _mock_client(list_containers=[c])
+        lines = [
+            '"GET /api/pets/1 HTTP/1.1" 200',
+            '"GET /api/pets/1 HTTP/1.1" 200',
+            "SELECT * FROM pets",
+        ]
+        with patch("docker_log_analyzer.tools._docker_client", return_value=client), \
+             patch("docker_log_analyzer.tools._fetch_logs_with_cache", return_value=(lines, False)), \
+             patch.object(tools.PatternDetector, "detect_language", return_value=("unknown", 0.0)):
+            out = tools.tool_extract_apis_and_queries()
+        assert out["summary"]["endpoint_counts"]["GET /api/pets/1"] == 2
+        assert out["summary"]["query_counts"]["SELECT"] == 1
+
+    def test_cache_hits_populated(self):
+        c = _FakeContainer("/svc")
+        client = _mock_client(list_containers=[c])
+        with patch("docker_log_analyzer.tools._docker_client", return_value=client), \
+             patch("docker_log_analyzer.tools._fetch_logs_with_cache", return_value=([], True)):
+            out = tools.tool_extract_apis_and_queries()
+        assert out["cache_hits"]["svc"] is True
         assert out["cache_hits"]["svc"] is True

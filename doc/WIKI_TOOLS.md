@@ -5,7 +5,7 @@ last_updated: 2026-07-03
 
 # Wiki Hub: MCP Tools Reference
 
-Canonical reference for all 18 MCP tools — parameters, return shapes, and behavior.
+Canonical reference for all 19 MCP tools — parameters, return shapes, and behavior.
 
 ---
 
@@ -38,6 +38,7 @@ flowchart LR
   C -- "Need offline/fast cache first?" --> SY[sync_docker_logs]
   C -- "Need stack trace to source code" --> CC[analyze_code_context]
   C -- "Need request-level journey" --> TR[trace_request_flow]
+  C -- "Need API/query inventory" --> EX[extract_apis_and_queries]
   C -- "Need semantic error grouping" --> CE[classify_errors]
   C -- "Not sure where to start" --> PI[plan_investigation]
 
@@ -81,9 +82,10 @@ Confidence guidance:
 | 13 | [plan_investigation](#13-plan_investigation) | Generate a structured investigation plan from symptoms |
 | 14 | [analyze_code_context](#14-analyze_code_context) | Parse stack traces + surface source code around error lines |
 | 15 | [trace_request_flow](#15-trace_request_flow) | Trace individual request IDs across container boundaries |
-| 16 | [classify_errors](#16-classify_errors) | Categorise errors into semantic classes (database, network, timeout, etc.) |
-| 17 | [cache_info](#17-cache_info) | Summarize the local log cache — files, dates, size, last sync per container |
-| 18 | [clear_cache](#18-clear_cache) | Delete cached Parquet log files, forcing fresh fetches |
+| 16 | [extract_apis_and_queries](#16-extract_apis_and_queries) | Extract HTTP API calls and DB queries (Java/Spring/Hibernate-aware) |
+| 17 | [classify_errors](#17-classify_errors) | Categorise errors into semantic classes (database, network, timeout, etc.) |
+| 18 | [cache_info](#18-cache_info) | Summarize the local log cache — files, dates, size, last sync per container |
+| 19 | [clear_cache](#19-clear_cache) | Delete cached Parquet log files, forcing fresh fetches |
 
 ---
 
@@ -940,7 +942,87 @@ Full detail: [WIKI_TRACE_REQUEST_FLOW.md](WIKI_TRACE_REQUEST_FLOW.md).
 
 ---
 
-## 16. classify_errors
+## 16. extract_apis_and_queries
+
+**Status:** Implemented — 2026-07-07
+
+Extracts HTTP API calls and DB queries from container logs. Detects each
+container's language via `PatternDetector.detect_language` (see
+[analyze_patterns](#2-analyze_patterns)) and, for Java containers, prefers
+Spring/Hibernate-specific patterns before falling back to generic
+HTTP-access-log / SQL patterns used for every other language.
+
+**Parameters:**
+
+| Parameter          | Type       | Default | Description                                           |
+|--------------------|------------|---------|--------------------------------------------------------|
+| `container_names`  | string[]?  | —       | Containers to scan; omit for all running containers    |
+| `tail`             | int        | 500     | Log lines to fetch per container                       |
+| `use_cache`        | bool       | true    | Check `.cache/logs/` before Docker API                  |
+
+**Detection patterns:**
+
+- **Generic API calls:** Apache/nginx/Express-style access log lines —
+  `"METHOD /path HTTP/1.1" status` or bare `METHOD /path status`
+- **Java API calls:** Spring `Mapped [{METHOD [/path]}]` request-mapping log
+  lines, and Spring's DEBUG request log (`METHOD "/path"`)
+- **Generic queries:** lines containing a `SELECT`/`INSERT INTO`/`UPDATE`/
+  `DELETE FROM` statement
+- **Java queries:** Hibernate `Hibernate: select ...` query lines
+
+**Returns:**
+
+```json
+{
+  "status": "success",
+  "api_calls": [
+    {
+      "container": "web-app",
+      "method": "GET",
+      "path": "/api/pets/1",
+      "status": "200",
+      "timestamp": "2026-07-07T10:01:00.123Z",
+      "line": "Mapped [{GET [/api/pets/{id}]}] to public ..."
+    }
+  ],
+  "queries": [
+    {
+      "container": "web-app",
+      "query": "select owner0_.id as ...",
+      "timestamp": "2026-07-07T10:01:00.200Z",
+      "line": "Hibernate: select owner0_.id as ..."
+    }
+  ],
+  "summary": {
+    "endpoint_counts": { "GET /api/pets/1": 4 },
+    "query_counts": { "SELECT": 12, "INSERT": 2 },
+    "detected_language": { "web-app": "java" }
+  },
+  "containers_scanned": ["web-app"],
+  "cache_hits": { "web-app": true }
+}
+```
+
+**Field notes:**
+
+- `detected_language` — one entry per scanned container; `"unknown"` if no
+  logs were available to classify
+- `status` in an `api_calls` entry is `null` when the matched log line has no
+  parseable status code (e.g. Spring's `Mapped [...]` lines don't carry one)
+- Bind parameters that Hibernate logs on a separate line from the query
+  (`binding parameter [1] as ...`) are **not** stitched into `query` — only
+  the query-statement line itself is captured
+- `line` fields are capped at 500 characters, same convention as
+  [trace_request_flow](#15-trace_request_flow)
+
+**Use case:** Quick static inventory of what endpoints and queries a
+container actually exercised in a time window, without instrumenting the
+app — e.g. before/after a deploy, to sanity-check which routes and queries
+fired.
+
+---
+
+## 17. classify_errors
 
 **Status:** Implemented — 2026-03-13
 
@@ -1031,7 +1113,7 @@ Classifies error log lines into semantic categories using rule-based regex match
 
 ---
 
-## 17. cache_info
+## 18. cache_info
 
 Reports the current state of the local log cache (`.cache/logs/`) — files present, dates covered, total lines, disk usage, and last sync time, per container. Useful for checking cache coverage/staleness before running analysis tools, or diagnosing why a tool returned fewer logs than expected.
 
@@ -1070,7 +1152,7 @@ Reports the current state of the local log cache (`.cache/logs/`) — files pres
 
 ---
 
-## 18. clear_cache
+## 19. clear_cache
 
 Deletes cached Parquet log files for one or all containers, forcing the next analysis tool call to fetch fresh logs from the Docker API.
 
