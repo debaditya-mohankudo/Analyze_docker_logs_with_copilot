@@ -16,14 +16,17 @@ tui_widgets.py — see task:7323b8ef.
 
 import getpass
 import json
+import re
 
+from datetime import datetime
+from pathlib import Path
 from typing import Callable
 
 from textual.app import App, ComposeResult
 from textual.containers import Container, Horizontal, VerticalScroll
 from textual.screen import Screen
 from textual.widget import Widget
-from textual.widgets import Footer, Header, Input, Label, ListItem, ListView, Static
+from textual.widgets import Footer, Header, Input, Label, ListItem, ListView, SelectionList, Static
 
 if __package__ in (None, ""):
     # Allows `python3 docker_log_analyzer/tui.py` directly, not just
@@ -68,6 +71,7 @@ WINDOW_CHOICES: list[tuple[str, int]] = [
 
 PROMPTS: list[tuple[str, str, str | None, str, str]] = [
     ("List running containers", "tool_list_containers", None, "OVERVIEW", "□"),
+    ("Fetch logs for container(s)", "tool_sync_docker_logs", "multi_container_names", "OVERVIEW", "⇊"),
     ("Full system health report (all containers)", "tool_analyze_patterns", None, "HEALTH & ROOT CAUSE", "◎"),
     ("Error rate spikes", "tool_analyze_error_spikes", None, "ANOMALIES & DEPENDENCIES", "▲"),
     ("Cross-container error correlation", "tool_analyze_correlations", None, "ANOMALIES & DEPENDENCIES", "⇄"),
@@ -324,6 +328,87 @@ class ContainerNameScreen(Screen):
         self.app.push_screen(ResultScreen(self._label, self._tool_name, {"container_name": name}))
 
 
+class ContainerMultiSelectScreen(Screen):
+    """Collect one or more container names before running a multi-container
+    tool (currently just "Fetch logs for container(s)" -> tool_sync_docker_logs).
+
+    Lists every container (running or not) via tool_list_containers in a
+    worker thread, then lets the user check any number of them with a
+    SelectionList (space toggles, enter runs). Selecting nothing and
+    pressing enter runs the tool for every running container, matching
+    tool_sync_docker_logs's own container_names=None ("all running") default.
+    """
+
+    BINDINGS = [
+        ("space", "toggle_highlighted", "Toggle"),
+        ("enter", "run_selected", "Fetch"),
+        ("escape", "app.pop_screen", "Back to flows"),
+    ]
+    _log = staticmethod(action_logger("ContainerMultiSelectScreen"))
+
+    def __init__(self, label: str, tool_name: str) -> None:
+        super().__init__()
+        self._label = label
+        self._tool_name = tool_name
+
+    def compose(self) -> ComposeResult:
+        yield Header()
+        yield breadcrumb_bar(2)
+        with bordered(Container(classes="modal-box"), f"{step_prefix(2, TOTAL_STEPS)}{self._label}"):
+            yield Label(self._label, classes="title")
+            yield Static(
+                "Click or use ↑↓ + Space to toggle, Enter to fetch. "
+                "None selected = all running containers.",
+                classes="hint-bar",
+            )
+            yield SelectionList(id="container-select")
+            yield Static("", id="selection-status", classes="hint-bar")
+        yield Footer()
+
+    def on_mount(self) -> None:
+        self.run_worker(self._load_containers(), exclusive=True)
+
+    async def _load_containers(self) -> None:
+        import asyncio
+
+        result = await asyncio.to_thread(tools.tool_list_containers)
+        select = self.query_one("#container-select", SelectionList)
+        status = self.query_one("#selection-status", Static)
+        if result.get("status") != "success" or not result.get("containers"):
+            self._log("no containers available to select")
+            status.update("[red]No containers found.[/red]")
+            return
+        for c in result["containers"]:
+            name = c.get("name", "?")
+            select.add_option((name, name))
+        self._update_selection_status()
+        select.focus()
+
+    def _update_selection_status(self) -> None:
+        selected = list(self.query_one("#container-select", SelectionList).selected)
+        status = self.query_one("#selection-status", Static)
+        if selected:
+            status.update(f"{len(selected)} selected: {', '.join(selected)}")
+        else:
+            status.update("None selected — will fetch all running containers")
+
+    def on_selection_list_selected_changed(self, event: SelectionList.SelectedChanged) -> None:
+        self._update_selection_status()
+
+    def action_toggle_highlighted(self) -> None:
+        # SelectionList's own "space" binding (show=False) already does this
+        # when it's focused; this screen-level binding exists so Footer
+        # surfaces "Space Toggle" like every other key in this app.
+        self.query_one("#container-select", SelectionList).action_select()
+
+    def action_run_selected(self) -> None:
+        select = self.query_one("#container-select", SelectionList)
+        selected = list(select.selected)
+        self._log("running %s for containers %s", self._tool_name, selected or "<all running>")
+        kwargs = {"container_names": selected} if selected else {}
+        self.app.push_screen(ResultScreen(self._label, self._tool_name, kwargs))
+
+
 class MenuScreen(Screen):
     """Third screen: pick one of the 8 most useful docker prompts."""
 
@@ -372,7 +457,9 @@ class MenuScreen(Screen):
         index = int(item_id.removeprefix("prompt-"))
         label, tool_name, required_arg, _category, _icon = PROMPTS[index]
         self._log("selected prompt '%s' (%s)", label, tool_name)
-        if required_arg:
+        if required_arg == "multi_container_names":
+            self.app.push_screen(ContainerMultiSelectScreen(label, tool_name))
+        elif required_arg:
             self.app.push_screen(ContainerNameScreen(label, tool_name))
         else:
             self.app.push_screen(ResultScreen(label, tool_name, {}))
@@ -384,7 +471,11 @@ class ResultScreen(Screen):
     summarizer exists for this tool (RESULT_SUMMARIZERS), and the raw JSON
     behind a collapsible toggle (press 'j')."""
 
-    BINDINGS = [("escape", "app.pop_screen", "Back to flows"), ("j", "toggle_json", "Toggle raw JSON")]
+    BINDINGS = [
+        ("escape", "app.pop_screen", "Back to flows"),
+        ("j", "toggle_json", "Toggle raw JSON"),
+        ("s", "save_json", "Save JSON"),
+    ]
     _log = staticmethod(action_logger("ResultScreen"))
 
     def __init__(self, label: str, tool_name: str, kwargs: dict) -> None:
@@ -393,6 +484,7 @@ class ResultScreen(Screen):
         self._tool_name = tool_name
         self._kwargs = kwargs
         self._json_visible = False
+        self._result_text: str | None = None
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -427,6 +519,24 @@ class ResultScreen(Screen):
             feed.add_class("-hidden")
             toggle.update("▶ Show raw JSON [j]")
 
+    def action_save_json(self) -> None:
+        feed = self.query_one("#result-feed", EventFeed)
+        if self._result_text is None:
+            feed.write_event("info", EventFeed.escape("nothing to save yet"))
+            return
+        downloads = Path.home() / "Downloads"
+        downloads.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        safe_name = re.sub(r"[^A-Za-z0-9_-]+", "_", self._tool_name)
+        path = downloads / f"{safe_name}_{timestamp}.json"
+        try:
+            path.write_text(self._result_text)
+            self._log("saved raw JSON to %s", path)
+            feed.write_event("info", EventFeed.escape(f"saved to {path}"))
+        except OSError as exc:
+            logger.exception("tui: ResultScreen — failed saving JSON to %s", path)
+            feed.write_event("info", EventFeed.escape(f"save failed: {exc}"))
+
     def _render_summary(self, result: dict) -> None:
         summarizer = RESULT_SUMMARIZERS.get(self._tool_name)
         if summarizer is None:
@@ -460,6 +570,7 @@ class ResultScreen(Screen):
             result = await asyncio.to_thread(fn, **self._kwargs)
             elapsed = time.monotonic() - started
             text = json.dumps(result, indent=2, default=str)
+            self._result_text = text
             status = result.get("status") if isinstance(result, dict) else "?"
             self._log("%s completed in %.2fs, status=%s", self._tool_name, elapsed, status)
             feed.write_event("tool_done", EventFeed.escape(f"done ({status})"))
@@ -473,6 +584,7 @@ class ResultScreen(Screen):
             elapsed = time.monotonic() - started
             logger.exception("tui: ResultScreen — %s raised after %.2fs", self._tool_name, elapsed)
             text = json.dumps({"status": "error", "error": str(exc)}, indent=2)
+            self._result_text = text
             feed.write_event("tool_crashed", EventFeed.escape(str(exc)))
             raw_feed.write_event("tool_crashed", EventFeed.escape(text))
             status_chip.update("✗ Error")
@@ -499,6 +611,17 @@ class DockerTUIApp(App):
     #connect-error { margin-top: 1; }
     ListView { height: auto; max-height: 16; border: round $accent; }
     #result-feed { height: 4; border: round $accent; }
+
+    #container-select {
+        border: round $accent; background: $panel;
+        margin-top: 1; max-height: 16; padding: 0 1;
+    }
+    #container-select > .option-list--option-highlighted { background: $accent 15%; }
+    #container-select > .selection-list--button { color: $text-muted; background: $panel-darken-1; }
+    #container-select > .selection-list--button-selected { color: $accent; background: $accent 20%; text-style: bold; }
+    #container-select > .selection-list--button-highlighted { color: $text-muted; background: $panel-darken-1; }
+    #container-select > .selection-list--button-selected-highlighted { color: $accent; background: $accent 30%; text-style: bold; }
+    #selection-status { border-bottom: none; margin-top: 1; color: $text-muted; }
 
     .daemon-choices, .window-choices { height: auto; margin-top: 1; }
     .daemon-card, .window-card {
