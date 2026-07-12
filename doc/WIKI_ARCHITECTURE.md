@@ -38,7 +38,9 @@ Authoritative source for all constraints: [../CLAUDE.md](../CLAUDE.md)
 
 ```text
 docker_log_analyzer/
-  mcp_server.py           # Tool registration and FastMCP wiring (18 tools)
+  mcp_server.py           # Tool registration and FastMCP wiring (19 tools)
+  tui.py                  # Textual terminal UI, calls tool_* functions directly (no MCP hop)
+  tui_widgets.py           # Shared TUI widgets (EventFeed, bordered(), step_prefix())
   tools.py                # Tool implementations (tool_* functions, pattern/correlation cache)
   docker.py               # Docker helpers: client, log fetching, _fetch_logs_with_cache()
   spike_detector.py       # Polars rolling-window spike detection (1-min buckets)

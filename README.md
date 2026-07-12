@@ -1,11 +1,11 @@
 ---
-tags: [docker, log, analyzer, mcp, copilot, agent, quick-start, readme]
-last_updated: 2026-07-03
+tags: [docker, log, analyzer, mcp, copilot, agent, quick-start, readme, tui]
+last_updated: 2026-07-12
 ---
 
 # Docker Log Analyzer – MCP Server
 
-A stateless, **LLM-free** Docker log analysis tool exposed as an [MCP](https://modelcontextprotocol.io) server for **VSCode Copilot Agent Mode**. No Kafka, no OpenAI API key — all analysis runs locally using regex and [Polars](https://pola.rs).
+A stateless, **LLM-free** Docker log analysis tool exposed as an [MCP](https://modelcontextprotocol.io) server for **VSCode Copilot Agent Mode**, plus a standalone terminal UI (`docker-log-analyzer-tui`) for running the same analysis without VSCode. No Kafka, no OpenAI API key — all analysis runs locally using regex and [Polars](https://pola.rs).
 
 **Full documentation:** [doc/WIKI_HOME.md](doc/WIKI_HOME.md)
 
@@ -68,6 +68,16 @@ Full prompt reference: **[doc/WIKI_COPILOT_PROMPTS.md](doc/WIKI_COPILOT_PROMPTS.
 
 ---
 
+## Terminal UI
+
+Prefer a terminal over VSCode? `docker-log-analyzer-tui` is a [Textual](https://textual.textualize.io) app that walks through the same `tool_*` functions the MCP server exposes — connect to local or remote (SSH) Docker, pick containers, run an analysis, view/save the result. No mouse required; every action is a key binding.
+
+```bash
+uv run docker-log-analyzer-tui
+```
+
+---
+
 ## Quick Start
 
 ```bash
@@ -120,7 +130,7 @@ All settings are validated at startup via Pydantic BaseSettings. There is **no g
 
 ## Architecture
 
-VSCode Copilot Chat (Agent Mode) → MCP stdio → 18 stateless tool calls → Docker SDK → JSON.
+VSCode Copilot Chat (Agent Mode) → MCP stdio → 19 stateless tool calls → Docker SDK → JSON. The TUI (`docker_log_analyzer/tui.py`) calls the same `tool_*` functions directly, without an MCP hop.
 
 Full module map and algorithm details: **[doc/WIKI_ARCHITECTURE.md](doc/WIKI_ARCHITECTURE.md)**.
 
@@ -131,7 +141,7 @@ Full module map and algorithm details: **[doc/WIKI_ARCHITECTURE.md](doc/WIKI_ARC
 | Page | Purpose |
 | ---- | ------- |
 | [doc/WIKI_HOME.md](doc/WIKI_HOME.md) | Navigation hub and agent routing table |
-| [doc/WIKI_TOOLS.md](doc/WIKI_TOOLS.md) | All 18 tools — parameters, return shapes, behavior |
+| [doc/WIKI_TOOLS.md](doc/WIKI_TOOLS.md) | All 19 tools — parameters, return shapes, behavior |
 | [doc/WIKI_OPERATIONS.md](doc/WIKI_OPERATIONS.md) | Setup, config, remote Docker, cache, Copilot prompts |
 | [doc/WIKI_ARCHITECTURE.md](doc/WIKI_ARCHITECTURE.md) | Module map, algorithms, design decisions |
 | [doc/WIKI_QUALITY.md](doc/WIKI_QUALITY.md) | Test suite, CI, coverage, adding tests |
@@ -151,7 +161,7 @@ uv run pytest tests/ -m "not integration"
 uv run pytest tests/
 ```
 
-598 unit tests + integration suite. See [doc/WIKI_QUALITY.md](doc/WIKI_QUALITY.md).
+644 unit tests + integration suite. See [doc/WIKI_QUALITY.md](doc/WIKI_QUALITY.md).
 
 ---
 
