@@ -132,12 +132,16 @@ class ClickableCard(Container):
         self._on_activate()
 
 
-def _summarize_list_containers(result: dict) -> tuple[str, list[tuple[str, int]]] | None:
-    """tool_list_containers -> (headline, [(tile_label, count), ...]).
+def _summarize_list_containers(result: dict) -> tuple[str, list[tuple[str, str]]] | None:
+    """tool_list_containers -> (headline, [(name, status), ...]).
 
-    Tiles reflect Docker's real container.state.status values only (running/
-    restarting/exited/paused/...) — there is no "HEALTHY" tile, since this
-    tool doesn't report health-check state, only container status.
+    Headline reflects Docker's real container.state.status values only
+    (running/restarting/exited/paused/...) — there is no "HEALTHY" state,
+    since this tool doesn't report health-check state, only container
+    status. Names are sorted alphabetically and rendered as a plain bullet
+    list — green for "running", grey for anything else (see
+    ResultScreen._render_summary). No separate stat tiles: they'd just repeat
+    the headline's counts.
     """
     if result.get("status") != "success" or "containers" not in result:
         return None
@@ -148,8 +152,11 @@ def _summarize_list_containers(result: dict) -> tuple[str, list[tuple[str, int]]
     if not counts:
         return "No containers running.", []
     headline = ", ".join(f"{n} {s}" for s, n in sorted(counts.items(), key=lambda kv: -kv[1]))
-    tiles = [(s.upper(), n) for s, n in sorted(counts.items(), key=lambda kv: -kv[1])]
-    return headline, tiles
+    names = sorted(
+        ((c.get("name", "?"), c.get("status", "unknown")) for c in result["containers"]),
+        key=lambda nc: nc[0],
+    )
+    return headline, names
 
 
 # tool_name -> summarizer function. Only tool_list_containers has one for
@@ -172,6 +179,7 @@ class ConnectScreen(Screen):
     BINDINGS = [
         ("l", "use_local", "Local Docker"),
         ("r", "focus_remote", "Remote (SSH)"),
+        ("f2", "connect_remote", "Connect"),
         ("escape", "back_or_quit", "Quit"),
     ]
     # ConnectScreen is the root/first screen ever pushed (see DockerTUIApp.
@@ -188,10 +196,23 @@ class ConnectScreen(Screen):
     AUTO_FOCUS = ""
     _log = staticmethod(action_logger("ConnectScreen"))
 
+    def __init__(self) -> None:
+        super().__init__()
+        self._remote_visible = False
+
+    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        # "Connect" (f2) only makes sense once the remote-host field is
+        # showing — before that there's nothing to submit, so hide it from
+        # the Footer entirely rather than leaving a dead-looking key around.
+        if action == "connect_remote":
+            return self._remote_visible
+        return True
+
     def compose(self) -> ComposeResult:
         yield Header()
         yield breadcrumb_bar(0)
         with bordered(Container(classes="connect-box"), f"{step_prefix(0, TOTAL_STEPS)}Connect"):
+            yield Static("", id="connection-status", classes="-hidden")
             yield Label("Choose Docker daemon", classes="title")
             yield Static("Pick where the analysis tools should look for containers.", classes="hint-bar")
             with Horizontal(classes="daemon-choices"):
@@ -206,18 +227,18 @@ class ConnectScreen(Screen):
             with Container(id="remote-section", classes="-hidden"):
                 yield Static("", classes="section-divider")
                 yield Label("REMOTE HOST", classes="section-label")
-                with Horizontal(classes="remote-input-row"):
-                    yield Input(
-                        placeholder="user@ip  (uses current OS user if omitted)",
-                        id="remote-host",
-                        compact=True,
-                    )
-                    yield Static("[Enter] Connect →", classes="connect-hint")
+                yield Input(
+                    placeholder="user@ip  (uses current OS user if omitted)",
+                    id="remote-host",
+                    compact=True,
+                )
             yield Static("", id="connect-error")
         yield Footer()
 
     def action_focus_remote(self) -> None:
         self._log("focus remote-host input")
+        self._remote_visible = True
+        self.refresh_bindings()
         self.query_one("#remote-section", Container).remove_class("-hidden")
         self.query_one("#remote-host", Input).focus()
 
@@ -227,6 +248,8 @@ class ConnectScreen(Screen):
         "back" to pop to (see class docstring/BINDINGS comment)."""
         if self.focused is not None:
             self._log("escape unfocuses remote-host input")
+            self._remote_visible = False
+            self.refresh_bindings()
             self.set_focus(None)
             self.query_one("#remote-section", Container).add_class("-hidden")
         else:
@@ -236,22 +259,61 @@ class ConnectScreen(Screen):
     def action_use_local(self) -> None:
         self._log("chose local Docker (unix socket)")
         settings.docker_host = ""
-        self.app.push_screen(WindowScreen())
+        self.run_worker(self._test_connection("local (unix socket)"), exclusive=True)
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         if event.input.id != "remote-host":
             return
-        raw = event.value.strip()
+        self.action_connect_remote()
+
+    def action_connect_remote(self) -> None:
+        raw = self.query_one("#remote-host", Input).value.strip()
         error = self.query_one("#connect-error", Static)
         if not raw:
             self._log("remote host submitted empty, showing error")
             error.update("[red]Enter a remote IP (or user@ip), or press l for local.[/red]")
             return
 
+        raw = raw.removeprefix("ssh://")
         user_host = raw if "@" in raw else f"{getpass.getuser()}@{raw}"
         settings.docker_host = f"ssh://{user_host}"
         self._log("chose remote Docker via ssh://%s", user_host)
-        self.app.push_screen(WindowScreen())
+        self.run_worker(self._test_connection(user_host), exclusive=True)
+
+    async def _test_connection(self, target_label: str) -> None:
+        """Actually verifies the Docker daemon is reachable (tool_list_containers
+        round-trips through _docker_client()'s client.system.info() ping) before
+        advancing — settings.docker_host being set doesn't mean it works.
+
+        Every interpolated field is escaped via rich.markup.escape() before being
+        wrapped in a [color] tag — target_label comes from user input and the
+        Docker error text is raw CLI output full of literal `[`/`]`/`{`/`}` (JSON),
+        any of which Rich would otherwise try to parse as markup and crash on."""
+        import asyncio
+
+        from rich.markup import escape
+
+        status = self.query_one("#connection-status", Static)
+        error = self.query_one("#connect-error", Static)
+        safe_target = escape(target_label)
+        error.update("")
+        status.remove_class("-hidden")
+        status.update(f"[dim]◌ Testing connection to {safe_target}...[/dim]")
+        result = await asyncio.to_thread(tools.tool_list_containers)
+        if result.get("status") == "success":
+            self._log("connection test to %s succeeded", target_label)
+            status.update(f"[green]● Connected — {safe_target}[/green]")
+            # Brief pause so the success state is actually visible — without
+            # this the screen advances to WindowScreen in the same frame and
+            # the green "Connected" flash is never seen, leaving a gap before
+            # the next permanent "Connected" chip (WindowScreen/MenuScreen).
+            await asyncio.sleep(0.6)
+            self.app.push_screen(WindowScreen())
+        else:
+            error_text = escape(str(result.get("error", "Could not reach Docker daemon.")))
+            self._log("connection test to %s failed: %s", target_label, result.get("error"))
+            status.update(f"[red]✗ Connection failed — {safe_target}[/red]")
+            error.update(f"[red]{error_text}[/red]")
 
 
 class WindowScreen(Screen):
@@ -271,7 +333,10 @@ class WindowScreen(Screen):
     def compose(self) -> ComposeResult:
         yield Header()
         yield breadcrumb_bar(1)
+        target = settings.docker_host or "local (unix socket)"
         with bordered(Container(classes="connect-box"), f"{step_prefix(1, TOTAL_STEPS)}Time window"):
+            with Horizontal(classes="status-chips"):
+                yield Static(f"● Connected: {target}", classes="status-chip connected")
             yield Label("How far back should log-fetching tools look?", classes="title")
             yield Static("Applies to every log-fetching tool for this session.", classes="hint-bar")
             with Horizontal(classes="window-choices"):
@@ -295,7 +360,12 @@ class WindowScreen(Screen):
 
 
 class ContainerNameScreen(Screen):
-    """Collect a container name before running a container-scoped tool. Enter to run."""
+    """Pick one container (from tool_list_containers) before running a
+    container-scoped tool. A ListView, not free text — the exact container
+    names are already known from the daemon, so typos/guessing shouldn't be
+    possible. Enter selects, same convention as MenuScreen's prompt list
+    (ListView's own "enter" -> select_cursor binding fires on_list_view_selected;
+    no competing screen-level binding needed, so there's nothing to shadow)."""
 
     BINDINGS = [("escape", "app.pop_screen", "Back to flows")]
     _log = staticmethod(action_logger("ContainerNameScreen"))
@@ -308,22 +378,46 @@ class ContainerNameScreen(Screen):
     def compose(self) -> ComposeResult:
         yield Header()
         yield breadcrumb_bar(2)
+        target = settings.docker_host or "local (unix socket)"
         with bordered(Container(classes="modal-box"), f"{step_prefix(2, TOTAL_STEPS)}{self._label}"):
+            with Horizontal(classes="status-chips"):
+                yield Static(f"● Connected: {target}", classes="status-chip connected")
+                yield Static(f"◔ Window: {settings.log_lookback_minutes} min", classes="status-chip")
             yield Label(self._label, classes="title")
-            yield Static("Type a container name, press Enter to run", classes="hint-bar")
-            yield Input(placeholder="container name", id="container-name")
+            yield Static("↑↓ to pick a container, Enter to run.", classes="hint-bar")
+            yield bordered(ListView(id="container-name-list"), "Containers")
             yield Static("", id="connect-error")
         yield Footer()
 
     def on_mount(self) -> None:
-        self.query_one("#container-name", Input).focus()
+        self.run_worker(self._load_containers(), exclusive=True)
 
-    def on_input_submitted(self, event: Input.Submitted) -> None:
-        name = event.value.strip()
-        if not name:
-            self._log("submitted empty name, showing error")
-            self.query_one("#connect-error", Static).update("[red]Container name required.[/red]")
+    async def _load_containers(self) -> None:
+        import asyncio
+
+        result = await asyncio.to_thread(tools.tool_list_containers)
+        list_view = self.query_one("#container-name-list", ListView)
+        error = self.query_one("#connect-error", Static)
+        if result.get("status") != "success" or not result.get("containers"):
+            self._log("no containers available to pick")
+            error.update("[red]No containers found.[/red]")
             return
+        for c in sorted(result["containers"], key=lambda c: c.get("name", "?")):
+            name = c.get("name", "?")
+            running = c.get("status") == "running"
+            bullet = "[green]●[/green]" if running else "[dim]●[/dim]"
+            # ListView.append() returns an AwaitMount — must actually be
+            # awaited or the item never mounts (fire-and-forget silently
+            # drops it, leaving the list empty despite the loop "running").
+            await list_view.append(ListItem(Label(f"{bullet} {EventFeed.escape(name)}"), name=name))
+        self._log("loaded %d containers to pick from", len(result["containers"]))
+        # ListView.append doesn't auto-highlight a row — without this, Enter
+        # has nothing selected and on_list_view_selected never fires.
+        list_view.index = 0
+        list_view.focus()
+
+    def on_list_view_selected(self, event: ListView.Selected) -> None:
+        name = event.item.name
         self._log("running %s for container '%s'", self._tool_name, name)
         self.app.push_screen(ResultScreen(self._label, self._tool_name, {"container_name": name}))
 
@@ -334,14 +428,21 @@ class ContainerMultiSelectScreen(Screen):
 
     Lists every container (running or not) via tool_list_containers in a
     worker thread, then lets the user check any number of them with a
-    SelectionList (space toggles, enter runs). Selecting nothing and
-    pressing enter runs the tool for every running container, matching
+    SelectionList (space toggles, f2 runs). Selecting nothing and pressing
+    f2 runs the tool for every running container, matching
     tool_sync_docker_logs's own container_names=None ("all running") default.
+
+    f2 rather than enter: SelectionList/OptionList already binds enter to
+    its own "select" action (toggle highlighted row) with show=False — while
+    the list has focus, that shadows a screen-level "enter" binding both in
+    the Footer (hidden) and in actual key handling (Enter would just toggle
+    the row instead of fetching). Same class of bug as ConnectScreen's
+    f2-for-Connect fix.
     """
 
     BINDINGS = [
         ("space", "toggle_highlighted", "Toggle"),
-        ("enter", "run_selected", "Fetch"),
+        ("f2", "run_selected", "Fetch"),
         ("escape", "app.pop_screen", "Back to flows"),
     ]
     _log = staticmethod(action_logger("ContainerMultiSelectScreen"))
@@ -350,14 +451,26 @@ class ContainerMultiSelectScreen(Screen):
         super().__init__()
         self._label = label
         self._tool_name = tool_name
+        self._has_options = False
+
+    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        # "Toggle" is meaningless (and toggles nothing) until the container
+        # list has actually loaded — hide it from the Footer until then.
+        if action == "toggle_highlighted":
+            return self._has_options
+        return True
 
     def compose(self) -> ComposeResult:
         yield Header()
         yield breadcrumb_bar(2)
+        target = settings.docker_host or "local (unix socket)"
         with bordered(Container(classes="modal-box"), f"{step_prefix(2, TOTAL_STEPS)}{self._label}"):
+            with Horizontal(classes="status-chips"):
+                yield Static(f"● Connected: {target}", classes="status-chip connected")
+                yield Static(f"◔ Window: {settings.log_lookback_minutes} min", classes="status-chip")
             yield Label(self._label, classes="title")
             yield Static(
-                "Click or use ↑↓ + Space to toggle, Enter to fetch. "
+                "Click or use ↑↓ + Space to toggle, F2 to fetch. "
                 "None selected = all running containers.",
                 classes="hint-bar",
             )
@@ -381,6 +494,9 @@ class ContainerMultiSelectScreen(Screen):
         for c in result["containers"]:
             name = c.get("name", "?")
             select.add_option((name, name))
+        self._log("loaded %d containers to select from", len(result["containers"]))
+        self._has_options = True
+        self.refresh_bindings()
         self._update_selection_status()
         select.focus()
 
@@ -393,6 +509,8 @@ class ContainerMultiSelectScreen(Screen):
             status.update("None selected — will fetch all running containers")
 
     def on_selection_list_selected_changed(self, event: SelectionList.SelectedChanged) -> None:
+        selected = list(self.query_one("#container-select", SelectionList).selected)
+        self._log("selection changed, now selected=%s", selected or "<none>")
         self._update_selection_status()
 
     def action_toggle_highlighted(self) -> None:
@@ -486,11 +604,21 @@ class ResultScreen(Screen):
         self._json_visible = False
         self._result_text: str | None = None
 
+    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        # "Toggle raw JSON" / "Save JSON" are meaningless before the tool
+        # call finishes — hide them from the Footer until there's actually
+        # a result to toggle or save.
+        if action in ("toggle_json", "save_json"):
+            return self._result_text is not None
+        return True
+
     def compose(self) -> ComposeResult:
         yield Header()
         yield breadcrumb_bar(3)
+        target = settings.docker_host or "local (unix socket)"
         with bordered(VerticalScroll(classes="detail-box"), f"{step_prefix(3, TOTAL_STEPS)}{self._label}"):
             with Horizontal(classes="status-chips"):
+                yield Static(f"● Connected: {target}", classes="status-chip connected")
                 yield Static("… Running", id="status-chip", classes="status-chip")
                 yield Static(self._tool_name, classes="status-chip")
                 yield Static("", id="duration-chip", classes="status-chip")
@@ -544,17 +672,25 @@ class ResultScreen(Screen):
         summarized = summarizer(result)
         if summarized is None:
             return
-        headline, tiles = summarized
+        headline, names = summarized
         box = self.query_one("#summary-box", Container)
         box.mount(Label(headline, classes="summary-headline"))
-        if tiles:
-            tile_row = Horizontal(classes="stat-tiles")
-            box.mount(tile_row)
-            for tile_label, count in tiles:
-                tile = Container(classes="stat-tile")
-                tile_row.mount(tile)
-                tile.mount(Static(tile_label, classes="stat-tile-label"))
-                tile.mount(Static(str(count), classes="stat-tile-value"))
+        if names:
+            # Plain bullet list (no border/box per row, no gaps) — scales
+            # cleanly to the ~20+ containers a busy host can have. Same
+            # green/muted coloring as the "● Connected" status chip, just
+            # without the chip's border/padding/spacing.
+            name_list = Container(classes="name-list")
+            box.mount(name_list)
+            for name, status in names:
+                running = status == "running"
+                # Rich markup, not CSS — "$success"/"$text-muted" tokens
+                # aren't valid Rich style names (only work in CSS), hence
+                # plain Rich color names here (see memory:
+                # textual-rich-markup-escape-interpolation for the class of
+                # bug this avoids).
+                color = "green" if running else "dim"
+                name_list.mount(Static(f"[{color}]●[/{color}] {EventFeed.escape(name)}"))
 
     async def _run_tool(self) -> None:
         import asyncio
@@ -580,6 +716,7 @@ class ResultScreen(Screen):
             duration_chip.update(f"{elapsed * 1000:.0f}ms")
             if isinstance(result, dict):
                 self._render_summary(result)
+            self.refresh_bindings()
         except Exception as exc:  # noqa: BLE001 - surface any failure in the UI
             elapsed = time.monotonic() - started
             logger.exception("tui: ResultScreen — %s raised after %.2fs", self._tool_name, elapsed)
@@ -589,6 +726,7 @@ class ResultScreen(Screen):
             raw_feed.write_event("tool_crashed", EventFeed.escape(text))
             status_chip.update("✗ Error")
             duration_chip.update(f"{elapsed * 1000:.0f}ms")
+            self.refresh_bindings()
 
 
 class DockerTUIApp(App):
@@ -609,8 +747,10 @@ class DockerTUIApp(App):
     .gc-item { border-bottom: dashed $accent 50%; }
     .gc-item:last-of-type { border-bottom: none; }
     #connect-error { margin-top: 1; }
+    #connection-status { margin-bottom: 1; }
+    #connection-status.-hidden { display: none; }
     ListView { height: auto; max-height: 16; border: round $accent; }
-    #result-feed { height: 4; border: round $accent; }
+    #result-feed { height: auto; min-height: 3; max-height: 10; border: round $accent; }
 
     #container-select {
         border: round $accent; background: $panel;
@@ -637,9 +777,6 @@ class DockerTUIApp(App):
     #remote-section.-hidden { display: none; }
     .section-divider { height: 1; border-bottom: dashed $accent 50%; margin-bottom: 1; }
     .section-label { color: $text-muted; text-style: bold; margin-bottom: 1; }
-    .remote-input-row { height: auto; }
-    .remote-input-row Input { width: 1fr; }
-    .connect-hint { width: auto; color: $accent; text-style: bold; padding: 1 2; }
 
     .breadcrumb-bar { height: auto; padding: 1 2; border-bottom: solid $accent 30%; align: left middle; }
     .breadcrumb-chip { width: auto; height: 3; color: $text-muted; padding: 1 1; }
@@ -666,6 +803,7 @@ class DockerTUIApp(App):
     .stat-tile:last-of-type { margin-right: 0; }
     .stat-tile-label { color: $text-muted; }
     .stat-tile-value { text-style: bold; }
+    .name-list { height: auto; margin-top: 1; padding: 1 2; border: round $accent 50%; background: $panel; }
     #json-toggle { margin-top: 1; }
     #raw-json-feed { height: 12; border: round $accent; margin-top: 1; }
     #raw-json-feed.-hidden { display: none; }
@@ -693,7 +831,21 @@ class DockerTUIApp(App):
 
 
 def run() -> None:
-    DockerTUIApp().run()
+    # Textual owns the whole terminal via an alt-screen buffer — a stray
+    # stderr log write (logger's default StreamHandler) lands directly on
+    # top of the rendered UI instead of scrolling normally. File logging via
+    # settings/config.py stays intact; only the console handler is dropped.
+    logger.disable_console_logging()
+    try:
+        DockerTUIApp().run()
+    except Exception:
+        # Crashes here (e.g. a CSS parse error) happen during App
+        # registration, before DockerTUIApp.on_mount ever runs its own
+        # "app — started" log line — without this, such a crash leaves no
+        # trace in the JSONL log at all, only an exception on stderr that's
+        # invisible once Textual's alt-screen has taken over the terminal.
+        logger.exception("tui: app — crashed before/during run()")
+        raise
 
 
 if __name__ == "__main__":

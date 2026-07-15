@@ -39,11 +39,34 @@ def _reset_docker_host():
     settings.log_lookback_minutes = original_lookback
 
 
+@pytest.fixture(autouse=True)
+def _fake_docker_available(monkeypatch):
+    """ConnectScreen.action_use_local/action_connect_remote now run a real
+    connectivity check (tools.tool_list_containers) via a worker before
+    advancing past Connect — stub a fast success response by default so
+    these stay Docker-free/deterministic per CLAUDE.md's unit-test rules.
+    A test that needs a different result (e.g. exercising the failure path)
+    just calls monkeypatch.setattr again itself, which overrides this."""
+    monkeypatch.setattr(
+        tools, "tool_list_containers",
+        lambda: {"status": "success", "containers": [], "count": 0},
+    )
+
+
+async def _await_connection_test(pilot) -> None:
+    """ConnectScreen's connection-test worker does asyncio.to_thread(...) then
+    (on success) `await asyncio.sleep(0.6)` before pushing WindowScreen —
+    callers must wait out that pause before asserting the screen changed."""
+    await pilot.pause()
+    await asyncio.sleep(0.8)
+    await pilot.pause()
+
+
 async def _connect_local_and_pick_window(pilot, minutes_key: str = "2") -> None:
     """Shared helper: press 'l' for local Docker, then pick a time window
     (default '2' = 10 min), landing on MenuScreen."""
     await pilot.press("l")
-    await pilot.pause()
+    await _await_connection_test(pilot)
     await pilot.press(minutes_key)
     await pilot.pause()
 
@@ -76,7 +99,7 @@ async def test_clicking_local_daemon_card_advances_to_window_screen():
     async with app.run_test() as pilot:
         card = app.screen.query(".daemon-card").first()
         await pilot.click(card)
-        await pilot.pause()
+        await _await_connection_test(pilot)
         assert isinstance(app.screen, WindowScreen)
         assert settings.docker_host == ""
 
@@ -85,7 +108,7 @@ async def test_clicking_window_card_sets_lookback_and_advances():
     app = DockerTUIApp()
     async with app.run_test() as pilot:
         await pilot.press("l")
-        await pilot.pause()
+        await _await_connection_test(pilot)
         cards = app.screen.query(".window-card")
         await pilot.click(cards[2])  # "30 min"
         await pilot.pause()
@@ -98,7 +121,7 @@ async def test_local_connect_goes_to_window_screen():
     async with app.run_test() as pilot:
         assert isinstance(app.screen, ConnectScreen)
         await pilot.press("l")
-        await pilot.pause()
+        await _await_connection_test(pilot)
         assert isinstance(app.screen, WindowScreen)
         assert settings.docker_host == ""
 
@@ -107,7 +130,7 @@ async def test_window_screen_choices_set_log_lookback_minutes():
     app = DockerTUIApp()
     async with app.run_test() as pilot:
         await pilot.press("l")
-        await pilot.pause()
+        await _await_connection_test(pilot)
         assert isinstance(app.screen, WindowScreen)
 
         await pilot.press("3")  # 30 min
@@ -124,7 +147,7 @@ async def test_remote_connect_builds_ssh_docker_host_with_default_user(monkeypat
         await pilot.press("r")
         await pilot.press(*"10.0.0.5")
         await pilot.press("enter")
-        await pilot.pause()
+        await _await_connection_test(pilot)
 
         assert isinstance(app.screen, WindowScreen)
         assert settings.docker_host == "ssh://devuser@10.0.0.5"
@@ -182,22 +205,23 @@ async def test_escape_with_nothing_focused_on_connect_screen_quits():
         assert not app.is_running
 
 
-def test_prompts_menu_has_exactly_eight_entries():
-    assert len(PROMPTS) == 8
+def test_prompts_menu_has_entries():
+    assert len(PROMPTS) > 0
     for label, tool_name, required_arg, category, icon in PROMPTS:
         assert hasattr(tools, tool_name), f"{tool_name} missing from tools.py"
-        assert required_arg in (None, "container_name")
+        assert required_arg in (None, "container_name", "multi_container_names")
         assert category in PROMPT_CATEGORIES
         assert icon
 
 
-async def test_menu_lists_all_eight_prompts():
+async def test_menu_lists_all_prompts():
     app = DockerTUIApp()
     async with app.run_test() as pilot:
         await _connect_local_and_pick_window(pilot)
         # .gc-item excludes the interspersed .category-header rows.
         items = app.screen.query("ListView > ListItem.gc-item")
-        assert len(items) == 8
+        assert len(items) > 0
+        assert len(items) == len(PROMPTS)
 
 
 async def test_menu_groups_prompts_into_categories():
@@ -316,26 +340,39 @@ async def test_menu_status_chips_show_connection_and_window():
         assert "Window: 5 min" in chip_text
 
 
-async def test_container_name_screen_requires_input():
+async def test_container_name_screen_shows_error_when_no_containers(monkeypatch):
+    """ContainerNameScreen picks from tool_list_containers (a ListView, not
+    free text — see task:a638ca4b) — when there's nothing to pick from, it
+    must show an error rather than a silently empty list."""
+    monkeypatch.setattr(
+        tools, "tool_list_containers",
+        lambda: {"status": "success", "containers": [], "count": 0},
+    )
+
     app = DockerTUIApp()
     async with app.run_test() as pilot:
         screen = ContainerNameScreen("Last errors for a container", "tool_get_last_errors")
         await app.push_screen(screen)
         await pilot.pause()
-
-        name_input = app.screen.query_one("#container-name")
-        name_input.focus()
-        await pilot.press("enter")
+        await asyncio.sleep(0.2)
         await pilot.pause()
 
-        # Empty name -> stays on the same screen with an error.
         assert isinstance(app.screen, ContainerNameScreen)
         error = app.screen.query_one("#connect-error")
-        assert "Container name required" in str(error.render())
+        assert "No containers found" in str(error.render())
 
 
 async def test_container_name_screen_runs_tool_with_name(monkeypatch):
     captured = {}
+
+    monkeypatch.setattr(
+        tools, "tool_list_containers",
+        lambda: {
+            "status": "success",
+            "containers": [{"name": "web-app", "status": "running"}],
+            "count": 1,
+        },
+    )
 
     def _fake_last_errors(container_name):
         captured["container_name"] = container_name
@@ -348,10 +385,11 @@ async def test_container_name_screen_runs_tool_with_name(monkeypatch):
         screen = ContainerNameScreen("Last errors for a container", "tool_get_last_errors")
         await app.push_screen(screen)
         await pilot.pause()
+        await asyncio.sleep(0.2)
+        await pilot.pause()
 
-        name_input = app.screen.query_one("#container-name")
-        name_input.focus()
-        await pilot.press(*"web-app")
+        # Only one container loaded -> it's the highlighted row; Enter
+        # selects it (ListView's own binding -> on_list_view_selected).
         await pilot.press("enter")
         await pilot.pause()
 
@@ -424,7 +462,7 @@ async def test_screens_have_border_titles():
     async with app.run_test() as pilot:
         assert app.screen.query_one(".connect-box").border_title
         await pilot.press("l")
-        await pilot.pause()
+        await _await_connection_test(pilot)
         assert isinstance(app.screen, WindowScreen)
         assert app.screen.query_one(".connect-box").border_title
         await pilot.press("2")

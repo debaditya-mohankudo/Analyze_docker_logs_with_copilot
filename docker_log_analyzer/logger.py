@@ -93,6 +93,18 @@ class LoggerDecorator:
         handler.setFormatter(JsonlFormatter())
         self._logger.addHandler(handler)
 
+    def disable_console_logging(self) -> None:
+        """Drop the stderr StreamHandler, keeping only the file handler(s).
+
+        The MCP stdio server is fine with stderr output (it doesn't share
+        stdout's JSON-RPC channel), but a Textual TUI owns the whole terminal
+        via an alt-screen buffer — any stray stderr write lands directly on
+        top of the rendered UI instead of scrolling normally. The TUI entry
+        point calls this before starting the App."""
+        for h in list(self._logger.handlers):
+            if isinstance(h, logging.StreamHandler) and not isinstance(h, logging.handlers.RotatingFileHandler):
+                self._logger.removeHandler(h)
+
     # Delegate logging methods to wrapped logger.
     #
     # stacklevel defaults to 2 here: one frame for this method, so the
@@ -158,6 +170,10 @@ class LoggerWithRunID:
         server process. Separate from the Docker container logs the tools
         analyze — see JsonlFormatter."""
         self._decorator.enable_file_logging(path, max_bytes, backup_count)
+
+    def disable_console_logging(self) -> None:
+        """Drop the stderr handler — see LoggerDecorator.disable_console_logging."""
+        self._decorator.disable_console_logging()
 
     # Delegate all methods to the decorator. stacklevel=3 accounts for this
     # extra wrapping layer (LoggerWithRunID.info -> LoggerDecorator.info ->

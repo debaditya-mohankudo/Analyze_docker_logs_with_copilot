@@ -1297,3 +1297,63 @@ class TestToolExtractApisAndQueriesContract:
             out = tools.tool_extract_apis_and_queries()
         assert out["cache_hits"]["svc"] is True
         assert out["cache_hits"]["svc"] is True
+
+
+class TestLogLookbackWindowRespected:
+    """settings.log_lookback_minutes (set by WindowScreen in the TUI) must be
+    re-read at call time by every time-windowed tool, not captured once at
+    import — otherwise picking a different window in the TUI would silently
+    have no effect on what gets fetched. See task:a638ca4b / [[docker-log-
+    analyzer-log-window-must-be-live]]."""
+
+    def test_tool_sync_docker_logs_uses_current_log_lookback_minutes(self, monkeypatch):
+        monkeypatch.setattr(tools.settings, "log_lookback_minutes", 7)
+        c = _FakeContainer("/svc")
+        client = _mock_client(list_containers=[c])
+
+        with patch("docker_log_analyzer.tools._docker_client", return_value=client):
+            out = tools.tool_sync_docker_logs()
+
+        assert out["status"] == "success"
+        since = datetime.fromisoformat(out["time_window"]["since"])
+        until = datetime.fromisoformat(out["time_window"]["until"])
+        assert (until - since).total_seconds() == pytest.approx(7 * 60, abs=1)
+
+        monkeypatch.setattr(tools.settings, "log_lookback_minutes", 45)
+        with patch("docker_log_analyzer.tools._docker_client", return_value=client):
+            out = tools.tool_sync_docker_logs()
+        since = datetime.fromisoformat(out["time_window"]["since"])
+        until = datetime.fromisoformat(out["time_window"]["until"])
+        assert (until - since).total_seconds() == pytest.approx(45 * 60, abs=1)
+
+    def test_tool_sync_docker_logs_explicit_since_overrides_window(self, monkeypatch):
+        """An explicit `since` argument (not the TUI path, but used by callers
+        that want a specific window) must win over settings.log_lookback_minutes."""
+        monkeypatch.setattr(tools.settings, "log_lookback_minutes", 7)
+        c = _FakeContainer("/svc")
+        client = _mock_client(list_containers=[c])
+
+        with patch("docker_log_analyzer.tools._docker_client", return_value=client):
+            out = tools.tool_sync_docker_logs(since="2020-01-01T00:00:00Z")
+
+        assert datetime.fromisoformat(out["time_window"]["since"]).year == 2020
+
+    def test_tool_analyze_patterns_uses_current_log_lookback_minutes(self, monkeypatch):
+        monkeypatch.setattr(tools.settings, "log_lookback_minutes", 12)
+        c = _FakeContainer("/svc")
+        client = _mock_client(list_containers=[c])
+        captured = {}
+
+        def _fake_fetch_with_cache(container, name, since, until, **kwargs):
+            captured["since"] = since
+            captured["until"] = until
+            return [], False
+
+        with patch("docker_log_analyzer.tools._docker_client", return_value=client), \
+             patch("docker_log_analyzer.tools._read_cache", return_value=None), \
+             patch("docker_log_analyzer.tools._fetch_logs_with_cache", side_effect=_fake_fetch_with_cache):
+            out = tools.tool_analyze_patterns(force_refresh=True)
+
+        assert out["status"] == "success"
+        elapsed = (captured["until"] - captured["since"]).total_seconds()
+        assert elapsed == pytest.approx(12 * 60, abs=1)
