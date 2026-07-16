@@ -1402,6 +1402,14 @@ class DockerTUIApp(App):
     .title { text-style: bold; margin-bottom: 1; }
     .gc-item { border-bottom: dashed $accent 50%; }
     .gc-item:last-of-type { border-bottom: none; }
+    /* Textual's default ListItem cursor (.-highlight) uses
+       $block-cursor-*-background — a fully opaque theme color that reads
+       as a harsh solid block bleeding past the bordered box around it.
+       Replace with a low-opacity tint of our own $accent (already used
+       for every border/chip in this app) so the highlight reads as part
+       of the same visual language instead of a jarring full-width slab. */
+    ListView > ListItem.-highlight { background: $accent 20%; color: $text; text-style: none; }
+    ListView:focus > ListItem.-highlight { background: $accent 30%; color: $text; text-style: bold; }
     #connect-error { margin-top: 1; }
     #connection-status { margin-bottom: 1; }
     #connection-status.-hidden { display: none; }
