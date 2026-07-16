@@ -71,7 +71,7 @@ WINDOW_CHOICES: list[tuple[str, int]] = [
 
 PROMPTS: list[tuple[str, str, str | None, str, str]] = [
     ("List running containers", "tool_list_containers", None, "OVERVIEW", "□"),
-    ("Fetch logs for container(s)", "tool_sync_docker_logs", "multi_container_names", "OVERVIEW", "⇊"),
+    ("Fetch logs for container(s)", "tool_sync_docker_logs", "multi_container_names", "CONTAINER LOOKUP", "⇊"),
     ("Full system health report (all containers)", "tool_analyze_patterns", None, "HEALTH & ROOT CAUSE", "◎"),
     ("Error rate spikes", "tool_analyze_error_spikes", None, "ANOMALIES & DEPENDENCIES", "▲"),
     ("Cross-container error correlation", "tool_analyze_correlations", None, "ANOMALIES & DEPENDENCIES", "⇄"),
