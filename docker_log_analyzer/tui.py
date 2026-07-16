@@ -585,7 +585,7 @@ class MenuScreen(Screen):
 
 class ResultScreen(Screen):
     """Runs the selected tool_* function in a worker thread and shows the result:
-    a status/tool/duration chips row, a parsed summary + stat tiles when a
+    a status/tool/lookback chips row, a parsed summary + stat tiles when a
     summarizer exists for this tool (RESULT_SUMMARIZERS), and the raw JSON
     behind a collapsible toggle (press 'j')."""
 
@@ -621,7 +621,7 @@ class ResultScreen(Screen):
                 yield Static(f"● Connected: {target}", classes="status-chip connected")
                 yield Static("… Running", id="status-chip", classes="status-chip")
                 yield Static(self._tool_name, classes="status-chip")
-                yield Static("", id="duration-chip", classes="status-chip")
+                yield Static(f"Lookback: {settings.log_lookback_minutes}m", classes="status-chip")
             yield EventFeed(id="result-feed")
             yield Container(id="summary-box")
             yield Static("▶ Show raw JSON [j]", id="json-toggle", classes="hint-bar")
@@ -699,7 +699,6 @@ class ResultScreen(Screen):
         feed = self.query_one("#result-feed", EventFeed)
         raw_feed = self.query_one("#raw-json-feed", EventFeed)
         status_chip = self.query_one("#status-chip", Static)
-        duration_chip = self.query_one("#duration-chip", Static)
         fn = getattr(tools, self._tool_name)
         started = time.monotonic()
         try:
@@ -713,7 +712,6 @@ class ResultScreen(Screen):
             raw_feed.write_event("tool_done", EventFeed.escape(text))
             status_chip.update("✓ Success" if status == "success" else f"✗ {status}")
             status_chip.set_class(status == "success", "status-chip-success")
-            duration_chip.update(f"{elapsed * 1000:.0f}ms")
             if isinstance(result, dict):
                 self._render_summary(result)
             self.refresh_bindings()
@@ -725,7 +723,6 @@ class ResultScreen(Screen):
             feed.write_event("tool_crashed", EventFeed.escape(str(exc)))
             raw_feed.write_event("tool_crashed", EventFeed.escape(text))
             status_chip.update("✗ Error")
-            duration_chip.update(f"{elapsed * 1000:.0f}ms")
             self.refresh_bindings()
 
 
