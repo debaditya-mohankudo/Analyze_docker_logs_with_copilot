@@ -50,7 +50,7 @@ else:
 
 # Total steps in the connect -> window -> menu -> (optional container-name)
 # -> result flow, for step_prefix's "[n/TOTAL_STEPS]" counters and the
-# breadcrumb bar (see breadcrumb_bar()).
+# breadcrumb bar (see BreadcrumbBar).
 TOTAL_STEPS = 4
 STEP_NAMES = ["Connect", "Window", "Menu", "Result"]
 
@@ -100,17 +100,62 @@ def action_logger(component: str) -> Callable[..., None]:
     return _log
 
 
-def breadcrumb_bar(current_index: int) -> Horizontal:
+class BreadcrumbBar(Horizontal):
     """"1 . Connect > 2 . Window > 3 . Menu > 4 . Result" stepper bar, current
-    step highlighted — yielded at the top of every screen's compose(), above
-    the screen's own bordered [n/TOTAL_STEPS] box."""
-    chips: list[Widget] = []
-    for i, name in enumerate(STEP_NAMES):
-        classes = "breadcrumb-chip active" if i == current_index else "breadcrumb-chip"
-        chips.append(Static(f"{i + 1} · {name}", classes=classes))
-        if i < len(STEP_NAMES) - 1:
-            chips.append(Static("›", classes="breadcrumb-sep"))
-    return Horizontal(*chips, classes="breadcrumb-bar")
+    step highlighted — mounted at the top of every screen's compose(), above
+    the screen's own bordered [n/TOTAL_STEPS] box.
+
+    Also carries a permanently-present 5th "Background job" chip, grey by
+    default, that lights up and blinks whenever a tool_capture_logs worker
+    is still running in the background (see ResultScreen.on_mount's
+    App-owned worker with group="capture-<id>"). Without this, navigating
+    away from a running capture gives no ambient sign it's still going —
+    auto-save/toast (task:97300a1a) tell you *after* it finishes, this
+    tells you *while* it's still running, from any screen."""
+
+    _BG_IDLE_LABEL = "5 · Background job"
+
+    def __init__(self, current_index: int) -> None:
+        self._current_index = current_index
+        super().__init__(classes="breadcrumb-bar")
+
+    def compose(self) -> ComposeResult:
+        for i, name in enumerate(STEP_NAMES):
+            classes = "breadcrumb-chip active" if i == self._current_index else "breadcrumb-chip"
+            yield Static(f"{i + 1} · {name}", classes=classes)
+            if i < len(STEP_NAMES) - 1:
+                yield Static("›", classes="breadcrumb-sep")
+        yield Static("›", id="breadcrumb-bg-sep", classes="breadcrumb-sep")
+        yield Static(self._BG_IDLE_LABEL, id="breadcrumb-bg-chip", classes="breadcrumb-chip breadcrumb-chip-bg")
+
+    def on_mount(self) -> None:
+        self._refresh_background_chip()
+        # Ticks independently of ResultScreen's own timer — this bar is
+        # mounted on every screen, including ones with no running capture
+        # of their own, so it needs to notice a capture elsewhere finishing
+        # while, say, MenuScreen is what's currently on screen.
+        self.set_interval(1.0, self._refresh_background_chip)
+
+    def _refresh_background_chip(self) -> None:
+        from textual.worker import WorkerState
+
+        try:
+            sep = self.query_one("#breadcrumb-bg-sep", Static)
+            chip = self.query_one("#breadcrumb-bg-chip", Static)
+        except Exception:
+            return  # bar no longer mounted
+        running = [
+            w for w in self.app.workers
+            if w.group and w.group.startswith("capture-") and w.state == WorkerState.RUNNING
+        ]
+        if running:
+            count_suffix = f" ({len(running)})" if len(running) > 1 else ""
+            chip.update(f"[blink]5 · ● Background job{count_suffix}[/blink]")
+            sep.update("[blink]›[/blink]")
+        else:
+            chip.update(self._BG_IDLE_LABEL)
+            sep.update("›")
+        chip.set_class(bool(running), "breadcrumb-chip-bg-active")
 
 
 class ClickableCard(Container):
@@ -257,7 +302,7 @@ class ConnectScreen(Screen):
 
     def compose(self) -> ComposeResult:
         yield Header()
-        yield breadcrumb_bar(0)
+        yield BreadcrumbBar(0)
         with bordered(Container(classes="connect-box"), f"{step_prefix(0, TOTAL_STEPS)}Connect"):
             yield Static("", id="connection-status", classes="-hidden")
             yield Label("Choose Docker daemon", classes="title")
@@ -379,7 +424,7 @@ class WindowScreen(Screen):
 
     def compose(self) -> ComposeResult:
         yield Header()
-        yield breadcrumb_bar(1)
+        yield BreadcrumbBar(1)
         target = settings.docker_host or "local (unix socket)"
         with bordered(Container(classes="connect-box"), f"{step_prefix(1, TOTAL_STEPS)}Time window"):
             with Horizontal(classes="status-chips"):
@@ -424,7 +469,7 @@ class ContainerNameScreen(Screen):
 
     def compose(self) -> ComposeResult:
         yield Header()
-        yield breadcrumb_bar(2)
+        yield BreadcrumbBar(2)
         target = settings.docker_host or "local (unix socket)"
         with bordered(Container(classes="modal-box"), f"{step_prefix(2, TOTAL_STEPS)}{self._label}"):
             with Horizontal(classes="status-chips"):
@@ -509,7 +554,7 @@ class ContainerMultiSelectScreen(Screen):
 
     def compose(self) -> ComposeResult:
         yield Header()
-        yield breadcrumb_bar(2)
+        yield BreadcrumbBar(2)
         target = settings.docker_host or "local (unix socket)"
         with bordered(Container(classes="modal-box"), f"{step_prefix(2, TOTAL_STEPS)}{self._label}"):
             with Horizontal(classes="status-chips"):
@@ -606,7 +651,7 @@ class CaptureLogsScreen(Screen):
 
     def compose(self) -> ComposeResult:
         yield Header()
-        yield breadcrumb_bar(2)
+        yield BreadcrumbBar(2)
         target = settings.docker_host or "local (unix socket)"
         with bordered(Container(classes="modal-box"), f"{step_prefix(2, TOTAL_STEPS)}{self._label}"):
             with Horizontal(classes="status-chips"):
@@ -699,7 +744,7 @@ class MenuScreen(Screen):
 
     def compose(self) -> ComposeResult:
         yield Header()
-        yield breadcrumb_bar(2)
+        yield BreadcrumbBar(2)
         target = settings.docker_host or "local (unix socket)"
         with bordered(Container(classes="detail-box"), f"{step_prefix(2, TOTAL_STEPS)}Pick a prompt"):
             with Horizontal(classes="status-chips"):
@@ -814,7 +859,7 @@ class ResultScreen(Screen):
 
     def compose(self) -> ComposeResult:
         yield Header()
-        yield breadcrumb_bar(3)
+        yield BreadcrumbBar(3)
         target = settings.docker_host or "local (unix socket)"
         with bordered(VerticalScroll(classes="detail-box"), f"{step_prefix(3, TOTAL_STEPS)}{self._label}"):
             with Horizontal(classes="status-chips"):
@@ -1095,6 +1140,8 @@ class DockerTUIApp(App):
     .breadcrumb-chip { width: auto; height: 3; color: $text-muted; padding: 1 1; }
     .breadcrumb-chip.active { color: $accent; text-style: bold; border: round $accent; padding: 0 1; }
     .breadcrumb-sep { width: auto; height: 3; color: $text-muted; padding: 1 1; }
+    .breadcrumb-chip-bg { color: $text-muted 40%; }
+    .breadcrumb-chip-bg.breadcrumb-chip-bg-active { color: $warning; text-style: bold; border: round $warning; padding: 0 1; }
 
     .status-chips { height: auto; margin-bottom: 1; }
     .status-chip {
