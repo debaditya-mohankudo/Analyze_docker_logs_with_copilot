@@ -751,6 +751,7 @@ class ResultScreen(Screen):
         self._kwargs = kwargs
         self._json_visible = False
         self._result_text: str | None = None
+        self._started_monotonic: float | None = None
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
         # "Toggle raw JSON" / "Save JSON" are meaningless before the tool
@@ -760,16 +761,27 @@ class ResultScreen(Screen):
             return self._result_text is not None
         return True
 
+    @staticmethod
+    def _format_mmss(seconds: float) -> str:
+        seconds = max(0, int(seconds))
+        return f"{seconds // 60}:{seconds % 60:02d}"
+
     def _window_chip_text(self) -> str:
         """tool_capture_logs takes its own duration_seconds (from
         CaptureLogsScreen's minutes input) rather than the global
         settings.log_lookback_minutes every other tool uses — show whichever
         one this run is actually using instead of always showing the global
-        setting regardless of tool."""
+        setting regardless of tool. While a capture is still running, this
+        counts down live instead of showing a static total (see _tick_timer)."""
         if self._tool_name == "tool_capture_logs":
-            seconds = self._kwargs.get("duration_seconds")
-            if seconds:
-                return f"Capturing: {seconds // 60}m"
+            total = self._kwargs.get("duration_seconds")
+            if total:
+                if self._result_text is None and self._started_monotonic is not None:
+                    import time
+
+                    remaining = total - (time.monotonic() - self._started_monotonic)
+                    return f"Capturing: {self._format_mmss(remaining)} remaining"
+                return f"Capturing: {total // 60}m"
         return f"Lookback: {settings.log_lookback_minutes}m"
 
     def compose(self) -> ComposeResult:
@@ -781,7 +793,7 @@ class ResultScreen(Screen):
                 yield Static(f"● Connected: {target}", classes="status-chip connected")
                 yield Static("… Running", id="status-chip", classes="status-chip")
                 yield Static(self._tool_name, classes="status-chip")
-                yield Static(self._window_chip_text(), classes="status-chip")
+                yield Static(self._window_chip_text(), id="window-chip", classes="status-chip")
             yield EventFeed(id="result-feed")
             yield Container(id="summary-box")
             yield Static("▶ Show raw JSON [j]", id="json-toggle", classes="hint-bar")
@@ -789,11 +801,28 @@ class ResultScreen(Screen):
         yield Footer()
 
     def on_mount(self) -> None:
+        import time
+
         self._log("running %s, kwargs=%s", self._tool_name, self._kwargs)
         self.query_one("#result-feed", EventFeed).write_event(
             "tool_call", EventFeed.escape(f"Running {self._tool_name}...")
         )
+        self._started_monotonic = time.monotonic()
+        if self._tool_name == "tool_capture_logs":
+            # Ticks the "Capturing: Nm remaining" chip once a second so a
+            # capture in progress shows live countdown instead of a static
+            # total. Textual cancels widget-owned interval timers
+            # automatically on unmount, so no explicit cleanup is needed.
+            self.set_interval(1.0, self._tick_timer)
         self.run_worker(self._run_tool(), exclusive=True)
+
+    def _tick_timer(self) -> None:
+        if self._result_text is not None:
+            return
+        try:
+            self.query_one("#window-chip", Static).update(self._window_chip_text())
+        except Exception:
+            pass  # screen no longer mounted (e.g. capture kept running in the background)
 
     def action_toggle_json(self) -> None:
         self._json_visible = not self._json_visible
