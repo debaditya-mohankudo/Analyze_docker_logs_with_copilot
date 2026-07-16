@@ -184,7 +184,18 @@ def _summarize_capture_logs(result: dict) -> tuple[str, list[tuple[str, str]]] |
             if k in ("ERROR", "CRITICAL", "FATAL", "SEVERE")
         )
         status = "running" if errors == 0 else "errors"
-        rows.append((f"{name} — {lines} lines, {errors} errors", status))
+        row = f"{name} — {lines} lines, {errors} errors"
+        # Surface the actual error text, not just the count — top_errors is
+        # already computed by the tool (detector.extract_error_patterns) but
+        # was previously discarded here, leaving no way to see *what* broke
+        # without opening the raw JSON.
+        top_errors = pc.get("top_errors") or []
+        if top_errors:
+            patterns = ", ".join(
+                f"{e['pattern']} (x{e['count']})" for e in top_errors[:3]
+            )
+            row += f": {patterns}"
+        rows.append((row, status))
     return headline, rows
 
 
@@ -751,6 +762,7 @@ class ResultScreen(Screen):
         self._kwargs = kwargs
         self._json_visible = False
         self._result_text: str | None = None
+        self._result_dict: dict | None = None
         self._started_monotonic: float | None = None
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
@@ -853,6 +865,31 @@ class ResultScreen(Screen):
         except OSError as exc:
             logger.exception("tui: ResultScreen — failed saving JSON to %s", path)
             feed.write_event("info", EventFeed.escape(f"save failed: {exc}"))
+            return
+        self._save_raw_logs(downloads, timestamp, feed)
+
+    def _save_raw_logs(self, downloads: Path, timestamp: str, feed: EventFeed) -> None:
+        """tool_capture_logs's result carries a raw_logs field (per-container
+        log lines) alongside the analysis — separate from action_save_json's
+        JSON dump, teammates auditing a captured incident usually want the
+        plain log text itself, not the JSON report. Written as one .log file
+        per container next to the JSON, deliberately outside .cache/logs/
+        since this tool doesn't participate in the Parquet cache by design."""
+        if self._tool_name != "tool_capture_logs" or not self._result_dict:
+            return
+        raw_logs = self._result_dict.get("raw_logs")
+        if not raw_logs:
+            return
+        for name, lines in raw_logs.items():
+            safe_container = re.sub(r"[^A-Za-z0-9_-]+", "_", name)
+            path = downloads / f"capture_{safe_container}_{timestamp}.log"
+            try:
+                path.write_text("\n".join(lines))
+                self._log("saved raw logs for %s to %s", name, path)
+                feed.write_event("info", EventFeed.escape(f"raw logs for {name} saved to {path}"))
+            except OSError as exc:
+                logger.exception("tui: ResultScreen — failed saving raw logs for %s to %s", name, path)
+                feed.write_event("info", EventFeed.escape(f"raw log save failed for {name}: {exc}"))
 
     def _render_summary(self, result: dict) -> None:
         summarizer = RESULT_SUMMARIZERS.get(self._tool_name)
@@ -895,6 +932,7 @@ class ResultScreen(Screen):
             elapsed = time.monotonic() - started
             text = json.dumps(result, indent=2, default=str)
             self._result_text = text
+            self._result_dict = result if isinstance(result, dict) else None
             status = result.get("status") if isinstance(result, dict) else "?"
             self._log("%s completed in %.2fs, status=%s", self._tool_name, elapsed, status)
             feed.write_event("tool_done", EventFeed.escape(f"done ({status})"))

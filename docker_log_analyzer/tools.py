@@ -601,6 +601,11 @@ def tool_capture_logs(
         "error_spikes": all_spikes,
         "correlations": correlations,
         "per_container": per_container,
+        # Raw lines are included (not just the analysis) so the TUI can
+        # write them out to a plain-text file for handoff/audit purposes —
+        # separate from the .cache/logs/ Parquet cache, which this tool
+        # deliberately does not write to (analysis-only tool by design).
+        "raw_logs": container_logs,
     }
 
 
