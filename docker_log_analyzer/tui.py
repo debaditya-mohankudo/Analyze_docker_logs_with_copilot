@@ -780,6 +780,15 @@ class ResultScreen(Screen):
             return self._result_text is not None
         return True
 
+    @property
+    def _is_background_capture(self) -> bool:
+        """tool_capture_logs is the one tool whose worker survives screen
+        navigation instead of being cancelled on pop (see on_mount) — every
+        special-case branch in this class (window-chip countdown, timer
+        tick, worker ownership, auto-save-on-completion) keys off this same
+        check, so it lives in one place instead of being repeated."""
+        return self._tool_name == "tool_capture_logs"
+
     @staticmethod
     def _format_mmss(seconds: float) -> str:
         seconds = max(0, int(seconds))
@@ -792,7 +801,7 @@ class ResultScreen(Screen):
         one this run is actually using instead of always showing the global
         setting regardless of tool. While a capture is still running, this
         counts down live instead of showing a static total (see _tick_timer)."""
-        if self._tool_name == "tool_capture_logs":
+        if self._is_background_capture:
             total = self._kwargs.get("duration_seconds")
             if total:
                 if self._result_text is None and self._started_monotonic is not None:
@@ -827,13 +836,25 @@ class ResultScreen(Screen):
             "tool_call", EventFeed.escape(f"Running {self._tool_name}...")
         )
         self._started_monotonic = time.monotonic()
-        if self._tool_name == "tool_capture_logs":
+        if self._is_background_capture:
             # Ticks the "Capturing: Nm remaining" chip once a second so a
             # capture in progress shows live countdown instead of a static
             # total. Textual cancels widget-owned interval timers
             # automatically on unmount, so no explicit cleanup is needed.
             self.set_interval(1.0, self._tick_timer)
-        self.run_worker(self._run_tool(), exclusive=True)
+            # App-owned (not self.run_worker, which Textual cancels when
+            # this Screen is unmounted) — navigating away must not abandon
+            # the capture. asyncio.to_thread's underlying OS thread (running
+            # time.sleep(duration_seconds) inside tool_capture_logs) can't
+            # be killed anyway, so an app-owned worker just keeps tracking
+            # it through to completion instead of orphaning it silently.
+            # exclusive=False + a per-instance group: concurrent captures
+            # are explicitly allowed (task:97300a1a) — each opens its own
+            # independent DockerClient with no shared state, so one
+            # capture's worker must never cancel another's.
+            self.app.run_worker(self._run_tool(), exclusive=False, group=f"capture-{id(self)}")
+        else:
+            self.run_worker(self._run_tool(), exclusive=True)
 
     def _tick_timer(self) -> None:
         if self._result_text is not None:
@@ -863,40 +884,82 @@ class ResultScreen(Screen):
         downloads = Path.home() / "Downloads"
         downloads.mkdir(parents=True, exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        json_path = self._write_json_file(downloads, timestamp)
+        if json_path is None:
+            feed.write_event("info", EventFeed.escape("save failed — see log"))
+            return
+        feed.write_event("info", EventFeed.escape(f"saved to {json_path}"))
+        for name, filename in self._write_raw_log_files(downloads, timestamp):
+            feed.write_event("info", EventFeed.escape(f"raw logs for {name} saved to {downloads / filename}"))
+
+    def _write_json_file(self, downloads: Path, timestamp: str) -> Path | None:
         safe_name = re.sub(r"[^A-Za-z0-9_-]+", "_", self._tool_name)
         path = downloads / f"{safe_name}_{timestamp}.json"
         try:
             path.write_text(self._result_text)
             self._log("saved raw JSON to %s", path)
-            feed.write_event("info", EventFeed.escape(f"saved to {path}"))
-        except OSError as exc:
+            return path
+        except OSError:
             logger.exception("tui: ResultScreen — failed saving JSON to %s", path)
-            feed.write_event("info", EventFeed.escape(f"save failed: {exc}"))
-            return
-        self._save_raw_logs(downloads, timestamp, feed)
+            return None
 
-    def _save_raw_logs(self, downloads: Path, timestamp: str, feed: EventFeed) -> None:
+    def _write_raw_log_files(self, downloads: Path, timestamp: str) -> list[tuple[str, str]]:
         """tool_capture_logs's result carries a raw_logs field (per-container
-        log lines) alongside the analysis — separate from action_save_json's
-        JSON dump, teammates auditing a captured incident usually want the
-        plain log text itself, not the JSON report. Written as one .log file
-        per container next to the JSON, deliberately outside .cache/logs/
-        since this tool doesn't participate in the Parquet cache by design."""
-        if self._tool_name != "tool_capture_logs" or not self._result_dict:
-            return
+        log lines) alongside the analysis — teammates auditing a captured
+        incident usually want the plain log text itself, not the JSON
+        report. Written as one .log file per container next to the JSON,
+        deliberately outside .cache/logs/ since this tool doesn't
+        participate in the Parquet cache by design.
+
+        Shared by both the manual "s" save and the completion auto-save
+        (see _auto_save_and_notify) so the two never diverge on what gets
+        written. Returns (container_name, filename) pairs for whichever
+        files were written successfully."""
+        if not self._is_background_capture or not self._result_dict:
+            return []
         raw_logs = self._result_dict.get("raw_logs")
         if not raw_logs:
-            return
+            return []
+        written: list[tuple[str, str]] = []
         for name, lines in raw_logs.items():
             safe_container = re.sub(r"[^A-Za-z0-9_-]+", "_", name)
             path = downloads / f"capture_{safe_container}_{timestamp}.log"
             try:
                 path.write_text("\n".join(lines))
                 self._log("saved raw logs for %s to %s", name, path)
-                feed.write_event("info", EventFeed.escape(f"raw logs for {name} saved to {path}"))
-            except OSError as exc:
+                written.append((name, path.name))
+            except OSError:
                 logger.exception("tui: ResultScreen — failed saving raw logs for %s to %s", name, path)
-                feed.write_event("info", EventFeed.escape(f"raw log save failed for {name}: {exc}"))
+        return written
+
+    def _auto_save_and_notify(self, status: str) -> None:
+        """tool_capture_logs runs as an app-owned background worker (see
+        on_mount) that keeps going even if you navigate away — nothing else
+        is watching when it finishes, so the result would otherwise be
+        silently discarded (self._result_text set but never read). This
+        auto-saves JSON + raw logs unconditionally on completion (success or
+        error, same as the manual save action) and fires a toast so
+        completion is visible regardless of which screen is active."""
+        if self._result_text is None:
+            return
+        downloads = Path.home() / "Downloads"
+        downloads.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        json_path = self._write_json_file(downloads, timestamp)
+        if json_path is None:
+            self.app.notify(
+                f"{self._label}: finished ({status}) but auto-save failed — see log",
+                title="Background capture",
+                severity="error",
+                timeout=8,
+            )
+            return
+        saved = [json_path.name] + [filename for _, filename in self._write_raw_log_files(downloads, timestamp)]
+        self.app.notify(
+            f"{self._label} finished ({status}) — saved {', '.join(saved)}",
+            title="Background capture complete",
+            timeout=8,
+        )
 
     def _render_summary(self, result: dict) -> None:
         summarizer = RESULT_SUMMARIZERS.get(self._tool_name)
@@ -925,13 +988,37 @@ class ResultScreen(Screen):
                 color = "green" if running else "dim"
                 name_list.mount(Static(f"[{color}]●[/{color}] {EventFeed.escape(name)}"))
 
+    def _apply_success_to_ui(self, status: str, result: dict, text: str) -> None:
+        try:
+            feed = self.query_one("#result-feed", EventFeed)
+            raw_feed = self.query_one("#raw-json-feed", EventFeed)
+            status_chip = self.query_one("#status-chip", Static)
+        except Exception:
+            return  # screen no longer mounted — e.g. a background capture finished after navigating away
+        feed.write_event("tool_done", EventFeed.escape(f"done ({status})"))
+        raw_feed.write_event("tool_done", EventFeed.escape(text))
+        status_chip.update("✓ Success" if status == "success" else f"✗ {status}")
+        status_chip.set_class(status == "success", "status-chip-success")
+        if isinstance(result, dict):
+            self._render_summary(result)
+        self.refresh_bindings()
+
+    def _apply_error_to_ui(self, error_text: str, text: str) -> None:
+        try:
+            feed = self.query_one("#result-feed", EventFeed)
+            raw_feed = self.query_one("#raw-json-feed", EventFeed)
+            status_chip = self.query_one("#status-chip", Static)
+        except Exception:
+            return  # screen no longer mounted
+        feed.write_event("tool_crashed", EventFeed.escape(error_text))
+        raw_feed.write_event("tool_crashed", EventFeed.escape(text))
+        status_chip.update("✗ Error")
+        self.refresh_bindings()
+
     async def _run_tool(self) -> None:
         import asyncio
         import time
 
-        feed = self.query_one("#result-feed", EventFeed)
-        raw_feed = self.query_one("#raw-json-feed", EventFeed)
-        status_chip = self.query_one("#status-chip", Static)
         fn = getattr(tools, self._tool_name)
         started = time.monotonic()
         try:
@@ -942,22 +1029,17 @@ class ResultScreen(Screen):
             self._result_dict = result if isinstance(result, dict) else None
             status = result.get("status") if isinstance(result, dict) else "?"
             self._log("%s completed in %.2fs, status=%s", self._tool_name, elapsed, status)
-            feed.write_event("tool_done", EventFeed.escape(f"done ({status})"))
-            raw_feed.write_event("tool_done", EventFeed.escape(text))
-            status_chip.update("✓ Success" if status == "success" else f"✗ {status}")
-            status_chip.set_class(status == "success", "status-chip-success")
-            if isinstance(result, dict):
-                self._render_summary(result)
-            self.refresh_bindings()
+            self._apply_success_to_ui(status, result, text)
         except Exception as exc:  # noqa: BLE001 - surface any failure in the UI
             elapsed = time.monotonic() - started
             logger.exception("tui: ResultScreen — %s raised after %.2fs", self._tool_name, elapsed)
             text = json.dumps({"status": "error", "error": str(exc)}, indent=2)
             self._result_text = text
-            feed.write_event("tool_crashed", EventFeed.escape(str(exc)))
-            raw_feed.write_event("tool_crashed", EventFeed.escape(text))
-            status_chip.update("✗ Error")
-            self.refresh_bindings()
+            self._result_dict = {"status": "error", "error": str(exc)}
+            status = "error"
+            self._apply_error_to_ui(str(exc), text)
+        if self._is_background_capture:
+            self._auto_save_and_notify(status)
 
 
 class DockerTUIApp(App):
