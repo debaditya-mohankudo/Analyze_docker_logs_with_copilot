@@ -1413,7 +1413,17 @@ class DockerTUIApp(App):
     #connect-error { margin-top: 1; }
     #connection-status { margin-bottom: 1; }
     #connection-status.-hidden { display: none; }
-    ListView { height: auto; max-height: 16; border: round $accent; }
+    ListView {
+        height: auto; max-height: 16; border: round $accent;
+        /* Default scrollbar-color is the theme's $scrollbar token, an
+           unrelated saturated color that visually crosses the rounded
+           $accent border corner whenever the list overflows max-height.
+           Tint it with our own $accent instead so it reads as part of the
+           same box rather than a stray bright line cutting across it. */
+        scrollbar-color: $accent 50%; scrollbar-color-hover: $accent 70%;
+        scrollbar-color-active: $accent; scrollbar-background: $panel;
+        scrollbar-size-vertical: 1;
+    }
     #result-feed { height: auto; min-height: 3; max-height: 10; border: round $accent; }
 
     #container-select {
