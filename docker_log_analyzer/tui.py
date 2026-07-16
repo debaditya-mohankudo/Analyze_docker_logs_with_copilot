@@ -291,6 +291,52 @@ def render_result_summary(box: Container, tool_name: str, result: dict) -> None:
             name_list.mount(Static(f"[{color}]●[/{color}] {EventFeed.escape(name)}"))
 
 
+def write_json_file(downloads: Path, timestamp: str, tool_name: str, result_text: str, log_fn: Callable) -> Path | None:
+    """Shared by ResultScreen's manual/auto-save and BackgroundJobResultScreen's
+    manual save (task:0d8f0ca1) — `log_fn` is the caller's own `self._log` so
+    the log line stays tagged with the right screen name."""
+    safe_name = re.sub(r"[^A-Za-z0-9_-]+", "_", tool_name)
+    path = downloads / f"{safe_name}_{timestamp}.json"
+    try:
+        path.write_text(result_text)
+        log_fn("saved raw JSON to %s", path)
+        return path
+    except OSError:
+        logger.exception("tui: failed saving JSON to %s", path)
+        return None
+
+
+def write_raw_log_files(
+    downloads: Path, timestamp: str, result_dict: dict | None, log_fn: Callable
+) -> list[tuple[str, str]]:
+    """tool_capture_logs's result carries a raw_logs field (per-container log
+    lines) alongside the analysis — teammates auditing a captured incident
+    usually want the plain log text itself, not the JSON report. Written as
+    one .log file per container, deliberately outside .cache/logs/ since
+    this tool doesn't participate in the Parquet cache by design.
+
+    Shared by ResultScreen's manual/auto-save and BackgroundJobResultScreen's
+    manual save so none of the three diverge on what gets written. Returns
+    (container_name, filename) pairs for whichever files were written
+    successfully."""
+    if not result_dict:
+        return []
+    raw_logs = result_dict.get("raw_logs")
+    if not raw_logs:
+        return []
+    written: list[tuple[str, str]] = []
+    for name, lines in raw_logs.items():
+        safe_container = re.sub(r"[^A-Za-z0-9_-]+", "_", name)
+        path = downloads / f"capture_{safe_container}_{timestamp}.log"
+        try:
+            path.write_text("\n".join(lines))
+            log_fn("saved raw logs for %s to %s", name, path)
+            written.append((name, path.name))
+        except OSError:
+            logger.exception("tui: failed saving raw logs for %s to %s", name, path)
+    return written
+
+
 class CustomScreen(Screen):
     """Base class for every screen in this app — factors out two pieces of
     boilerplate that were hand-repeated identically across all 9 screens:
@@ -1005,44 +1051,12 @@ class ResultScreen(CustomScreen):
             feed.write_event("info", EventFeed.escape(f"raw logs for {name} saved to {downloads / filename}"))
 
     def _write_json_file(self, downloads: Path, timestamp: str) -> Path | None:
-        safe_name = re.sub(r"[^A-Za-z0-9_-]+", "_", self._tool_name)
-        path = downloads / f"{safe_name}_{timestamp}.json"
-        try:
-            path.write_text(self._result_text)
-            self._log("saved raw JSON to %s", path)
-            return path
-        except OSError:
-            logger.exception("tui: ResultScreen — failed saving JSON to %s", path)
-            return None
+        return write_json_file(downloads, timestamp, self._tool_name, self._result_text, self._log)
 
     def _write_raw_log_files(self, downloads: Path, timestamp: str) -> list[tuple[str, str]]:
-        """tool_capture_logs's result carries a raw_logs field (per-container
-        log lines) alongside the analysis — teammates auditing a captured
-        incident usually want the plain log text itself, not the JSON
-        report. Written as one .log file per container next to the JSON,
-        deliberately outside .cache/logs/ since this tool doesn't
-        participate in the Parquet cache by design.
-
-        Shared by both the manual "s" save and the completion auto-save
-        (see _auto_save_and_notify) so the two never diverge on what gets
-        written. Returns (container_name, filename) pairs for whichever
-        files were written successfully."""
-        if not self._is_background_capture or not self._result_dict:
+        if not self._is_background_capture:
             return []
-        raw_logs = self._result_dict.get("raw_logs")
-        if not raw_logs:
-            return []
-        written: list[tuple[str, str]] = []
-        for name, lines in raw_logs.items():
-            safe_container = re.sub(r"[^A-Za-z0-9_-]+", "_", name)
-            path = downloads / f"capture_{safe_container}_{timestamp}.log"
-            try:
-                path.write_text("\n".join(lines))
-                self._log("saved raw logs for %s to %s", name, path)
-                written.append((name, path.name))
-            except OSError:
-                logger.exception("tui: ResultScreen — failed saving raw logs for %s to %s", name, path)
-        return written
+        return write_raw_log_files(downloads, timestamp, self._result_dict, self._log)
 
     def _auto_save_and_notify(self, status: str) -> None:
         """tool_capture_logs runs as an app-owned background worker (see
@@ -1191,6 +1205,7 @@ class BackgroundJobResultScreen(CustomScreen):
     BINDINGS = [
         ("escape", "app.pop_screen", "Back"),
         ("j", "toggle_json", "Toggle raw JSON"),
+        ("s", "save_json", "Save JSON"),
     ]
 
     def __init__(self, group: str) -> None:
@@ -1203,7 +1218,7 @@ class BackgroundJobResultScreen(CustomScreen):
         return self.app.background_jobs.get(self._group)
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
-        if action == "toggle_json":
+        if action in ("toggle_json", "save_json"):
             job = self._job()
             return bool(job and job.get("result_text"))
         return True
@@ -1269,6 +1284,28 @@ class BackgroundJobResultScreen(CustomScreen):
         else:
             feed.add_class("-hidden")
             toggle.update("▶ Show raw JSON [j]")
+
+    def action_save_json(self) -> None:
+        # Note: this is a manual re-save, not the only copy — ResultScreen's
+        # worker already auto-saved this same JSON + raw logs on completion
+        # (task:97300a1a). This exists so the save action is available
+        # consistently from wherever you're viewing a capture's result, same
+        # as ResultScreen's own "s" binding, not because the data would
+        # otherwise be lost.
+        job = self._job()
+        if job is None or not job.get("result_text"):
+            return
+        downloads = Path.home() / "Downloads"
+        downloads.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        json_path = write_json_file(downloads, timestamp, job["tool_name"], job["result_text"], self._log)
+        if json_path is None:
+            self.app.notify("save failed — see log", title="Save", severity="error", timeout=6)
+            return
+        saved = [json_path.name] + [
+            filename for _, filename in write_raw_log_files(downloads, timestamp, job.get("result_dict"), self._log)
+        ]
+        self.app.notify(f"saved {', '.join(saved)}", title="Save", timeout=6)
 
 
 class DockerTUIApp(App):
@@ -1337,7 +1374,7 @@ class DockerTUIApp(App):
     .category-header { background: transparent; }
     .category-header-label { color: $text-muted; text-style: bold; }
 
-    #summary-box { height: auto; margin-top: 1; }
+    #summary-box, #bg-summary-box { height: auto; margin-top: 1; }
     .summary-headline { text-style: bold; margin-bottom: 1; }
     .stat-tiles { height: auto; }
     .stat-tile {
@@ -1348,9 +1385,9 @@ class DockerTUIApp(App):
     .stat-tile-label { color: $text-muted; }
     .stat-tile-value { text-style: bold; }
     .name-list { height: auto; margin-top: 1; padding: 1 2; border: round $accent 50%; background: $panel; }
-    #json-toggle { margin-top: 1; }
-    #raw-json-feed { height: 12; border: round $accent; margin-top: 1; }
-    #raw-json-feed.-hidden { display: none; }
+    #json-toggle, #bg-json-toggle { margin-top: 1; }
+    #raw-json-feed, #bg-raw-json-feed { height: 12; border: round $accent; margin-top: 1; }
+    #raw-json-feed.-hidden, #bg-raw-json-feed.-hidden { display: none; }
     """
     BINDINGS = [
         ("q", "quit", "Quit"),
