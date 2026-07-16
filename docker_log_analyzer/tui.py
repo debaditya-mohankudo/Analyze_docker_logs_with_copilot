@@ -760,6 +760,18 @@ class ResultScreen(Screen):
             return self._result_text is not None
         return True
 
+    def _window_chip_text(self) -> str:
+        """tool_capture_logs takes its own duration_seconds (from
+        CaptureLogsScreen's minutes input) rather than the global
+        settings.log_lookback_minutes every other tool uses — show whichever
+        one this run is actually using instead of always showing the global
+        setting regardless of tool."""
+        if self._tool_name == "tool_capture_logs":
+            seconds = self._kwargs.get("duration_seconds")
+            if seconds:
+                return f"Capturing: {seconds // 60}m"
+        return f"Lookback: {settings.log_lookback_minutes}m"
+
     def compose(self) -> ComposeResult:
         yield Header()
         yield breadcrumb_bar(3)
@@ -769,7 +781,7 @@ class ResultScreen(Screen):
                 yield Static(f"● Connected: {target}", classes="status-chip connected")
                 yield Static("… Running", id="status-chip", classes="status-chip")
                 yield Static(self._tool_name, classes="status-chip")
-                yield Static(f"Lookback: {settings.log_lookback_minutes}m", classes="status-chip")
+                yield Static(self._window_chip_text(), classes="status-chip")
             yield EventFeed(id="result-feed")
             yield Container(id="summary-box")
             yield Static("▶ Show raw JSON [j]", id="json-toggle", classes="hint-bar")
