@@ -201,7 +201,7 @@ def _summarize_capture_logs(result: dict) -> tuple[str, list[tuple[str, str]]] |
         elif errors:
             error_lines = pc.get("error_lines") or []
             if error_lines:
-                row += f": {error_lines[0].strip()[:120]}"
+                row += f": {error_lines[0].get('message', '').strip()[:120]}"
         rows.append((row, status))
     return headline, rows
 

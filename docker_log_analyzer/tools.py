@@ -568,10 +568,18 @@ def tool_capture_logs(
         # extract_error_patterns only matches a narrow set of known error
         # *shapes* (settings.error_patterns + a few regexes) and can come
         # back empty even when error_count > 0 — ERROR_PATTERN_RE is the
-        # same broad line-level match spike_detector/correlator use, so this
+        # same broad line-level match tool_get_last_errors uses, so this
         # always surfaces the actual offending lines, not just recognized
-        # templates.
-        error_lines = [line for line in lines if ERROR_PATTERN_RE.search(line)][:20]
+        # templates. Same {timestamp, level, message} shape as
+        # tool_get_last_errors's "errors" entries, for consistency.
+        error_lines = [
+            {
+                "timestamp": (m := DOCKER_TS_RE.match(line.strip())) and m.group(1),
+                "level": _detect_level(line),
+                "message": line,
+            }
+            for line in lines if ERROR_PATTERN_RE.search(line)
+        ][-20:]
         error_count = sum(
             v for k, v in log_levels.items()
             if k in ("ERROR", "CRITICAL", "FATAL", "SEVERE")
