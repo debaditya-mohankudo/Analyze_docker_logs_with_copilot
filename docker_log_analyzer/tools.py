@@ -565,6 +565,13 @@ def tool_capture_logs(
 
         log_levels = detector.extract_log_levels(lines)
         top_errors = detector.extract_error_patterns(lines)
+        # extract_error_patterns only matches a narrow set of known error
+        # *shapes* (settings.error_patterns + a few regexes) and can come
+        # back empty even when error_count > 0 — ERROR_PATTERN_RE is the
+        # same broad line-level match spike_detector/correlator use, so this
+        # always surfaces the actual offending lines, not just recognized
+        # templates.
+        error_lines = [line for line in lines if ERROR_PATTERN_RE.search(line)][:20]
         error_count = sum(
             v for k, v in log_levels.items()
             if k in ("ERROR", "CRITICAL", "FATAL", "SEVERE")
@@ -579,6 +586,7 @@ def tool_capture_logs(
             "lines_captured": len(lines),
             "log_levels": log_levels,
             "top_errors": [{"pattern": p, "count": n} for p, n in top_errors],
+            "error_lines": error_lines,
         }
 
     correlations = correlate(container_logs, time_window_seconds)

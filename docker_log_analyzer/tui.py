@@ -188,13 +188,20 @@ def _summarize_capture_logs(result: dict) -> tuple[str, list[tuple[str, str]]] |
         # Surface the actual error text, not just the count — top_errors is
         # already computed by the tool (detector.extract_error_patterns) but
         # was previously discarded here, leaving no way to see *what* broke
-        # without opening the raw JSON.
+        # without opening the raw JSON. top_errors only matches a narrow set
+        # of known shapes and can be empty even when errors > 0 — fall back
+        # to error_lines (broader ERROR_PATTERN_RE match) in that case so
+        # something concrete is always shown when errors were captured.
         top_errors = pc.get("top_errors") or []
         if top_errors:
             patterns = ", ".join(
                 f"{e['pattern']} (x{e['count']})" for e in top_errors[:3]
             )
             row += f": {patterns}"
+        elif errors:
+            error_lines = pc.get("error_lines") or []
+            if error_lines:
+                row += f": {error_lines[0].strip()[:120]}"
         rows.append((row, status))
     return headline, rows
 
