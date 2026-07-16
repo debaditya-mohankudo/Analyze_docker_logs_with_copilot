@@ -300,6 +300,8 @@ class CustomScreen(Screen):
        was ever renamed without updating the string to match.
     2. `yield Header(); yield BreadcrumbBar(n)`, the pair every compose()
        started with — via compose_head(step_index).
+    3. `yield Footer()`, the single line every compose() ended with — via
+       compose_foot().
 
     Deliberately NOT a place for shared business logic or a full compose()
     template — screens differ too much in what follows (status chips,
@@ -315,6 +317,10 @@ class CustomScreen(Screen):
     def compose_head(step_index: int) -> ComposeResult:
         yield Header()
         yield BreadcrumbBar(step_index)
+
+    @staticmethod
+    def compose_foot() -> ComposeResult:
+        yield Footer()
 
 
 class ConnectScreen(CustomScreen):
@@ -381,7 +387,7 @@ class ConnectScreen(CustomScreen):
                     compact=True,
                 )
             yield Static("", id="connect-error")
-        yield Footer()
+        yield from self.compose_foot()
 
     def action_focus_remote(self) -> None:
         self._log("focus remote-host input")
@@ -497,7 +503,7 @@ class WindowScreen(CustomScreen):
                 id="window-status",
                 classes="hint-bar",
             )
-        yield Footer()
+        yield from self.compose_foot()
 
     def action_pick_window(self, minutes: int) -> None:
         self._log("chose %d min log lookback window", minutes)
@@ -531,7 +537,7 @@ class ContainerNameScreen(CustomScreen):
             yield Static("↑↓ to pick a container, Enter to run.", classes="hint-bar")
             yield bordered(ListView(id="container-name-list"), "Containers")
             yield Static("", id="connect-error")
-        yield Footer()
+        yield from self.compose_foot()
 
     def on_mount(self) -> None:
         self.run_worker(self._load_containers(), exclusive=True)
@@ -618,7 +624,7 @@ class ContainerMultiSelectScreen(CustomScreen):
             )
             yield SelectionList(id="container-select")
             yield Static("", id="selection-status", classes="hint-bar")
-        yield Footer()
+        yield from self.compose_foot()
 
     def on_mount(self) -> None:
         self.run_worker(self._load_containers(), exclusive=True)
@@ -722,7 +728,7 @@ class CaptureLogsScreen(CustomScreen):
             )
             yield Static("F2 to start — logs are captured live for that many minutes.", classes="hint-bar")
             yield Static("", id="capture-error")
-        yield Footer()
+        yield from self.compose_foot()
 
     def on_mount(self) -> None:
         self.run_worker(self._load_containers(), exclusive=True)
@@ -798,7 +804,7 @@ class MenuScreen(CustomScreen):
                 yield Static(f"◔ Window: {settings.log_lookback_minutes} min", classes="status-chip")
             yield Label("Pick a prompt to run:", classes="title")
             yield bordered(ListView(*self._build_items(), id="prompt-list"), "Prompts")
-        yield Footer()
+        yield from self.compose_foot()
 
     @staticmethod
     def _build_items() -> list[ListItem]:
@@ -916,7 +922,7 @@ class ResultScreen(CustomScreen):
             yield Container(id="summary-box")
             yield Static("▶ Show raw JSON [j]", id="json-toggle", classes="hint-bar")
             yield EventFeed(id="raw-json-feed", classes="-hidden")
-        yield Footer()
+        yield from self.compose_foot()
 
     def on_mount(self) -> None:
         import time
@@ -1143,7 +1149,7 @@ class BackgroundJobsScreen(CustomScreen):
         with bordered(Container(classes="detail-box"), "Background jobs"):
             yield Static("↑↓ to pick a job, Enter to view.", classes="hint-bar")
             yield bordered(ListView(*self._build_items(), id="bg-job-list"), "Jobs")
-        yield Footer()
+        yield from self.compose_foot()
 
     def _build_items(self) -> list[ListItem]:
         jobs = self.app.background_jobs
@@ -1212,7 +1218,7 @@ class BackgroundJobResultScreen(CustomScreen):
             yield Container(id="bg-summary-box")
             yield Static("▶ Show raw JSON [j]", id="bg-json-toggle", classes="hint-bar")
             yield EventFeed(id="bg-raw-json-feed", classes="-hidden")
-        yield Footer()
+        yield from self.compose_foot()
 
     def on_mount(self) -> None:
         if self._job() is None:
