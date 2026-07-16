@@ -209,7 +209,9 @@ def test_prompts_menu_has_entries():
     assert len(PROMPTS) > 0
     for label, tool_name, required_arg, category, icon in PROMPTS:
         assert hasattr(tools, tool_name), f"{tool_name} missing from tools.py"
-        assert required_arg in (None, "container_name", "multi_container_names")
+        assert required_arg in (
+            None, "container_name", "multi_container_names", "multi_container_and_duration",
+        )
         assert category in PROMPT_CATEGORIES
         assert icon
 

@@ -79,6 +79,7 @@ PROMPTS: list[tuple[str, str, str | None, str, str]] = [
     ("Rank root-cause candidates", "tool_analyze_root_causes", None, "HEALTH & ROOT CAUSE", "★"),
     ("Classify errors by category", "tool_classify_errors", None, "HEALTH & ROOT CAUSE", "▦"),
     ("Last errors for a container", "tool_get_last_errors", "container_name", "CONTAINER LOOKUP", "⚑"),
+    ("Capture live logs for next N minutes", "tool_capture_logs", "multi_container_and_duration", "CONTAINER LOOKUP", "⏺"),
 ]
 
 # Category display order — PROMPTS entries are grouped into these buckets
@@ -159,11 +160,39 @@ def _summarize_list_containers(result: dict) -> tuple[str, list[tuple[str, str]]
     return headline, names
 
 
-# tool_name -> summarizer function. Only tool_list_containers has one for
-# now (see task:76e0b4e6) — tools without an entry here fall back to raw
-# JSON only, no stat tiles/headline.
+def _summarize_capture_logs(result: dict) -> tuple[str, list[tuple[str, str]]] | None:
+    """tool_capture_logs -> (headline, [(container summary, status), ...]).
+
+    Reuses the same green/dim bullet-list rendering as
+    _summarize_list_containers, but repurposes "status" here to mean
+    "no errors captured" (green) vs "errors captured" (dim) rather than
+    Docker's running/exited state — capture_logs doesn't report that."""
+    if result.get("status") != "success" or "summary" not in result:
+        return None
+    summary = result["summary"]
+    duration = result.get("capture_window", {}).get("duration_seconds", "?")
+    headline = (
+        f"{summary.get('total_log_lines', 0)} lines · "
+        f"{summary.get('total_errors', 0)} errors · "
+        f"{summary.get('spike_count', 0)} spikes over {duration}s"
+    )
+    rows: list[tuple[str, str]] = []
+    for name, pc in sorted(result.get("per_container", {}).items()):
+        lines = pc.get("lines_captured", 0)
+        errors = sum(
+            v for k, v in pc.get("log_levels", {}).items()
+            if k in ("ERROR", "CRITICAL", "FATAL", "SEVERE")
+        )
+        status = "running" if errors == 0 else "errors"
+        rows.append((f"{name} — {lines} lines, {errors} errors", status))
+    return headline, rows
+
+
+# tool_name -> summarizer function. Tools without an entry here fall back to
+# raw JSON only, no stat tiles/headline.
 RESULT_SUMMARIZERS = {
     "tool_list_containers": _summarize_list_containers,
+    "tool_capture_logs": _summarize_capture_logs,
 }
 
 
@@ -527,6 +556,123 @@ class ContainerMultiSelectScreen(Screen):
         self.app.push_screen(ResultScreen(self._label, self._tool_name, kwargs))
 
 
+class CaptureLogsScreen(Screen):
+    """Collect container(s) + a duration in minutes before running
+    tool_capture_logs, which blocks for that long (time.sleep) watching live
+    logs before returning a combined spike/correlation/error report.
+
+    Same container SelectionList as ContainerMultiSelectScreen (none selected
+    = all running), plus a minutes Input. F2 rather than Enter for the same
+    reason as ContainerMultiSelectScreen: SelectionList already shadows Enter
+    with its own toggle action while focused.
+    """
+
+    BINDINGS = [
+        ("space", "toggle_highlighted", "Toggle"),
+        ("f2", "start_capture", "Start capture"),
+        ("escape", "app.pop_screen", "Back to flows"),
+    ]
+    _log = staticmethod(action_logger("CaptureLogsScreen"))
+    DEFAULT_MINUTES = 2
+
+    def __init__(self, label: str, tool_name: str) -> None:
+        super().__init__()
+        self._label = label
+        self._tool_name = tool_name
+        self._has_options = False
+
+    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        if action == "toggle_highlighted":
+            return self._has_options
+        return True
+
+    def compose(self) -> ComposeResult:
+        yield Header()
+        yield breadcrumb_bar(2)
+        target = settings.docker_host or "local (unix socket)"
+        with bordered(Container(classes="modal-box"), f"{step_prefix(2, TOTAL_STEPS)}{self._label}"):
+            with Horizontal(classes="status-chips"):
+                yield Static(f"● Connected: {target}", classes="status-chip connected")
+            yield Label(self._label, classes="title")
+            yield Static(
+                "Click or use ↑↓ + Space to toggle containers. "
+                "None selected = all running containers.",
+                classes="hint-bar",
+            )
+            yield SelectionList(id="container-select")
+            yield Static("", id="selection-status", classes="hint-bar")
+            yield Static("", classes="section-divider")
+            yield Label("MINUTES TO CAPTURE", classes="section-label")
+            yield Input(
+                value=str(self.DEFAULT_MINUTES),
+                placeholder="minutes",
+                id="duration-minutes",
+                compact=True,
+            )
+            yield Static("F2 to start — logs are captured live for that many minutes.", classes="hint-bar")
+            yield Static("", id="capture-error")
+        yield Footer()
+
+    def on_mount(self) -> None:
+        self.run_worker(self._load_containers(), exclusive=True)
+
+    async def _load_containers(self) -> None:
+        import asyncio
+
+        result = await asyncio.to_thread(tools.tool_list_containers)
+        select = self.query_one("#container-select", SelectionList)
+        status = self.query_one("#selection-status", Static)
+        if result.get("status") != "success" or not result.get("containers"):
+            self._log("no containers available to select")
+            status.update("[red]No containers found.[/red]")
+            return
+        for c in result["containers"]:
+            name = c.get("name", "?")
+            select.add_option((name, name))
+        self._log("loaded %d containers to select from", len(result["containers"]))
+        self._has_options = True
+        self.refresh_bindings()
+        self._update_selection_status()
+        select.focus()
+
+    def _update_selection_status(self) -> None:
+        selected = list(self.query_one("#container-select", SelectionList).selected)
+        status = self.query_one("#selection-status", Static)
+        if selected:
+            status.update(f"{len(selected)} selected: {', '.join(selected)}")
+        else:
+            status.update("None selected — will capture all running containers")
+
+    def on_selection_list_selected_changed(self, event: SelectionList.SelectedChanged) -> None:
+        self._log("selection changed, now selected=%s", list(event.selection_list.selected) or "<none>")
+        self._update_selection_status()
+
+    def action_toggle_highlighted(self) -> None:
+        self.query_one("#container-select", SelectionList).action_select()
+
+    def action_start_capture(self) -> None:
+        error = self.query_one("#capture-error", Static)
+        raw_minutes = self.query_one("#duration-minutes", Input).value.strip()
+        try:
+            minutes = float(raw_minutes)
+            if minutes <= 0:
+                raise ValueError
+        except ValueError:
+            self._log("invalid minutes input %r", raw_minutes)
+            error.update("[red]Enter a positive number of minutes.[/red]")
+            return
+
+        selected = list(self.query_one("#container-select", SelectionList).selected)
+        self._log(
+            "starting %s for containers %s, duration=%.1f min",
+            self._tool_name, selected or "<all running>", minutes,
+        )
+        kwargs: dict = {"duration_seconds": int(minutes * 60)}
+        if selected:
+            kwargs["container_names"] = selected
+        self.app.push_screen(ResultScreen(self._label, self._tool_name, kwargs))
+
+
 class MenuScreen(Screen):
     """Third screen: pick one of the 8 most useful docker prompts."""
 
@@ -577,6 +723,8 @@ class MenuScreen(Screen):
         self._log("selected prompt '%s' (%s)", label, tool_name)
         if required_arg == "multi_container_names":
             self.app.push_screen(ContainerMultiSelectScreen(label, tool_name))
+        elif required_arg == "multi_container_and_duration":
+            self.app.push_screen(CaptureLogsScreen(label, tool_name))
         elif required_arg:
             self.app.push_screen(ContainerNameScreen(label, tool_name))
         else:
