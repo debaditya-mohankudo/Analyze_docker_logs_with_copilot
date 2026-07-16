@@ -337,6 +337,28 @@ def write_raw_log_files(
     return written
 
 
+def clear_background_job(app: "DockerTUIApp", group: str, log_fn: Callable) -> bool:
+    """Removes a finished entry from app.background_jobs — shared by
+    BackgroundJobsScreen (clear the highlighted row) and
+    BackgroundJobResultScreen (clear the job being viewed) so neither
+    duplicates the running-job guard (task:ae86350c).
+
+    Refuses to clear a still-"running" job: the registry is the only
+    record of an in-flight capture (BreadcrumbBar's blink and
+    BackgroundJobResultScreen's live countdown both read it), so removing
+    it early would silently drop tracking of a real background worker
+    that's still going to finish and try to update this same entry."""
+    job = app.background_jobs.get(group)
+    if job is None:
+        return False
+    if job["status"] == "running":
+        log_fn("refused to clear job %s — still running", group)
+        return False
+    del app.background_jobs[group]
+    log_fn("cleared job %s", group)
+    return True
+
+
 class CustomScreen(Screen):
     """Base class for every screen in this app — factors out two pieces of
     boilerplate that were hand-repeated identically across all 9 screens:
@@ -1156,14 +1178,60 @@ class BackgroundJobsScreen(CustomScreen):
     navigating away from the ResultScreen that started it. Selecting one
     opens BackgroundJobResultScreen for it (task:0d8f0ca1)."""
 
-    BINDINGS = [("escape", "app.pop_screen", "Back")]
+    BINDINGS = [
+        ("escape", "app.pop_screen", "Back"),
+        ("d", "clear_job", "Clear job"),
+    ]
 
     def compose(self) -> ComposeResult:
         yield from self.compose_head(3)
         with bordered(Container(classes="detail-box"), "Background jobs"):
-            yield Static("↑↓ to pick a job, Enter to view.", classes="hint-bar")
+            yield Static("↑↓ to pick a job, Enter to view, d to clear a finished one.", classes="hint-bar")
             yield bordered(ListView(*self._build_items(), id="bg-job-list"), "Jobs")
         yield from self.compose_foot()
+
+    def _highlighted_group(self) -> str | None:
+        list_view = self.query_one("#bg-job-list", ListView)
+        item = list_view.highlighted_child
+        return item.name if item is not None else None
+
+    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        if action == "clear_job":
+            group = self._highlighted_group()
+            job = self.app.background_jobs.get(group) if group else None
+            return bool(job and job["status"] != "running")
+        return True
+
+    def on_list_view_highlighted(self, event: ListView.Highlighted) -> None:
+        # Footer's "Clear job" enabled-state depends on which row is
+        # highlighted (can't clear a still-running job) — must recheck on
+        # every highlight change, not just once at mount.
+        self.refresh_bindings()
+
+    async def action_clear_job(self) -> None:
+        group = self._highlighted_group()
+        if group is None:
+            return
+        if clear_background_job(self.app, group, self._log):
+            await self._rebuild_list()
+        self.refresh_bindings()
+
+    async def _rebuild_list(self) -> None:
+        # ListView.clear()/.append() both return awaitables that must
+        # actually be awaited or the DOM update never happens (silently —
+        # no error, the list just looks stale). Same footgun already noted
+        # on ContainerNameScreen._load_containers.
+        list_view = self.query_one("#bg-job-list", ListView)
+        await list_view.clear()
+        for item in self._build_items():
+            await list_view.append(item)
+
+    async def on_screen_resume(self) -> None:
+        # Fires when this screen becomes the top of the stack again after a
+        # pop — covers clearing a job from BackgroundJobResultScreen (which
+        # pops back to here) without this list ever having been rebuilt
+        # itself, so it would otherwise still show the just-cleared row.
+        await self._rebuild_list()
 
     def _build_items(self) -> list[ListItem]:
         jobs = self.app.background_jobs
@@ -1206,6 +1274,7 @@ class BackgroundJobResultScreen(CustomScreen):
         ("escape", "app.pop_screen", "Back"),
         ("j", "toggle_json", "Toggle raw JSON"),
         ("s", "save_json", "Save JSON"),
+        ("d", "clear_job", "Clear job"),
     ]
 
     def __init__(self, group: str) -> None:
@@ -1221,6 +1290,9 @@ class BackgroundJobResultScreen(CustomScreen):
         if action in ("toggle_json", "save_json"):
             job = self._job()
             return bool(job and job.get("result_text"))
+        if action == "clear_job":
+            job = self._job()
+            return bool(job and job["status"] != "running")
         return True
 
     def compose(self) -> ComposeResult:
@@ -1306,6 +1378,11 @@ class BackgroundJobResultScreen(CustomScreen):
             filename for _, filename in write_raw_log_files(downloads, timestamp, job.get("result_dict"), self._log)
         ]
         self.app.notify(f"saved {', '.join(saved)}", title="Save", timeout=6)
+
+    def action_clear_job(self) -> None:
+        if clear_background_job(self.app, self._group, self._log):
+            self.app.notify("cleared", title="Background jobs", timeout=4)
+            self.app.pop_screen()
 
 
 class DockerTUIApp(App):
