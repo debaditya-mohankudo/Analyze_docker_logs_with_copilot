@@ -17,6 +17,7 @@ tui_widgets.py — see task:7323b8ef.
 import getpass
 import json
 import re
+import time
 
 from datetime import datetime
 from pathlib import Path
@@ -259,7 +260,64 @@ RESULT_SUMMARIZERS = {
 }
 
 
-class ConnectScreen(Screen):
+def render_result_summary(box: Container, tool_name: str, result: dict) -> None:
+    """Mounts a summarizer's (headline, [(name, status), ...]) into `box` —
+    shared by ResultScreen and BackgroundJobResultScreen so both render a
+    finished tool_capture_logs result identically instead of duplicating
+    this logic (task:0d8f0ca1)."""
+    summarizer = RESULT_SUMMARIZERS.get(tool_name)
+    if summarizer is None:
+        return
+    summarized = summarizer(result)
+    if summarized is None:
+        return
+    headline, names = summarized
+    box.mount(Label(headline, classes="summary-headline"))
+    if names:
+        # Plain bullet list (no border/box per row, no gaps) — scales
+        # cleanly to the ~20+ containers a busy host can have. Same
+        # green/muted coloring as the "● Connected" status chip, just
+        # without the chip's border/padding/spacing.
+        name_list = Container(classes="name-list")
+        box.mount(name_list)
+        for name, status in names:
+            running = status == "running"
+            # Rich markup, not CSS — "$success"/"$text-muted" tokens
+            # aren't valid Rich style names (only work in CSS), hence
+            # plain Rich color names here (see memory:
+            # textual-rich-markup-escape-interpolation for the class of
+            # bug this avoids).
+            color = "green" if running else "dim"
+            name_list.mount(Static(f"[{color}]●[/{color}] {EventFeed.escape(name)}"))
+
+
+class CustomScreen(Screen):
+    """Base class for every screen in this app — factors out two pieces of
+    boilerplate that were hand-repeated identically across all 9 screens:
+
+    1. `_log = staticmethod(action_logger("ClassName"))` — previously typed
+       out per class, silently wrong (logs under the old name) if a class
+       was ever renamed without updating the string to match.
+    2. `yield Header(); yield BreadcrumbBar(n)`, the pair every compose()
+       started with — via compose_head(step_index).
+
+    Deliberately NOT a place for shared business logic or a full compose()
+    template — screens differ too much in what follows (status chips,
+    ListView vs SelectionList vs Input, bordered() box shape) for one
+    template to fit all of them without becoming an over-parameterized
+    god-method."""
+
+    def __init_subclass__(cls, **kwargs) -> None:
+        super().__init_subclass__(**kwargs)
+        cls._log = staticmethod(action_logger(cls.__name__))
+
+    @staticmethod
+    def compose_head(step_index: int) -> ComposeResult:
+        yield Header()
+        yield BreadcrumbBar(step_index)
+
+
+class ConnectScreen(CustomScreen):
     """First screen: choose local or remote (SSH) Docker daemon.
 
     No buttons — press `l` for local, or `r` to type a remote host then
@@ -286,7 +344,6 @@ class ConnectScreen(Screen):
     # the screen starts with nothing focused and `l`/`r` reach the bindings
     # instead of being typed into the field.
     AUTO_FOCUS = ""
-    _log = staticmethod(action_logger("ConnectScreen"))
 
     def __init__(self) -> None:
         super().__init__()
@@ -301,8 +358,7 @@ class ConnectScreen(Screen):
         return True
 
     def compose(self) -> ComposeResult:
-        yield Header()
-        yield BreadcrumbBar(0)
+        yield from self.compose_head(0)
         with bordered(Container(classes="connect-box"), f"{step_prefix(0, TOTAL_STEPS)}Connect"):
             yield Static("", id="connection-status", classes="-hidden")
             yield Label("Choose Docker daemon", classes="title")
@@ -408,7 +464,7 @@ class ConnectScreen(Screen):
             error.update(f"[red]{error_text}[/red]")
 
 
-class WindowScreen(Screen):
+class WindowScreen(CustomScreen):
     """Second screen: pick how far back log-fetching tools look
     (settings.log_lookback_minutes) before picking a flow to run.
 
@@ -420,11 +476,9 @@ class WindowScreen(Screen):
         (str(i + 1), f"pick_window({minutes})", label)
         for i, (label, minutes) in enumerate(WINDOW_CHOICES)
     ] + [("escape", "app.pop_screen", "Back")]
-    _log = staticmethod(action_logger("WindowScreen"))
 
     def compose(self) -> ComposeResult:
-        yield Header()
-        yield BreadcrumbBar(1)
+        yield from self.compose_head(1)
         target = settings.docker_host or "local (unix socket)"
         with bordered(Container(classes="connect-box"), f"{step_prefix(1, TOTAL_STEPS)}Time window"):
             with Horizontal(classes="status-chips"):
@@ -451,7 +505,7 @@ class WindowScreen(Screen):
         self.app.push_screen(MenuScreen())
 
 
-class ContainerNameScreen(Screen):
+class ContainerNameScreen(CustomScreen):
     """Pick one container (from tool_list_containers) before running a
     container-scoped tool. A ListView, not free text — the exact container
     names are already known from the daemon, so typos/guessing shouldn't be
@@ -460,7 +514,6 @@ class ContainerNameScreen(Screen):
     no competing screen-level binding needed, so there's nothing to shadow)."""
 
     BINDINGS = [("escape", "app.pop_screen", "Back to flows")]
-    _log = staticmethod(action_logger("ContainerNameScreen"))
 
     def __init__(self, label: str, tool_name: str) -> None:
         super().__init__()
@@ -468,8 +521,7 @@ class ContainerNameScreen(Screen):
         self._tool_name = tool_name
 
     def compose(self) -> ComposeResult:
-        yield Header()
-        yield BreadcrumbBar(2)
+        yield from self.compose_head(2)
         target = settings.docker_host or "local (unix socket)"
         with bordered(Container(classes="modal-box"), f"{step_prefix(2, TOTAL_STEPS)}{self._label}"):
             with Horizontal(classes="status-chips"):
@@ -514,7 +566,7 @@ class ContainerNameScreen(Screen):
         self.app.push_screen(ResultScreen(self._label, self._tool_name, {"container_name": name}))
 
 
-class ContainerMultiSelectScreen(Screen):
+class ContainerMultiSelectScreen(CustomScreen):
     """Collect one or more container names before running a multi-container
     tool (currently just "Fetch logs for container(s)" -> tool_sync_docker_logs).
 
@@ -537,7 +589,6 @@ class ContainerMultiSelectScreen(Screen):
         ("f2", "run_selected", "Fetch"),
         ("escape", "app.pop_screen", "Back to flows"),
     ]
-    _log = staticmethod(action_logger("ContainerMultiSelectScreen"))
 
     def __init__(self, label: str, tool_name: str) -> None:
         super().__init__()
@@ -553,8 +604,7 @@ class ContainerMultiSelectScreen(Screen):
         return True
 
     def compose(self) -> ComposeResult:
-        yield Header()
-        yield BreadcrumbBar(2)
+        yield from self.compose_head(2)
         target = settings.docker_host or "local (unix socket)"
         with bordered(Container(classes="modal-box"), f"{step_prefix(2, TOTAL_STEPS)}{self._label}"):
             with Horizontal(classes="status-chips"):
@@ -619,7 +669,7 @@ class ContainerMultiSelectScreen(Screen):
         self.app.push_screen(ResultScreen(self._label, self._tool_name, kwargs))
 
 
-class CaptureLogsScreen(Screen):
+class CaptureLogsScreen(CustomScreen):
     """Collect container(s) + a duration in minutes before running
     tool_capture_logs, which blocks for that long (time.sleep) watching live
     logs before returning a combined spike/correlation/error report.
@@ -635,7 +685,6 @@ class CaptureLogsScreen(Screen):
         ("f2", "start_capture", "Start capture"),
         ("escape", "app.pop_screen", "Back to flows"),
     ]
-    _log = staticmethod(action_logger("CaptureLogsScreen"))
     DEFAULT_MINUTES = 2
 
     def __init__(self, label: str, tool_name: str) -> None:
@@ -650,8 +699,7 @@ class CaptureLogsScreen(Screen):
         return True
 
     def compose(self) -> ComposeResult:
-        yield Header()
-        yield BreadcrumbBar(2)
+        yield from self.compose_head(2)
         target = settings.docker_host or "local (unix socket)"
         with bordered(Container(classes="modal-box"), f"{step_prefix(2, TOTAL_STEPS)}{self._label}"):
             with Horizontal(classes="status-chips"):
@@ -736,15 +784,13 @@ class CaptureLogsScreen(Screen):
         self.app.push_screen(ResultScreen(self._label, self._tool_name, kwargs))
 
 
-class MenuScreen(Screen):
+class MenuScreen(CustomScreen):
     """Third screen: pick one of the 8 most useful docker prompts."""
 
     BINDINGS = [("escape", "app.pop_screen", "Back")]
-    _log = staticmethod(action_logger("MenuScreen"))
 
     def compose(self) -> ComposeResult:
-        yield Header()
-        yield BreadcrumbBar(2)
+        yield from self.compose_head(2)
         target = settings.docker_host or "local (unix socket)"
         with bordered(Container(classes="detail-box"), f"{step_prefix(2, TOTAL_STEPS)}Pick a prompt"):
             with Horizontal(classes="status-chips"):
@@ -794,7 +840,7 @@ class MenuScreen(Screen):
             self.app.push_screen(ResultScreen(label, tool_name, {}))
 
 
-class ResultScreen(Screen):
+class ResultScreen(CustomScreen):
     """Runs the selected tool_* function in a worker thread and shows the result:
     a status/tool/lookback chips row, a parsed summary + stat tiles when a
     summarizer exists for this tool (RESULT_SUMMARIZERS), and the raw JSON
@@ -805,7 +851,6 @@ class ResultScreen(Screen):
         ("j", "toggle_json", "Toggle raw JSON"),
         ("s", "save_json", "Save JSON"),
     ]
-    _log = staticmethod(action_logger("ResultScreen"))
 
     def __init__(self, label: str, tool_name: str, kwargs: dict) -> None:
         super().__init__()
@@ -816,6 +861,7 @@ class ResultScreen(Screen):
         self._result_text: str | None = None
         self._result_dict: dict | None = None
         self._started_monotonic: float | None = None
+        self._capture_group: str | None = None
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
         # "Toggle raw JSON" / "Save JSON" are meaningless before the tool
@@ -858,8 +904,7 @@ class ResultScreen(Screen):
         return f"Lookback: {settings.log_lookback_minutes}m"
 
     def compose(self) -> ComposeResult:
-        yield Header()
-        yield BreadcrumbBar(3)
+        yield from self.compose_head(3)
         target = settings.docker_host or "local (unix socket)"
         with bordered(VerticalScroll(classes="detail-box"), f"{step_prefix(3, TOTAL_STEPS)}{self._label}"):
             with Horizontal(classes="status-chips"):
@@ -897,7 +942,23 @@ class ResultScreen(Screen):
             # are explicitly allowed (task:97300a1a) — each opens its own
             # independent DockerClient with no shared state, so one
             # capture's worker must never cancel another's.
-            self.app.run_worker(self._run_tool(), exclusive=False, group=f"capture-{id(self)}")
+            self._capture_group = f"capture-{id(self)}"
+            # Registered on the App (not self), keyed by the same group used
+            # for the worker itself and for BreadcrumbBar's "is anything
+            # running" poll — this is the single source of truth
+            # BackgroundJobsScreen/BackgroundJobResultScreen read from, so a
+            # capture's progress/result stays reachable long after this
+            # ResultScreen instance is popped and gone (task:0d8f0ca1).
+            self.app.background_jobs[self._capture_group] = {
+                "label": self._label,
+                "tool_name": self._tool_name,
+                "kwargs": self._kwargs,
+                "status": "running",
+                "started_monotonic": self._started_monotonic,
+                "result_text": None,
+                "result_dict": None,
+            }
+            self.app.run_worker(self._run_tool(), exclusive=False, group=self._capture_group)
         else:
             self.run_worker(self._run_tool(), exclusive=True)
 
@@ -1007,31 +1068,7 @@ class ResultScreen(Screen):
         )
 
     def _render_summary(self, result: dict) -> None:
-        summarizer = RESULT_SUMMARIZERS.get(self._tool_name)
-        if summarizer is None:
-            return
-        summarized = summarizer(result)
-        if summarized is None:
-            return
-        headline, names = summarized
-        box = self.query_one("#summary-box", Container)
-        box.mount(Label(headline, classes="summary-headline"))
-        if names:
-            # Plain bullet list (no border/box per row, no gaps) — scales
-            # cleanly to the ~20+ containers a busy host can have. Same
-            # green/muted coloring as the "● Connected" status chip, just
-            # without the chip's border/padding/spacing.
-            name_list = Container(classes="name-list")
-            box.mount(name_list)
-            for name, status in names:
-                running = status == "running"
-                # Rich markup, not CSS — "$success"/"$text-muted" tokens
-                # aren't valid Rich style names (only work in CSS), hence
-                # plain Rich color names here (see memory:
-                # textual-rich-markup-escape-interpolation for the class of
-                # bug this avoids).
-                color = "green" if running else "dim"
-                name_list.mount(Static(f"[{color}]●[/{color}] {EventFeed.escape(name)}"))
+        render_result_summary(self.query_one("#summary-box", Container), self._tool_name, result)
 
     def _apply_success_to_ui(self, status: str, result: dict, text: str) -> None:
         try:
@@ -1084,7 +1121,148 @@ class ResultScreen(Screen):
             status = "error"
             self._apply_error_to_ui(str(exc), text)
         if self._is_background_capture:
+            job = self.app.background_jobs.get(self._capture_group)
+            if job is not None:
+                job["status"] = status
+                job["result_text"] = self._result_text
+                job["result_dict"] = self._result_dict
             self._auto_save_and_notify(status)
+
+
+class BackgroundJobsScreen(CustomScreen):
+    """Reachable via the "b" footer binding from any screen — lists every
+    tool_capture_logs run tracked in app.background_jobs (running or
+    finished) so a capture started earlier can be found again after
+    navigating away from the ResultScreen that started it. Selecting one
+    opens BackgroundJobResultScreen for it (task:0d8f0ca1)."""
+
+    BINDINGS = [("escape", "app.pop_screen", "Back")]
+
+    def compose(self) -> ComposeResult:
+        yield from self.compose_head(3)
+        with bordered(Container(classes="detail-box"), "Background jobs"):
+            yield Static("↑↓ to pick a job, Enter to view.", classes="hint-bar")
+            yield bordered(ListView(*self._build_items(), id="bg-job-list"), "Jobs")
+        yield Footer()
+
+    def _build_items(self) -> list[ListItem]:
+        jobs = self.app.background_jobs
+        if not jobs:
+            return [ListItem(Label("No background jobs yet — start a capture from the menu."), disabled=True)]
+        items: list[ListItem] = []
+        for group, job in sorted(
+            jobs.items(), key=lambda kv: kv[1].get("started_monotonic") or 0, reverse=True
+        ):
+            status = job["status"]
+            icon = "●" if status == "running" else ("✓" if status == "success" else "✗")
+            color = "orange" if status == "running" else ("green" if status == "success" else "red")
+            items.append(
+                ListItem(
+                    Label(f"[{color}]{icon}[/{color}] {EventFeed.escape(job['label'])} — {status}"),
+                    id=f"bgjob-{group}",
+                    name=group,
+                )
+            )
+        return items
+
+    def on_list_view_selected(self, event: ListView.Selected) -> None:
+        group = event.item.name
+        if not group:
+            return
+        self._log("opening job %s", group)
+        self.app.push_screen(BackgroundJobResultScreen(group))
+
+
+class BackgroundJobResultScreen(CustomScreen):
+    """Read-only viewer for a single app.background_jobs entry — reached
+    via BackgroundJobsScreen. Unlike ResultScreen, this doesn't run
+    anything itself: it just polls the shared registry the owning
+    ResultScreen's worker keeps updated (see ResultScreen.on_mount/
+    _run_tool), so it renders correctly whether the capture is still
+    running or already finished, even long after the original ResultScreen
+    instance is gone (task:0d8f0ca1)."""
+
+    BINDINGS = [
+        ("escape", "app.pop_screen", "Back"),
+        ("j", "toggle_json", "Toggle raw JSON"),
+    ]
+
+    def __init__(self, group: str) -> None:
+        super().__init__()
+        self._group = group
+        self._json_visible = False
+        self._rendered_final = False
+
+    def _job(self) -> dict | None:
+        return self.app.background_jobs.get(self._group)
+
+    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        if action == "toggle_json":
+            job = self._job()
+            return bool(job and job.get("result_text"))
+        return True
+
+    def compose(self) -> ComposeResult:
+        yield from self.compose_head(3)
+        job = self._job() or {}
+        with bordered(VerticalScroll(classes="detail-box"), job.get("label", "Background job")):
+            with Horizontal(classes="status-chips"):
+                yield Static("… Running", id="bg-status-chip", classes="status-chip")
+                yield Static(job.get("tool_name", "?"), classes="status-chip")
+            yield Container(id="bg-summary-box")
+            yield Static("▶ Show raw JSON [j]", id="bg-json-toggle", classes="hint-bar")
+            yield EventFeed(id="bg-raw-json-feed", classes="-hidden")
+        yield Footer()
+
+    def on_mount(self) -> None:
+        if self._job() is None:
+            self._log("job %s no longer tracked", self._group)
+        self._refresh()
+        self.set_interval(1.0, self._refresh)
+
+    def _refresh(self) -> None:
+        job = self._job()
+        try:
+            status_chip = self.query_one("#bg-status-chip", Static)
+        except Exception:
+            return  # screen no longer mounted
+        if job is None:
+            status_chip.update("✗ No longer tracked")
+            return
+        status = job["status"]
+        if status == "running":
+            started = job.get("started_monotonic")
+            total = job.get("kwargs", {}).get("duration_seconds")
+            if started is not None and total:
+                remaining = max(0.0, total - (time.monotonic() - started))
+                status_chip.update(f"… Running ({ResultScreen._format_mmss(remaining)} remaining)")
+            else:
+                status_chip.update("… Running")
+            return
+        status_chip.update("✓ Success" if status == "success" else f"✗ {status}")
+        status_chip.set_class(status == "success", "status-chip-success")
+        if self._rendered_final:
+            return  # already rendered the summary/raw JSON once — avoid re-mounting on every tick
+        self._rendered_final = True
+        result_text = job.get("result_text")
+        result_dict = job.get("result_dict")
+        if result_text:
+            self.query_one("#bg-raw-json-feed", EventFeed).write_event("tool_done", EventFeed.escape(result_text))
+        if isinstance(result_dict, dict):
+            render_result_summary(self.query_one("#bg-summary-box", Container), job["tool_name"], result_dict)
+        self.refresh_bindings()
+
+    def action_toggle_json(self) -> None:
+        self._json_visible = not self._json_visible
+        self._log("raw JSON %s", "shown" if self._json_visible else "hidden")
+        feed = self.query_one("#bg-raw-json-feed", EventFeed)
+        toggle = self.query_one("#bg-json-toggle", Static)
+        if self._json_visible:
+            feed.remove_class("-hidden")
+            toggle.update("▼ Hide raw JSON [j]")
+        else:
+            feed.add_class("-hidden")
+            toggle.update("▶ Show raw JSON [j]")
 
 
 class DockerTUIApp(App):
@@ -1168,12 +1346,32 @@ class DockerTUIApp(App):
     #raw-json-feed { height: 12; border: round $accent; margin-top: 1; }
     #raw-json-feed.-hidden { display: none; }
     """
-    BINDINGS = [("q", "quit", "Quit"), ("escape", "pop_screen", "Back")]
+    BINDINGS = [
+        ("q", "quit", "Quit"),
+        ("escape", "pop_screen", "Back"),
+        ("b", "show_background_jobs", "Background jobs"),
+    ]
     _log = staticmethod(action_logger("app"))
+
+    def __init__(self) -> None:
+        super().__init__()
+        # {group: {label, tool_name, kwargs, status, started_monotonic,
+        # result_text, result_dict}} — the single source of truth for every
+        # tool_capture_logs run, written by ResultScreen.on_mount/_run_tool
+        # and read by BreadcrumbBar (is anything running) and
+        # BackgroundJobsScreen/BackgroundJobResultScreen (view a specific
+        # run), so a capture's progress/result stays reachable long after
+        # the ResultScreen that started it is popped and gone
+        # (task:97300a1a, task:42d47baa, task:0d8f0ca1).
+        self.background_jobs: dict[str, dict] = {}
 
     def on_mount(self) -> None:
         self._log("started")
         self.push_screen(ConnectScreen())
+
+    def action_show_background_jobs(self) -> None:
+        self._log("opening background jobs (%d tracked)", len(self.background_jobs))
+        self.push_screen(BackgroundJobsScreen())
 
     async def action_pop_screen(self) -> None:
         # WindowScreen/ContainerNameScreen/MenuScreen/ResultScreen all bind
