@@ -174,7 +174,7 @@ uv run pytest tests/
 Full details: **[doc/WIKI_SECURITY.md](doc/WIKI_SECURITY.md)** — secret detection patterns, redaction rules, path confinement guardrails.
 
 ## Project Planning
-Epic and task creation, task grooming and task implmentation using https://github.com/debaditya-mohankudo/Lite-Task-Framework-w-Claude-hooks
+Epic planning, subtask creation, task grooming, task implementation using https://github.com/debaditya-mohankudo/Lite-Task-Framework
 
 ## License
 
